@@ -51,6 +51,30 @@ Para executar a suíte de testes automatizados, instale as dependências e rode:
 pytest -q
 ```
 
+## Como buildar local
+
+1. Instale as dependências:
+
+   ```
+   pip install pyinstaller pyqt5 pillow pywin32
+   ```
+
+2. Gere o executável:
+
+   ```
+   pyinstaller GeradorEtiquetas_onefile.spec
+   ```
+
+   O binário será criado em `dist/GeradorEtiquetas.exe`.
+
+## Como baixar o artifact
+
+Após um push ou pull request, o workflow **Build Windows Executable** gera um artifact com o executável.
+
+1. Acesse a aba **Actions** do repositório no GitHub.
+2. Abra a execução mais recente do workflow.
+3. Baixe o artifact **GeradorEtiquetas** para obter `GeradorEtiquetas.exe`.
+
 ---
 
 ## Autor
