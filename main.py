@@ -1,0 +1,55 @@
+# main.py
+import os
+import sys
+from datetime import datetime
+from PyQt5.QtWidgets import QApplication
+from ui import EtiquetaApp
+from _version import __version__
+from utils import migrate_legacy_data
+
+def ensure_version_file():
+    """
+    Cria/atualiza um version.txt no diretório do executável (quando congelado)
+    ou no diretório deste arquivo (em dev).
+    """
+    try:
+        if getattr(sys, "frozen", False):
+            install_dir = os.path.dirname(sys.executable)   # caminho do .exe (PyInstaller)
+        else:
+            install_dir = os.path.dirname(os.path.abspath(__file__))  # caminho dos .py
+
+        path = os.path.join(install_dir, "version.txt")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(str(__version__))
+    except Exception:
+        # não falhe a inicialização por causa disso; apenas logue
+        with open("crash_log.txt", "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now():%d/%m/%Y %H:%M:%S}] Falha ao gravar version.txt\n")
+
+if __name__ == "__main__":
+    try:
+        # 1) migra dados do legado para assets (uma vez só)
+        migrate_legacy_data()
+
+        # 2) segue o fluxo normal do app
+        app = QApplication(sys.argv)
+
+        # garante que version.txt existe/está atualizado
+        ensure_version_file()
+
+        janela = EtiquetaApp()
+        # defina o título ANTES de mostrar a janela
+        janela.setWindowTitle(f"Gerador de Etiquetas — v{__version__}")
+        janela.show()
+
+        # entra no loop da UI (bloqueia até fechar)
+        sys.exit(app.exec_())
+
+    except Exception:
+        # Loga qualquer falha inesperada
+        import traceback
+        with open("crash_log.txt", "a", encoding="utf-8") as f:
+            f.write(
+                f"[{datetime.now():%d/%m/%Y %H:%M:%S}] "
+                f"Crash fatal:\n{traceback.format_exc()}\n\n"
+            )
