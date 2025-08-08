@@ -2,9 +2,10 @@
 
 import os
 from datetime import datetime
+from typing import TypedDict
 
 from PyQt5.QtCore import QDateTime, Qt, QTime, QTimer
-from PyQt5.QtGui import QColor, QFont, QIcon, QPalette, QPixmap
+from PyQt5.QtGui import QColor, QFont, QIcon, QPalette, QPixmap, QCloseEvent
 from PyQt5.QtWidgets import (
     QComboBox,
     QFrame,
@@ -33,6 +34,15 @@ from printing import imprimir_etiqueta
 from utils import backup_automatico, recurso_caminho
 
 
+class EtiquetaInfo(TypedDict):
+    saida: str
+    categoria: str
+    emissor: str
+    municipio: str
+    volumes: int
+    data_hora: str
+
+
 class EtiquetaApp(QWidget):
     """Janela principal do gerador de etiquetas."""
 
@@ -45,7 +55,7 @@ class EtiquetaApp(QWidget):
         self.setWindowIcon(QIcon(recurso_caminho("color.png")))
 
         self.contagem_total, self.contagem_mensal = carregar_contagem()
-        self.ultima_etiqueta = None
+        self.ultima_etiqueta: EtiquetaInfo | None = None
         self._contagem_label = QLabel()
         self._contagem_label.setStyleSheet(
             "color: #CCCCCC; font-size: 15px; font-weight: 500; padding: 8px; "
@@ -78,7 +88,7 @@ class EtiquetaApp(QWidget):
         backup_automatico()
         self._agendar_backup_diario()
 
-    def closeEvent(self, event) -> None:  # type: ignore[override]
+    def closeEvent(self, event: QCloseEvent) -> None:
         """Garante um backup ao fechar a janela.
 
         Args:
@@ -88,7 +98,7 @@ class EtiquetaApp(QWidget):
         backup_automatico()
         event.accept()
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         """Monta todos os widgets e layouts da interface."""
 
         layout_base = QVBoxLayout(self)
@@ -344,7 +354,7 @@ class EtiquetaApp(QWidget):
                 self, "Histórico", "O arquivo de histórico ainda não existe."
             )
 
-    def _imprimir_etiqueta(self):
+    def _imprimir_etiqueta(self) -> None:
         """Coleta dados do formulário e solicita a impressão."""
 
         self._atualizar_status("🖨️ Imprimindo…")
@@ -377,14 +387,14 @@ class EtiquetaApp(QWidget):
             salvar_contagem(self.contagem_total, self.contagem_mensal)
 
             salvar_historico(saida, categoria, emissor, municipio, volumes, data_hora)
-            self.ultima_etiqueta = {
-                "saida": saida,
-                "categoria": categoria,
-                "emissor": emissor,
-                "municipio": municipio,
-                "volumes": volumes,
-                "data_hora": data_hora,
-            }
+            self.ultima_etiqueta = EtiquetaInfo(
+                saida=saida,
+                categoria=categoria,
+                emissor=emissor,
+                municipio=municipio,
+                volumes=volumes,
+                data_hora=data_hora,
+            )
 
             mes_atual = datetime.now().strftime("%m-%Y")
             registrar_contagem_mensal(mes_atual, volumes)
@@ -406,7 +416,7 @@ class EtiquetaApp(QWidget):
     def _reimprimir_ultima(self) -> None:
         """Reimprime a última etiqueta gerada, se houver."""
 
-        if not self.ultima_etiqueta:
+        if self.ultima_etiqueta is None:
             QMessageBox.information(
                 self, "Nenhuma etiqueta", "Nenhuma etiqueta foi impressa ainda."
             )
@@ -438,7 +448,7 @@ class EtiquetaApp(QWidget):
     def _reimprimir_faltantes(self) -> None:
         """Reimprime apenas as etiquetas que faltaram de um lote."""
 
-        if not self.ultima_etiqueta:
+        if self.ultima_etiqueta is None:
             QMessageBox.information(
                 self, "Nenhuma etiqueta", "Nenhuma etiqueta foi impressa ainda."
             )
