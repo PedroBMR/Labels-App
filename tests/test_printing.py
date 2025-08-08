@@ -76,3 +76,55 @@ def test_reimpressao_faltantes(monkeypatch):
     assert any("8 DE 10" in t for t in textos)
     assert any("9 DE 10" in t for t in textos)
     assert any("10 DE 10" in t for t in textos)
+
+
+def test_retry_exponencial_logging(monkeypatch, caplog):
+    import printing
+    import logging
+
+    class FailingWin32:
+        def __init__(self):
+            self.calls = 0
+
+        def GetDefaultPrinter(self):
+            return "dummy"
+
+        def OpenPrinter(self, name):
+            return object()
+
+        def StartDocPrinter(self, h, level, info):
+            self.calls += 1
+            raise RuntimeError("boom")
+
+        def StartPagePrinter(self, h):
+            pass
+
+        def WritePrinter(self, h, data):
+            pass
+
+        def EndPagePrinter(self, h):
+            pass
+
+        def EndDocPrinter(self, h):
+            pass
+
+        def ClosePrinter(self, h):
+            pass
+
+    fake = FailingWin32()
+    monkeypatch.setattr(printing, "win32print", fake)
+    monkeypatch.setattr(
+        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
+    )
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+    monkeypatch.setattr(printing.time, "sleep", lambda s: None)
+
+    with caplog.at_level(logging.INFO):
+        ok, erro = printing.imprimir_etiqueta(
+            "S", "C", "E", "M", 1, "2024-01-01", 0, 0, repetir_em_falha=True
+        )
+
+    assert not ok
+    assert fake.calls == 3
+    tentativas = [r for r in caplog.records if "Tentativa" in r.message]
+    assert len(tentativas) == 3
