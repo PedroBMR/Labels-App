@@ -1,21 +1,43 @@
-# printing.py
-import win32print
+"""Rotinas relacionadas à impressão das etiquetas."""
+
 from datetime import datetime
-from utils import recurso_caminho, melhorar_logo
+
+import win32print
+
+from utils import melhorar_logo, recurso_caminho
 
 LARGURA_ETIQUETA_MM = 60
 ALTURA_ETIQUETA_MM = 80
 DOTS_MM = 8  # ~203 dpi
 
 def imprimir_etiqueta(
-    saida, categoria, emissor, municipio, volumes, data_hora,
-    contagem_total=0, contagem_mensal=0,
-    inicio_indice: int = 1,           # <-- NOVO: inicia numeração em N
-    total_exibicao: int = None        # <-- NOVO: total mostrado em "X DE Y"
-):
-    """
-    Monta e envia o comando TSPL para a impressora padrão.
-    Retorna True se ok, senão gera exceção.
+    saida: str,
+    categoria: str,
+    emissor: str,
+    municipio: str,
+    volumes: int,
+    data_hora: str,
+    contagem_total: int = 0,
+    contagem_mensal: int = 0,
+    inicio_indice: int = 1,
+    total_exibicao: int | None = None,
+) -> bool:
+    """Monta e envia comandos TSPL para a impressora padrão.
+
+    Args:
+        saida (str): Número da saída.
+        categoria (str): Categoria da etiqueta.
+        emissor (str): Quem emitiu a etiqueta.
+        municipio (str): Município de destino.
+        volumes (int): Quantidade de etiquetas a imprimir.
+        data_hora (str): Data e hora formatadas da impressão.
+        contagem_total (int, optional): Total geral antes da impressão.
+        contagem_mensal (int, optional): Total do mês antes da impressão.
+        inicio_indice (int, optional): Número inicial para a sequência.
+        total_exibicao (int | None, optional): Total exibido no rodapé.
+
+    Returns:
+        bool: ``True`` se a impressão ocorrer sem erros.
     """
     # -------- prepara logo --------
     logo_path = recurso_caminho("logo.png")
