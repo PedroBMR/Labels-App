@@ -1,10 +1,9 @@
 """Elementos da interface gráfica do gerador de etiquetas."""
 
 import os
-import sys
 from datetime import datetime
 
-from PyQt5.QtCore import QDateTime, QTime, Qt, QTimer
+from PyQt5.QtCore import QDateTime, Qt, QTime, QTimer
 from PyQt5.QtGui import QColor, QFont, QIcon, QPalette, QPixmap
 from PyQt5.QtWidgets import (
     QComboBox,
@@ -17,8 +16,8 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizePolicy,
-    QSpinBox,
     QSpacerItem,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -49,7 +48,8 @@ class EtiquetaApp(QWidget):
         self.ultima_etiqueta = None
         self._contagem_label = QLabel()
         self._contagem_label.setStyleSheet(
-            "color: #CCCCCC; font-size: 15px; font-weight: 500; padding: 8px; letter-spacing: 1px;"
+            "color: #CCCCCC; font-size: 15px; font-weight: 500; padding: 8px; "
+            "letter-spacing: 1px;"
         )
         self._atualizar_contagem_label()
 
@@ -79,7 +79,11 @@ class EtiquetaApp(QWidget):
         self._agendar_backup_diario()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
-        """Garante um backup ao fechar a janela."""
+        """Garante um backup ao fechar a janela.
+
+        Args:
+            event: Evento de fechamento recebido do Qt.
+        """
 
         backup_automatico()
         event.accept()
@@ -89,7 +93,9 @@ class EtiquetaApp(QWidget):
 
         layout_base = QVBoxLayout(self)
         layout_base.setContentsMargins(0, 0, 0, 0)
-        layout_base.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
+        layout_base.addSpacerItem(
+            QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        )
 
         layout_central = QVBoxLayout()
         layout_central.setAlignment(Qt.AlignTop)
@@ -98,11 +104,15 @@ class EtiquetaApp(QWidget):
         layout_base.addLayout(layout_central)
 
         # Logo e título
-        logo_area = QVBoxLayout(); logo_area.setAlignment(Qt.AlignCenter)
-        logo_label = QLabel(); logo_label.setAlignment(Qt.AlignCenter)
+        logo_area = QVBoxLayout()
+        logo_area.setAlignment(Qt.AlignCenter)
+        logo_label = QLabel()
+        logo_label.setAlignment(Qt.AlignCenter)
         logo_path = recurso_caminho("color.png")
         if os.path.exists(logo_path):
-            logo_label.setPixmap(QPixmap(logo_path).scaledToWidth(120, Qt.SmoothTransformation))
+            logo_label.setPixmap(
+                QPixmap(logo_path).scaledToWidth(120, Qt.SmoothTransformation)
+            )
         logo_area.addWidget(logo_label)
         titulo = QLabel("Gerador de Etiquetas CONIMS")
         titulo.setFont(QFont("Segoe UI", 14, QFont.Bold))
@@ -113,35 +123,59 @@ class EtiquetaApp(QWidget):
 
         # Formulário
         quadro = QFrame()
-        quadro.setStyleSheet("QFrame{background:#232323;border-radius:12px;border: 1px solid #333;}")
-        layout_quadro = QVBoxLayout(quadro); layout_quadro.setContentsMargins(40, 30, 40, 30)
+        quadro.setStyleSheet(
+            "QFrame{background:#232323;border-radius:12px;border: 1px solid #333;}"
+        )
+        layout_quadro = QVBoxLayout(quadro)
+        layout_quadro.setContentsMargins(40, 30, 40, 30)
         layout_central.addWidget(quadro)
 
-        grid = QGridLayout(); layout_quadro.addLayout(grid)
+        grid = QGridLayout()
+        layout_quadro.addLayout(grid)
 
         self.saida_input = QLineEdit()
-        self.categoria_input = QComboBox(); self.categoria_input.setEditable(True)
-        self.emissor_input = QComboBox(); self.emissor_input.setEditable(True)
-        self.municipio_input = QComboBox(); self.municipio_input.setEditable(True)
-        self.volumes_input = QSpinBox(); self.volumes_input.setMinimum(1)
+        self.categoria_input = QComboBox()
+        self.categoria_input.setEditable(True)
+        self.emissor_input = QComboBox()
+        self.emissor_input.setEditable(True)
+        self.municipio_input = QComboBox()
+        self.municipio_input.setEditable(True)
+        self.volumes_input = QSpinBox()
+        self.volumes_input.setMinimum(1)
         self._carregar_listas()
 
         def _estilo(w):
-            w.setStyleSheet("background:#191919;color:#e5e5e5;padding:7px;"
-                            "border:1px solid #282828;border-radius: 6px;font-size: 14px;")
-        for w in (self.saida_input, self.categoria_input, self.emissor_input, self.municipio_input, self.volumes_input):
+            w.setStyleSheet(
+                "background:#191919;color:#e5e5e5;padding:7px;"
+                "border:1px solid #282828;border-radius: 6px;font-size: 14px;"
+            )
+
+        for w in (
+            self.saida_input,
+            self.categoria_input,
+            self.emissor_input,
+            self.municipio_input,
+            self.volumes_input,
+        ):
             _estilo(w)
 
-        def _lbl(t):
-            l = QLabel(t)
-            l.setStyleSheet("color: #bbb; font-size: 13px; border: none; background: none;")
-            return l
+        def _lbl(texto: str) -> QLabel:
+            label = QLabel(texto)
+            label.setStyleSheet(
+                "color: #bbb; font-size: 13px; border: none; background: none;"
+            )
+            return label
 
-        grid.addWidget(_lbl("Saída:"), 0, 0); grid.addWidget(self.saida_input, 0, 1)
-        grid.addWidget(_lbl("Categoria:"), 1, 0); grid.addWidget(self.categoria_input, 1, 1)
-        grid.addWidget(_lbl("Emissor:"), 2, 0); grid.addWidget(self.emissor_input, 2, 1)
-        grid.addWidget(_lbl("Município:"), 3, 0); grid.addWidget(self.municipio_input, 3, 1)
-        grid.addWidget(_lbl("Número de Volumes:"), 4, 0); grid.addWidget(self.volumes_input, 4, 1)
+        grid.addWidget(_lbl("Saída:"), 0, 0)
+        grid.addWidget(self.saida_input, 0, 1)
+        grid.addWidget(_lbl("Categoria:"), 1, 0)
+        grid.addWidget(self.categoria_input, 1, 1)
+        grid.addWidget(_lbl("Emissor:"), 2, 0)
+        grid.addWidget(self.emissor_input, 2, 1)
+        grid.addWidget(_lbl("Município:"), 3, 0)
+        grid.addWidget(self.municipio_input, 3, 1)
+        grid.addWidget(_lbl("Número de Volumes:"), 4, 0)
+        grid.addWidget(self.volumes_input, 4, 1)
 
         # Botões
         botoes = QHBoxLayout()
@@ -160,17 +194,31 @@ class EtiquetaApp(QWidget):
         self.historico_mes_btn = QPushButton("Histórico Mensal")
         self.historico_mes_btn.clicked.connect(self._mostrar_historico_mensal)
 
-        for b in (self.imprimir_btn, self.reimprimir_btn, self.reimprimir_faltantes_btn, self.historico_btn, self.historico_mes_btn):
-            b.setStyleSheet("background:#24292e;color:#eeeeee;padding:8px 18px;border-radius:6px;font-size: 14px;border: none;")
+        for b in (
+            self.imprimir_btn,
+            self.reimprimir_btn,
+            self.reimprimir_faltantes_btn,
+            self.historico_btn,
+            self.historico_mes_btn,
+        ):
+            b.setStyleSheet(
+                "background:#24292e;color:#eeeeee;padding:8px 18px;border-radius:6px;"
+                "font-size: 14px;border: none;"
+            )
             botoes.addWidget(b)
         layout_quadro.addLayout(botoes)
 
         # Status
         self.status_label = QLabel()
-        self.status_label.setStyleSheet("color: #8bc34a; font-size: 13px; border: none; background: none; padding: 5px;")
+        self.status_label.setStyleSheet(
+            "color: #8bc34a; font-size: 13px; border: none; background: none; "
+            "padding: 5px;"
+        )
         layout_quadro.addWidget(self.status_label)
 
-        layout_base.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
+        layout_base.addSpacerItem(
+            QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        )
 
     def _aplicar_tema_escuro(self) -> None:
         """Aplica esquema de cores escuro à aplicação."""
@@ -187,27 +235,80 @@ class EtiquetaApp(QWidget):
     def _carregar_listas(self) -> None:
         """Preenche as listas de seleção com valores padrão."""
 
-        self.categoria_input.addItems([
-            "", "LIMPEZA, COPA, COZINHA", "DEVOLUCAO", "ORTOPEDICO", "CRE CHOPIM",
-            "EXPEDIENTE", "OSTOMIA", "CURATIVOS", "LIMPEZA", "NUTRIÇAO",
-            "MEDICAMENTO", "AMBULATORIAL", "ODONTO",
-        ])
-        self.emissor_input.addItems([
-            "", "FERNANDO", "DANIELA", "RUDINEY", "ELIZANGELA",
-            "DANIELA E RUDINEY", "DANIELA E ELIZANGELA", "RUDINEY E ELIZANGELA",
-            "DANIELA, RUDINEY E ELIZANGELA", "LUAN", "LUCAS", "ANDREY",
-            "LUAN E LUCAS", "LUAN E ANDREY", "LUCAS E ANDREY", "LUAN, LUCAS E ANDREY",
-            "PEDRO LUIZ",
-        ])
-        self.municipio_input.addItems([
-            "", "ABELARDO LUZ", "BOM SUCESSO DO SUL", "CAIBI", "CAMPO ERE", "CHOPINZINHO",
-            "CRE CHOPIN", "CLEVELANDIA", "CORONEL DOMINGOS SOARES", "CORONEL MARTINS",
-            "CORONEL VIVIDA", "FORMOSA DO SUL", "GALVAO", "HONORIO SERPA", "IPUACU",
-            "IRATI", "ITAPEJARA D' OESTE", "JUPIA", "MANGUEIRINHA", "MARIOPOLIS",
-            "NOVO HORIZONTE", "OURO VERDE", "PALMA SOLA", "PALMAS", "PATO BRANCO",
-            "SANTIAGO DO SUL", "SAO BERNARDINO", "SAO JOAO", "SAO LOURENCO DO OESTE",
-            "SAUDADE DO IGUACU", "SULINA", "VITORINO",
-        ])
+        self.categoria_input.addItems(
+            [
+                "",
+                "LIMPEZA, COPA, COZINHA",
+                "DEVOLUCAO",
+                "ORTOPEDICO",
+                "CRE CHOPIM",
+                "EXPEDIENTE",
+                "OSTOMIA",
+                "CURATIVOS",
+                "LIMPEZA",
+                "NUTRIÇAO",
+                "MEDICAMENTO",
+                "AMBULATORIAL",
+                "ODONTO",
+            ]
+        )
+        self.emissor_input.addItems(
+            [
+                "",
+                "FERNANDO",
+                "DANIELA",
+                "RUDINEY",
+                "ELIZANGELA",
+                "DANIELA E RUDINEY",
+                "DANIELA E ELIZANGELA",
+                "RUDINEY E ELIZANGELA",
+                "DANIELA, RUDINEY E ELIZANGELA",
+                "LUAN",
+                "LUCAS",
+                "ANDREY",
+                "LUAN E LUCAS",
+                "LUAN E ANDREY",
+                "LUCAS E ANDREY",
+                "LUAN, LUCAS E ANDREY",
+                "PEDRO LUIZ",
+            ]
+        )
+        self.municipio_input.addItems(
+            [
+                "",
+                "ABELARDO LUZ",
+                "BOM SUCESSO DO SUL",
+                "CAIBI",
+                "CAMPO ERE",
+                "CHOPINZINHO",
+                "CRE CHOPIN",
+                "CLEVELANDIA",
+                "CORONEL DOMINGOS SOARES",
+                "CORONEL MARTINS",
+                "CORONEL VIVIDA",
+                "FORMOSA DO SUL",
+                "GALVAO",
+                "HONORIO SERPA",
+                "IPUACU",
+                "IRATI",
+                "ITAPEJARA D' OESTE",
+                "JUPIA",
+                "MANGUEIRINHA",
+                "MARIOPOLIS",
+                "NOVO HORIZONTE",
+                "OURO VERDE",
+                "PALMA SOLA",
+                "PALMAS",
+                "PATO BRANCO",
+                "SANTIAGO DO SUL",
+                "SAO BERNARDINO",
+                "SAO JOAO",
+                "SAO LOURENCO DO OESTE",
+                "SAUDADE DO IGUACU",
+                "SULINA",
+                "VITORINO",
+            ]
+        )
 
     def _limpar_campos(self) -> None:
         """Restaura os campos do formulário para os valores iniciais."""
@@ -217,7 +318,9 @@ class EtiquetaApp(QWidget):
             combo.setCurrentIndex(0)
         self.volumes_input.setValue(1)
 
-    def _atualizar_status(self, mensagem: str = "🟢 Pronto", cor: str = "white") -> None:
+    def _atualizar_status(
+        self, mensagem: str = "🟢 Pronto", cor: str = "white"
+    ) -> None:
         """Atualiza a mensagem de status exibida ao usuário.
 
         Args:
@@ -237,7 +340,9 @@ class EtiquetaApp(QWidget):
         if os.path.exists(caminho):
             subprocess.Popen(["start", "", caminho], shell=True)
         else:
-            QMessageBox.information(self, "Histórico", "O arquivo de histórico ainda não existe.")
+            QMessageBox.information(
+                self, "Histórico", "O arquivo de histórico ainda não existe."
+            )
 
     def _imprimir_etiqueta(self):
         """Coleta dados do formulário e solicita a impressão."""
@@ -257,8 +362,14 @@ class EtiquetaApp(QWidget):
 
         try:
             imprimir_etiqueta(
-                saida, categoria, emissor, municipio, volumes, data_hora,
-                self.contagem_total, self.contagem_mensal
+                saida,
+                categoria,
+                emissor,
+                municipio,
+                volumes,
+                data_hora,
+                self.contagem_total,
+                self.contagem_mensal,
             )
 
             self.contagem_total += volumes
@@ -284,6 +395,7 @@ class EtiquetaApp(QWidget):
         except Exception as e:
             self._atualizar_status("⚠️ Erro na impressão", "orange")
             import traceback
+
             with open("crash_log.txt", "a", encoding="utf-8") as f:
                 f.write(
                     f"[{datetime.now():%d/%m/%Y %H:%M:%S}] "
@@ -295,19 +407,27 @@ class EtiquetaApp(QWidget):
         """Reimprime a última etiqueta gerada, se houver."""
 
         if not self.ultima_etiqueta:
-            QMessageBox.information(self, "Nenhuma etiqueta", "Nenhuma etiqueta foi impressa ainda.")
+            QMessageBox.information(
+                self, "Nenhuma etiqueta", "Nenhuma etiqueta foi impressa ainda."
+            )
             return
         try:
             dados = self.ultima_etiqueta
             imprimir_etiqueta(
-                dados["saida"], dados["categoria"], dados["emissor"],
-                dados["municipio"], dados["volumes"], dados["data_hora"],
-                self.contagem_total, self.contagem_mensal
+                dados["saida"],
+                dados["categoria"],
+                dados["emissor"],
+                dados["municipio"],
+                dados["volumes"],
+                dados["data_hora"],
+                self.contagem_total,
+                self.contagem_mensal,
             )
             self._atualizar_status("♻️ Reimpressão concluída", "lightblue")
         except Exception as e:
             self._atualizar_status("⚠️ Erro na reimpressão", "orange")
             import traceback
+
             with open("crash_log.txt", "a", encoding="utf-8") as f:
                 f.write(
                     f"[{datetime.now():%d/%m/%Y %H:%M:%S}] "
@@ -319,7 +439,9 @@ class EtiquetaApp(QWidget):
         """Reimprime apenas as etiquetas que faltaram de um lote."""
 
         if not self.ultima_etiqueta:
-            QMessageBox.information(self, "Nenhuma etiqueta", "Nenhuma etiqueta foi impressa ainda.")
+            QMessageBox.information(
+                self, "Nenhuma etiqueta", "Nenhuma etiqueta foi impressa ainda."
+            )
             return
 
         dados = self.ultima_etiqueta
@@ -373,13 +495,13 @@ class EtiquetaApp(QWidget):
         except Exception as e:
             self._atualizar_status("⚠️ Erro na reimpressão de faltantes", "orange")
             import traceback
+
             with open("crash_log.txt", "a", encoding="utf-8") as f:
                 f.write(
                     f"[{datetime.now():%d/%m/%Y %H:%M:%S}] "
                     f"Erro na reimpressão de faltantes:\n{traceback.format_exc()}\n\n"
                 )
             QMessageBox.critical(self, "Erro", str(e))
-
 
     def _mostrar_historico_mensal(self) -> None:
         """Exibe um resumo das etiquetas impressas por mês."""
@@ -398,7 +520,9 @@ class EtiquetaApp(QWidget):
 
         nome_mes = datetime.now().strftime("%m/%Y")
         self._contagem_label.setText(
-            f"Etiquetas do mês: <span style='font-weight:600'>{self.contagem_mensal}</span> &nbsp;|&nbsp; "
+            "Etiquetas do mês: "
+            f"<span style='font-weight:600'>{self.contagem_mensal}</span> "
+            "&nbsp;|&nbsp; "
             f"Total geral: <span style='font-weight:600'>{self.contagem_total}</span> "
             f"<span style='color:#888;font-size:13px'>(Mês: {nome_mes})</span>"
         )

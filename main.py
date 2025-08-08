@@ -10,6 +10,7 @@ from _version import __version__
 from ui import EtiquetaApp
 from utils import migrate_legacy_data
 
+
 def ensure_version_file() -> None:
     """Garante a criação do arquivo de versão.
 
@@ -39,6 +40,7 @@ def ensure_version_file() -> None:
                 f"[{datetime.now():%d/%m/%Y %H:%M:%S}] Falha ao gravar version.txt\n"
             )
 
+
 if __name__ == "__main__":
     try:
         # 1) migra dados do legado para assets (uma vez só)
@@ -61,6 +63,7 @@ if __name__ == "__main__":
     except Exception:
         # Loga qualquer falha inesperada
         import traceback
+
         with open("crash_log.txt", "a", encoding="utf-8") as f:
             f.write(
                 f"[{datetime.now():%d/%m/%Y %H:%M:%S}] "
