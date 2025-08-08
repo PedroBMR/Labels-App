@@ -69,11 +69,11 @@ pytest -q
 
 ## Como baixar o artifact
 
-Após um push ou pull request, o workflow **Build Windows Executable** gera um artifact com o executável.
+Após cada push ou pull request, o workflow **Build Windows Executable** compila o aplicativo e disponibiliza `GeradorEtiquetas.exe` como artifact.
 
 1. Acesse a aba **Actions** do repositório no GitHub.
 2. Abra a execução mais recente do workflow.
-3. Baixe o artifact **GeradorEtiquetas** para obter `GeradorEtiquetas.exe`.
+3. Baixe o artifact **GeradorEtiquetas** para obter `dist/GeradorEtiquetas.exe`.
 
 ## Atualização do aplicativo
 

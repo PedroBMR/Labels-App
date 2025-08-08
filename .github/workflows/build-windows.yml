@@ -20,7 +20,7 @@ jobs:
           pip install pyinstaller pyqt5 pillow pywin32
       - name: Build executable
         run: |
-          pyinstaller GeradorEtiquetas_onefile.spec
+          pyinstaller main.py --onefile --windowed --icon assets/color.ico --add-data "assets;assets"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
