@@ -37,6 +37,12 @@ fake_win32 = FakeWin32()
 sys.modules["win32print"] = fake_win32  # type: ignore[assignment]
 
 
+def test_descobrir_impressora_padrao():
+    import printing
+
+    assert printing.descobrir_impressora_padrao() == "dummy"
+
+
 def test_reimpressao_faltantes(monkeypatch):
     import printing
 
