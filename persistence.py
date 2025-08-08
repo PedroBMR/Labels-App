@@ -4,7 +4,6 @@ import csv
 import json
 import os
 from datetime import datetime
-
 from typing import cast
 
 from utils import recurso_caminho

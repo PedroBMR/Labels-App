@@ -36,12 +36,16 @@ class FakeWin32:
 fake_win32 = FakeWin32()
 sys.modules["win32print"] = fake_win32
 
-import printing
-
 
 def test_reimpressao_faltantes(monkeypatch):
+    import printing
+
     fake = printing.win32print
-    monkeypatch.setattr(printing, "melhorar_logo", lambda p, largura_desejada=240: (b"ABC", 1, 1))
+    monkeypatch.setattr(
+        printing,
+        "melhorar_logo",
+        lambda p, largura_desejada=240: (b"ABC", 1, 1),
+    )
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
     total = 10
