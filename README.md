@@ -43,6 +43,16 @@
 
 ---
 
+## Testes
+
+Para executar a suíte de testes automatizados, instale as dependências e rode:
+
+```
+pytest -q
+```
+
+---
+
 ## Autor
 
 Desenvolvido por Pedro Luiz Bortot  
