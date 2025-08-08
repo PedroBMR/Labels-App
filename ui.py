@@ -19,6 +19,7 @@ from PyQt5.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QCheckBox,
     QInputDialog,
     QLabel,
     QLineEdit,
@@ -196,6 +197,12 @@ class EtiquetaApp(QWidget):
         grid.addWidget(self.municipio_input, 3, 1)
         grid.addWidget(_lbl("Número de Volumes:"), 4, 0)
         grid.addWidget(self.volumes_input, 4, 1)
+
+        self.retry_checkbox = QCheckBox("Repetir automaticamente em falha (3x)")
+        self.retry_checkbox.setStyleSheet(
+            "color: #bbb; font-size: 13px; padding: 5px; border: none;"
+        )
+        layout_quadro.addWidget(self.retry_checkbox)
 
         # Botões
         botoes = QHBoxLayout()
@@ -411,6 +418,7 @@ class EtiquetaApp(QWidget):
             data_hora,
             self.contagem_total,
             self.contagem_mensal,
+            repetir_em_falha=self.retry_checkbox.isChecked(),
         )
 
         if not ok:
@@ -464,6 +472,7 @@ class EtiquetaApp(QWidget):
             dados["data_hora"],
             self.contagem_total,
             self.contagem_mensal,
+            repetir_em_falha=self.retry_checkbox.isChecked(),
         )
         if ok:
             self._atualizar_status("♻️ Reimpressão concluída", "lightblue")
@@ -514,6 +523,7 @@ class EtiquetaApp(QWidget):
                 self.contagem_mensal,
                 inicio_indice=inicio,
                 total_exibicao=total,
+                repetir_em_falha=self.retry_checkbox.isChecked(),
             )
 
             if not ok:
