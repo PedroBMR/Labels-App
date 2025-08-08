@@ -34,7 +34,7 @@ class FakeWin32:
 
 
 fake_win32 = FakeWin32()
-sys.modules["win32print"] = fake_win32
+sys.modules["win32print"] = fake_win32  # type: ignore[assignment]
 
 
 def test_reimpressao_faltantes(monkeypatch):
