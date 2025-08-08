@@ -7,6 +7,7 @@ from datetime import datetime
 
 from utils import recurso_caminho
 
+
 def carregar_contagem() -> tuple[int, int]:
     """Lê os contadores de impressão.
 
@@ -32,6 +33,7 @@ def carregar_contagem() -> tuple[int, int]:
         salvar_contagem(0, 0)
     return contagem_total, contagem_mensal
 
+
 def salvar_contagem(contagem_total: int, contagem_mensal: int) -> None:
     """Persiste os contadores de impressão.
 
@@ -49,6 +51,7 @@ def salvar_contagem(contagem_total: int, contagem_mensal: int) -> None:
     }
     with open(caminho, "w", encoding="utf-8") as arquivo:
         json.dump(dados, arquivo, ensure_ascii=False, indent=4)
+
 
 def salvar_historico(
     saida: str,
@@ -78,7 +81,8 @@ def salvar_historico(
                 ["Data e Hora", "Saída", "Categoria", "Emissor", "Município", "Volumes"]
             )
         writer.writerow([data_hora, saida, categoria, emissor, municipio, volumes])
-        
+
+
 def registrar_contagem_mensal(mes: str, quantidade: int) -> None:
     """Atualiza o total de etiquetas por mês.
 
@@ -96,6 +100,7 @@ def registrar_contagem_mensal(mes: str, quantidade: int) -> None:
     dados[mes] = dados.get(mes, 0) + quantidade
     with open(caminho, "w", encoding="utf-8") as arquivo:
         json.dump(dados, arquivo, ensure_ascii=False, indent=2)
+
 
 def carregar_historico_mensal() -> dict[str, int]:
     """Obtém os dados de impressão por mês.

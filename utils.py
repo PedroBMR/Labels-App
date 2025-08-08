@@ -7,6 +7,7 @@ from datetime import datetime
 
 from PIL import Image
 
+
 def _base_dir() -> str:
     """Obtém o diretório base do aplicativo.
 
@@ -17,6 +18,7 @@ def _base_dir() -> str:
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         return sys._MEIPASS
     return os.path.dirname(os.path.abspath(__file__))
+
 
 def recurso_caminho(rel_path: str) -> str:
     """Constroi caminho absoluto para um recurso em ``assets``.
@@ -30,7 +32,10 @@ def recurso_caminho(rel_path: str) -> str:
 
     return os.path.join(_base_dir(), "assets", rel_path)
 
-def melhorar_logo(path_logo: str, largura_desejada: int = 160) -> tuple[bytes, int, int]:
+
+def melhorar_logo(
+    path_logo: str, largura_desejada: int = 160
+) -> tuple[bytes, int, int]:
     """Converte a logo para bitmap monocromático TSPL.
 
     Args:
@@ -61,11 +66,12 @@ def melhorar_logo(path_logo: str, largura_desejada: int = 160) -> tuple[bytes, i
             for b in range(8):
                 x = x_byte * 8 + b
                 if x < logo_bw.width and pixels[x, y] == 0:
-                    byte |= (1 << (7 - b))
+                    byte |= 1 << (7 - b)
             bitmap_data.append(byte)
 
     # >>> importante: retornar bytes, não bytearray, para concatenar com b"..."
     return bytes(bitmap_data), largura_em_bytes, logo_bw.height
+
 
 def backup_automatico() -> None:
     """Realiza cópia de segurança dos arquivos de dados."""
@@ -93,6 +99,7 @@ def _install_dir() -> str:
         else os.path.dirname(os.path.abspath(__file__))
     )
 
+
 def migrate_legacy_data() -> None:
     """Migra arquivos legados para a nova estrutura de ``assets``."""
 
@@ -110,7 +117,9 @@ def migrate_legacy_data() -> None:
         "historico_impressoes.csv",
         "contagem.json",
         "contagem_mensal.json",
-        "logo.png", "color.png", "color.ico",
+        "logo.png",
+        "color.png",
+        "color.ico",
     ]
 
     for nome in arquivos:
