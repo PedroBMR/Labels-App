@@ -1,30 +1,43 @@
-# main.py
+"""Ponto de entrada do aplicativo de geração de etiquetas."""
+
 import os
 import sys
 from datetime import datetime
+
 from PyQt5.QtWidgets import QApplication
-from ui import EtiquetaApp
+
 from _version import __version__
+from ui import EtiquetaApp
 from utils import migrate_legacy_data
 
-def ensure_version_file():
+def ensure_version_file() -> None:
+    """Garante a criação do arquivo de versão.
+
+    Cria ou atualiza ``version.txt`` no diretório do executável quando o
+    aplicativo está congelado ou no diretório do arquivo em ambiente de
+    desenvolvimento.
+
+    Returns:
+        None
     """
-    Cria/atualiza um version.txt no diretório do executável (quando congelado)
-    ou no diretório deste arquivo (em dev).
-    """
+
     try:
         if getattr(sys, "frozen", False):
-            install_dir = os.path.dirname(sys.executable)   # caminho do .exe (PyInstaller)
+            # Caminho do executável gerado pelo PyInstaller.
+            install_dir = os.path.dirname(sys.executable)
         else:
-            install_dir = os.path.dirname(os.path.abspath(__file__))  # caminho dos .py
+            # Caminho dos arquivos .py em ambiente de desenvolvimento.
+            install_dir = os.path.dirname(os.path.abspath(__file__))
 
         path = os.path.join(install_dir, "version.txt")
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(str(__version__))
+        with open(path, "w", encoding="utf-8") as arquivo:
+            arquivo.write(str(__version__))
     except Exception:
-        # não falhe a inicialização por causa disso; apenas logue
-        with open("crash_log.txt", "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now():%d/%m/%Y %H:%M:%S}] Falha ao gravar version.txt\n")
+        # Não interrompe a inicialização; apenas registra o problema.
+        with open("crash_log.txt", "a", encoding="utf-8") as log:
+            log.write(
+                f"[{datetime.now():%d/%m/%Y %H:%M:%S}] Falha ao gravar version.txt\n"
+            )
 
 if __name__ == "__main__":
     try:

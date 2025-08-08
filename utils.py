@@ -1,32 +1,46 @@
-# utils.py
-import sys
+"""Funções utilitárias utilizadas pelo aplicativo."""
+
 import os
 import shutil
+import sys
 from datetime import datetime
+
 from PIL import Image
 
 def _base_dir() -> str:
+    """Obtém o diretório base do aplicativo.
+
+    Returns:
+        str: Caminho do diretório base.
     """
-    Diretório base do aplicativo.
-    - PyInstaller (onefile): usa a pasta temporária do _MEIPASS.
-    - Dev (.py): usa a pasta deste arquivo.
-    """
+
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         return sys._MEIPASS
     return os.path.dirname(os.path.abspath(__file__))
 
 def recurso_caminho(rel_path: str) -> str:
+    """Constroi caminho absoluto para um recurso em ``assets``.
+
+    Args:
+        rel_path (str): Caminho relativo dentro de ``assets``.
+
+    Returns:
+        str: Caminho absoluto para o recurso.
     """
-    Caminho absoluto para um recurso dentro da pasta 'assets'.
-    Funciona igual em dev e no .exe (desde que você inclua --add-data "assets;assets").
-    """
+
     return os.path.join(_base_dir(), "assets", rel_path)
 
-def melhorar_logo(path_logo: str, largura_desejada: int = 160):
+def melhorar_logo(path_logo: str, largura_desejada: int = 160) -> tuple[bytes, int, int]:
+    """Converte a logo para bitmap monocromático TSPL.
+
+    Args:
+        path_logo (str): Caminho para a imagem da logo.
+        largura_desejada (int, optional): Largura final desejada. Padrão 160.
+
+    Returns:
+        tuple[bytes, int, int]: Dados do bitmap, largura em bytes e altura em pixels.
     """
-    Carrega, redimensiona e converte a logo para bitmap monocromático TSPL.
-    Retorna: (dados_do_bitmap_em_bytes, largura_em_bytes, altura_em_pixels)
-    """
+
     logo = Image.open(path_logo).convert("L")  # escala de cinza
     proporcao = largura_desejada / logo.width
     nova_altura = int(round(logo.height * proporcao))
@@ -53,10 +67,9 @@ def melhorar_logo(path_logo: str, largura_desejada: int = 160):
     # >>> importante: retornar bytes, não bytearray, para concatenar com b"..."
     return bytes(bitmap_data), largura_em_bytes, logo_bw.height
 
-def backup_automatico():
-    """
-    Copia arquivos importantes de 'assets' para uma pasta '_backup' ao lado do app.
-    """
+def backup_automatico() -> None:
+    """Realiza cópia de segurança dos arquivos de dados."""
+
     base = _base_dir()
     origem = os.path.join(base, "assets")
     destino = os.path.join(base, "_backup")
@@ -69,16 +82,20 @@ def backup_automatico():
         if os.path.exists(orig):
             nome_backup = f"{arq.replace('.', f'_{agora}.')}"
             shutil.copy2(orig, os.path.join(destino, nome_backup))
-def _install_dir():
-    # pasta do .exe quando congelado; pasta deste arquivo em dev
-    return os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
 
-def migrate_legacy_data():
-    """
-    Copia arquivos importantes de _internal (legado) para assets (novo).
-    Se já existirem em assets, não sobrescreve. Depois tenta renomear _internal para backup.
-    Pode rodar várias vezes sem problema.
-    """
+
+def _install_dir() -> str:
+    """Retorna o diretório de instalação do aplicativo."""
+
+    return (
+        os.path.dirname(sys.executable)
+        if getattr(sys, "frozen", False)
+        else os.path.dirname(os.path.abspath(__file__))
+    )
+
+def migrate_legacy_data() -> None:
+    """Migra arquivos legados para a nova estrutura de ``assets``."""
+
     base = _install_dir()
     old_dir = os.path.join(base, "_internal")
     new_dir = os.path.join(base, "assets")
