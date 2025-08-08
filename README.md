@@ -75,11 +75,56 @@ Após um push ou pull request, o workflow **Build Windows Executable** gera um a
 2. Abra a execução mais recente do workflow.
 3. Baixe o artifact **GeradorEtiquetas** para obter `GeradorEtiquetas.exe`.
 
+## Atualização do aplicativo
+
+O pacote de atualização deve conter `Updater.bat`, `manifest.json` e o novo `GeradorEtiquetas.exe`.
+
+Exemplo de `manifest.json`:
+
+```json
+{
+  "exe": "GeradorEtiquetas.exe",
+  "version": "1.2.3",
+  "sha256": "EXEMPLODEHASH..."
+}
+```
+
+Sequência de uso:
+
+1. **Simular ações (dry-run)**:
+
+   ```
+   Updater.bat /D
+   ```
+
+   Saída típica:
+
+   ```
+   [Dry-run] Nenhuma alteracao sera feita.
+   [DRY-RUN] copy "GeradorEtiquetas.exe" "GeradorEtiquetas.exe"
+   [DRY-RUN] certutil -hashfile "GeradorEtiquetas.exe" SHA256
+   [DRY-RUN] echo 1.2.3 > version.txt
+   [DRY-RUN] copy "_internal\historico_impressoes.csv" "assets\historico_impressoes.csv"
+   [DRY-RUN] ren "_internal" "_internal.bak-AAAAMMDD_HHMM"
+   ```
+
+2. **Aplicar atualização**:
+
+   ```
+   Updater.bat
+   ```
+
+   Saída típica:
+
+   ```
+   Copiando novo executavel...
+   Hash SHA256 validado com sucesso.
+   Copiando historico_impressoes.csv para assets.
+   Renomeando _internal para _internal.bak-AAAAMMDD_HHMM.
+   Atualizacao concluida.
+   ```
+
 ---
 
 ## Autor
 
-Desenvolvido por Pedro Luiz Bortot  
-Consultoria e modularização por IA (OpenAI GPT)
-
----
