@@ -38,7 +38,7 @@ from persistence import (
     salvar_contagem,
     salvar_historico,
 )
-from printing import imprimir_etiqueta
+from printing import imprimir_etiqueta, descobrir_impressora_padrao
 from utils import backup_automatico, recurso_caminho
 from log import logger, LOG_FILE
 
@@ -76,6 +76,7 @@ class EtiquetaApp(QWidget):
         self._aplicar_tema_escuro()
         self._atualizar_status("🟢 Pronto")
         self._agendar_backup_diario()
+        self._verificar_impressora()
 
     def _agendar_backup_diario(self) -> None:
         """Agenda a execução do backup diário às 17h10."""
@@ -216,6 +217,9 @@ class EtiquetaApp(QWidget):
         self.log_btn = QPushButton("Ver Log")
         self.log_btn.clicked.connect(self._abrir_log)
 
+        self.testar_conexao_btn = QPushButton("Testar conexão")
+        self.testar_conexao_btn.clicked.connect(self._verificar_impressora)
+
         for b in (
             self.imprimir_btn,
             self.reimprimir_btn,
@@ -223,12 +227,14 @@ class EtiquetaApp(QWidget):
             self.historico_btn,
             self.historico_mes_btn,
             self.log_btn,
+            self.testar_conexao_btn,
         ):
             b.setStyleSheet(
                 "background:#24292e;color:#eeeeee;padding:8px 18px;border-radius:6px;"
                 "font-size: 14px;border: none;"
             )
             botoes.addWidget(b)
+        self.testar_conexao_btn.hide()
         layout_quadro.addLayout(botoes)
 
         # Status
@@ -341,6 +347,19 @@ class EtiquetaApp(QWidget):
             combo.setCurrentIndex(0)
         self.volumes_input.setValue(1)
 
+    def _verificar_impressora(self) -> None:
+        """Verifica a existência de impressora padrão e ajusta a UI."""
+
+        nome = descobrir_impressora_padrao()
+        if nome is None:
+            self.imprimir_btn.setEnabled(False)
+            self.testar_conexao_btn.show()
+            self._atualizar_status("⚠️ Nenhuma impressora detectada", "orange")
+        else:
+            self.imprimir_btn.setEnabled(True)
+            self.testar_conexao_btn.hide()
+            self._atualizar_status("🟢 Pronto")
+
     def _atualizar_status(
         self, mensagem: str = "🟢 Pronto", cor: str = "white"
     ) -> None:
@@ -383,18 +402,26 @@ class EtiquetaApp(QWidget):
             self._atualizar_status()
             return
 
-        try:
-            imprimir_etiqueta(
-                saida,
-                categoria,
-                emissor,
-                municipio,
-                volumes,
-                data_hora,
-                self.contagem_total,
-                self.contagem_mensal,
-            )
+        ok, erro = imprimir_etiqueta(
+            saida,
+            categoria,
+            emissor,
+            municipio,
+            volumes,
+            data_hora,
+            self.contagem_total,
+            self.contagem_mensal,
+        )
 
+        if not ok:
+            self._atualizar_status("⚠️ Erro na impressão", "orange")
+            logger.error("Erro na impressão: %s", erro)
+            QMessageBox.critical(
+                self, "Erro", f"{erro['code']}: {erro['message']}"
+            )
+            return
+
+        try:
             self.contagem_total += volumes
             self.contagem_mensal += volumes
             salvar_contagem(self.contagem_total, self.contagem_mensal)
@@ -414,7 +441,6 @@ class EtiquetaApp(QWidget):
             self._atualizar_status("✅ Impressão concluída", "lightgreen")
             QTimer.singleShot(30000, self._limpar_campos)
             self._atualizar_contagem_label()
-
         except Exception as e:
             self._atualizar_status("⚠️ Erro na impressão", "orange")
             logger.exception("Erro na impressão")
@@ -428,23 +454,25 @@ class EtiquetaApp(QWidget):
                 self, "Nenhuma etiqueta", "Nenhuma etiqueta foi impressa ainda."
             )
             return
-        try:
-            dados = self.ultima_etiqueta
-            imprimir_etiqueta(
-                dados["saida"],
-                dados["categoria"],
-                dados["emissor"],
-                dados["municipio"],
-                dados["volumes"],
-                dados["data_hora"],
-                self.contagem_total,
-                self.contagem_mensal,
-            )
+        dados = self.ultima_etiqueta
+        ok, erro = imprimir_etiqueta(
+            dados["saida"],
+            dados["categoria"],
+            dados["emissor"],
+            dados["municipio"],
+            dados["volumes"],
+            dados["data_hora"],
+            self.contagem_total,
+            self.contagem_mensal,
+        )
+        if ok:
             self._atualizar_status("♻️ Reimpressão concluída", "lightblue")
-        except Exception as e:
+        else:
             self._atualizar_status("⚠️ Erro na reimpressão", "orange")
-            logger.exception("Erro na reimpressão")
-            QMessageBox.critical(self, "Erro", str(e))
+            logger.error("Erro na reimpressão: %s", erro)
+            QMessageBox.critical(
+                self, "Erro", f"{erro['code']}: {erro['message']}"
+            )
 
     def _reimprimir_faltantes(self) -> None:
         """Reimprime apenas as etiquetas que faltaram de um lote."""
@@ -475,7 +503,7 @@ class EtiquetaApp(QWidget):
         try:
             from persistence import salvar_contagem, salvar_historico
 
-            imprimir_etiqueta(
+            ok, erro = imprimir_etiqueta(
                 dados["saida"],
                 dados["categoria"],
                 dados["emissor"],
@@ -487,6 +515,14 @@ class EtiquetaApp(QWidget):
                 inicio_indice=inicio,
                 total_exibicao=total,
             )
+
+            if not ok:
+                self._atualizar_status("⚠️ Erro na reimpressão de faltantes", "orange")
+                logger.error("Erro na reimpressão de faltantes: %s", erro)
+                QMessageBox.critical(
+                    self, "Erro", f"{erro['code']}: {erro['message']}"
+                )
+                return
 
             # Atualiza contadores e histórico apenas com as faltantes
             self.contagem_total += faltantes

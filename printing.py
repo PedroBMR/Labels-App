@@ -1,5 +1,7 @@
 """Rotinas relacionadas à impressão das etiquetas."""
 
+from typing import TypedDict
+
 import win32print
 
 from utils import melhorar_logo, recurso_caminho
@@ -7,6 +9,24 @@ from utils import melhorar_logo, recurso_caminho
 LARGURA_ETIQUETA_MM: int = 60
 ALTURA_ETIQUETA_MM: int = 80
 DOTS_MM: int = 8  # ~203 dpi
+
+
+class ErroImpressora(TypedDict):
+    code: int
+    message: str
+
+
+def descobrir_impressora_padrao() -> str | None:
+    """Retorna o nome da impressora padrão ou ``None`` se não houver.
+
+    Captura quaisquer exceções vindas do ``win32print`` e devolve ``None``
+    para indicar ausência ou erro ao obter a impressora.
+    """
+
+    try:
+        return win32print.GetDefaultPrinter()
+    except Exception:  # pragma: no cover - apenas em ambientes sem win32
+        return None
 
 
 def imprimir_etiqueta(
@@ -20,24 +40,13 @@ def imprimir_etiqueta(
     contagem_mensal: int = 0,
     inicio_indice: int = 1,
     total_exibicao: int | None = None,
-) -> bool:
+) -> tuple[bool, ErroImpressora | None]:
     """Monta e envia comandos TSPL para a impressora padrão.
 
-    Args:
-        saida (str): Número da saída.
-        categoria (str): Categoria da etiqueta.
-        emissor (str): Quem emitiu a etiqueta.
-        municipio (str): Município de destino.
-        volumes (int): Quantidade de etiquetas a imprimir.
-        data_hora (str): Data e hora formatadas da impressão.
-        contagem_total (int, optional): Total geral antes da impressão.
-        contagem_mensal (int, optional): Total do mês antes da impressão.
-        inicio_indice (int, optional): Número inicial para a sequência.
-        total_exibicao (int | None, optional): Total exibido no rodapé.
-
-    Returns:
-        bool: ``True`` se a impressão ocorrer sem erros.
+    Retorna ``(True, None)`` em caso de sucesso ou ``(False, erro)`` quando
+    ocorrer algum problema, contendo código e mensagem da falha.
     """
+
     # -------- prepara logo --------
     logo_path = recurso_caminho("logo.png")
     bitmap, largura_bytes, altura_px = melhorar_logo(logo_path, largura_desejada=240)
@@ -49,45 +58,50 @@ def imprimir_etiqueta(
     if total_exibicao is None:
         total_exibicao = volumes
 
-    # -------- abre impressora --------
-    nome_imp = win32print.GetDefaultPrinter()
-    h_prn = win32print.OpenPrinter(nome_imp)
-    win32print.StartDocPrinter(h_prn, 1, ("Etiqueta CONIMS", None, "RAW"))
-    win32print.StartPagePrinter(h_prn)
+    nome_imp = descobrir_impressora_padrao()
+    if nome_imp is None:
+        return False, {"code": 0, "message": "Nenhuma impressora padrão encontrada"}
 
-    # -------- monta e imprime etiquetas ----------
-    # agora imprimimos 'volumes' etiquetas, numerando a partir de 'inicio_indice'
-    for offset in range(volumes):
-        numero_atual = inicio_indice + offset  # ex.: 7,8,9,10
-        cmd = (
-            f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\n"
-            "GAP 2 mm,0 mm\n"
-            "CLS\n"
-            'TEXT 30,  20,"3",0,2,2,"CONIMS"\n'
-            'TEXT 30,  70,"2",0,1,1,"Saida: {saida}"\n'
-            'TEXT 30,  90,"2",0,1,1,"Categoria: {categoria}"\n'
-            'TEXT 30, 120,"2",0,1,1,"Emissor: {emissor}"\n'
-            'TEXT 30, 150,"2",0,1,1,"Municipio: {municipio}"\n'
-            'TEXT 30, 180,"2",0,1,1,"Impresso em: {data_hora}"\n'
-            'TEXT 30, 220,"2",0,1,1,"[ ] Fracao"\n'
-            'TEXT 30, 270,"2",0,1,1,"[ ] Fragil"\n'
-            'TEXT 30, 330,"4",0,2,2,"{i} DE {volumes_total}"\n'
-            f"BITMAP {x_logo},450,{largura_bytes},{altura_px},0,"
-        )
-        cmd = cmd.format(
-            saida=saida,
-            categoria=categoria,
-            emissor=emissor,
-            municipio=municipio,
-            data_hora=data_hora,
-            i=numero_atual,
-            volumes_total=total_exibicao,
-        )
-        corpo = cmd.encode() + bitmap + b"\nPRINT 1\n"
-        win32print.WritePrinter(h_prn, corpo)
+    try:
+        h_prn = win32print.OpenPrinter(nome_imp)
+        win32print.StartDocPrinter(h_prn, 1, ("Etiqueta CONIMS", None, "RAW"))
+        win32print.StartPagePrinter(h_prn)
 
-    # -------- Finaliza impressão --------
-    win32print.EndPagePrinter(h_prn)
-    win32print.EndDocPrinter(h_prn)
-    win32print.ClosePrinter(h_prn)
-    return True
+        # -------- monta e imprime etiquetas ----------
+        for offset in range(volumes):
+            numero_atual = inicio_indice + offset  # ex.: 7,8,9,10
+            cmd = (
+                f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\n"
+                "GAP 2 mm,0 mm\n"
+                "CLS\n"
+                'TEXT 30,  20,"3",0,2,2,"CONIMS"\n'
+                'TEXT 30,  70,"2",0,1,1,"Saida: {saida}"\n'
+                'TEXT 30,  90,"2",0,1,1,"Categoria: {categoria}"\n'
+                'TEXT 30, 120,"2",0,1,1,"Emissor: {emissor}"\n'
+                'TEXT 30, 150,"2",0,1,1,"Municipio: {municipio}"\n'
+                'TEXT 30, 180,"2",0,1,1,"Impresso em: {data_hora}"\n'
+                'TEXT 30, 220,"2",0,1,1,"[ ] Fracao"\n'
+                'TEXT 30, 270,"2",0,1,1,"[ ] Fragil"\n'
+                'TEXT 30, 330,"4",0,2,2,"{i} DE {volumes_total}"\n'
+                f"BITMAP {x_logo},450,{largura_bytes},{altura_px},0,"
+            )
+            cmd = cmd.format(
+                saida=saida,
+                categoria=categoria,
+                emissor=emissor,
+                municipio=municipio,
+                data_hora=data_hora,
+                i=numero_atual,
+                volumes_total=total_exibicao,
+            )
+            corpo = cmd.encode() + bitmap + b"\nPRINT 1\n"
+            win32print.WritePrinter(h_prn, corpo)
+
+        win32print.EndPagePrinter(h_prn)
+        win32print.EndDocPrinter(h_prn)
+        win32print.ClosePrinter(h_prn)
+        return True, None
+    except Exception as e:  # captura erros do win32print
+        codigo = getattr(e, "winerror", -1)
+        mensagem = getattr(e, "strerror", str(e))
+        return False, {"code": codigo, "message": mensagem}
