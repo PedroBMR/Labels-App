@@ -4,9 +4,9 @@ import win32print
 
 from utils import melhorar_logo, recurso_caminho
 
-LARGURA_ETIQUETA_MM = 60
-ALTURA_ETIQUETA_MM = 80
-DOTS_MM = 8  # ~203 dpi
+LARGURA_ETIQUETA_MM: int = 60
+ALTURA_ETIQUETA_MM: int = 80
+DOTS_MM: int = 8  # ~203 dpi
 
 
 def imprimir_etiqueta(

@@ -5,6 +5,8 @@ import json
 import os
 from datetime import datetime
 
+from typing import cast
+
 from utils import recurso_caminho
 
 
@@ -17,11 +19,11 @@ def carregar_contagem() -> tuple[int, int]:
 
     caminho = recurso_caminho("contagem.json")
     mes_atual = datetime.now().strftime("%m-%Y")
-    contagem_total = 0
-    contagem_mensal = 0
+    contagem_total: int = 0
+    contagem_mensal: int = 0
     if os.path.exists(caminho):
         with open(caminho, "r", encoding="utf-8") as arquivo:
-            dados = json.load(arquivo)
+            dados: dict[str, int | str] = json.load(arquivo)
         if dados.get("mes_atual") == mes_atual:
             contagem_total = int(dados.get("total_geral") or 0)
             contagem_mensal = int(dados.get("total_mes") or 0)
@@ -44,7 +46,7 @@ def salvar_contagem(contagem_total: int, contagem_mensal: int) -> None:
 
     caminho = recurso_caminho("contagem.json")
     os.makedirs(os.path.dirname(caminho), exist_ok=True)
-    dados = {
+    dados: dict[str, int | str] = {
         "total_geral": int(contagem_total or 0),
         "total_mes": int(contagem_mensal or 0),
         "mes_atual": datetime.now().strftime("%m-%Y"),
@@ -94,7 +96,7 @@ def registrar_contagem_mensal(mes: str, quantidade: int) -> None:
     caminho = recurso_caminho("contagem_mensal.json")
     if os.path.exists(caminho):
         with open(caminho, "r", encoding="utf-8") as arquivo:
-            dados = json.load(arquivo)
+            dados: dict[str, int] = json.load(arquivo)
     else:
         dados = {}
     dados[mes] = dados.get(mes, 0) + quantidade
@@ -112,5 +114,5 @@ def carregar_historico_mensal() -> dict[str, int]:
     caminho = recurso_caminho("contagem_mensal.json")
     if os.path.exists(caminho):
         with open(caminho, "r", encoding="utf-8") as arquivo:
-            return json.load(arquivo)
+            return cast(dict[str, int], json.load(arquivo))
     return {}
