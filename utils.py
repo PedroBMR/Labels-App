@@ -51,13 +51,17 @@ def melhorar_logo(
     nova_altura = int(round(logo.height * proporcao))
 
     # Redimensiona com alta qualidade
-    logo = logo.resize((largura_desejada, nova_altura), resample=Image.LANCZOS)
+    logo = logo.resize(
+        (largura_desejada, nova_altura), resample=Image.Resampling.LANCZOS
+    )
 
     # Binarização/dithering
-    logo_bw = logo.convert("1", dither=Image.FLOYDSTEINBERG)
+    logo_bw = logo.convert("1", dither=Image.Dither.FLOYDSTEINBERG)
 
     largura_em_bytes = largura_desejada // 8
     pixels = logo_bw.load()
+    if pixels is None:
+        raise RuntimeError("Falha ao carregar pixels")
 
     bitmap_data = bytearray()
     for y in range(logo_bw.height):
