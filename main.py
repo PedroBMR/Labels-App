@@ -2,12 +2,12 @@
 
 import os
 import sys
-from datetime import datetime
 
 from PyQt5.QtWidgets import QApplication
 
 from _version import __version__
 from ui import EtiquetaApp
+from log import logger
 from utils import migrate_legacy_data
 
 
@@ -35,14 +35,12 @@ def ensure_version_file() -> None:
             arquivo.write(str(__version__))
     except Exception:
         # Não interrompe a inicialização; apenas registra o problema.
-        with open("crash_log.txt", "a", encoding="utf-8") as log:
-            log.write(
-                f"[{datetime.now():%d/%m/%Y %H:%M:%S}] Falha ao gravar version.txt\n"
-            )
+        logger.exception("Falha ao gravar version.txt")
 
 
 if __name__ == "__main__":
     try:
+        logger.info("Aplicação iniciada")
         # 1) migra dados do legado para assets (uma vez só)
         migrate_legacy_data()
 
@@ -62,10 +60,4 @@ if __name__ == "__main__":
 
     except Exception:
         # Loga qualquer falha inesperada
-        import traceback
-
-        with open("crash_log.txt", "a", encoding="utf-8") as f:
-            f.write(
-                f"[{datetime.now():%d/%m/%Y %H:%M:%S}] "
-                f"Crash fatal:\n{traceback.format_exc()}\n\n"
-            )
+        logger.exception("Crash fatal")

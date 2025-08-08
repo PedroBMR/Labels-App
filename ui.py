@@ -4,8 +4,16 @@ import os
 from datetime import datetime
 from typing import TypedDict
 
-from PyQt5.QtCore import QDateTime, Qt, QTime, QTimer
-from PyQt5.QtGui import QColor, QFont, QIcon, QPalette, QPixmap, QCloseEvent
+from PyQt5.QtCore import QDateTime, Qt, QTime, QTimer, QUrl
+from PyQt5.QtGui import (
+    QColor,
+    QFont,
+    QIcon,
+    QPalette,
+    QPixmap,
+    QCloseEvent,
+    QDesktopServices,
+)
 from PyQt5.QtWidgets import (
     QComboBox,
     QFrame,
@@ -32,6 +40,7 @@ from persistence import (
 )
 from printing import imprimir_etiqueta
 from utils import backup_automatico, recurso_caminho
+from log import logger, LOG_FILE
 
 
 class EtiquetaInfo(TypedDict):
@@ -204,12 +213,16 @@ class EtiquetaApp(QWidget):
         self.historico_mes_btn = QPushButton("Histórico Mensal")
         self.historico_mes_btn.clicked.connect(self._mostrar_historico_mensal)
 
+        self.log_btn = QPushButton("Ver Log")
+        self.log_btn.clicked.connect(self._abrir_log)
+
         for b in (
             self.imprimir_btn,
             self.reimprimir_btn,
             self.reimprimir_faltantes_btn,
             self.historico_btn,
             self.historico_mes_btn,
+            self.log_btn,
         ):
             b.setStyleSheet(
                 "background:#24292e;color:#eeeeee;padding:8px 18px;border-radius:6px;"
@@ -404,13 +417,7 @@ class EtiquetaApp(QWidget):
 
         except Exception as e:
             self._atualizar_status("⚠️ Erro na impressão", "orange")
-            import traceback
-
-            with open("crash_log.txt", "a", encoding="utf-8") as f:
-                f.write(
-                    f"[{datetime.now():%d/%m/%Y %H:%M:%S}] "
-                    f"Erro na impressão:\n{traceback.format_exc()}\n\n"
-                )
+            logger.exception("Erro na impressão")
             QMessageBox.critical(self, "Erro", str(e))
 
     def _reimprimir_ultima(self) -> None:
@@ -436,13 +443,7 @@ class EtiquetaApp(QWidget):
             self._atualizar_status("♻️ Reimpressão concluída", "lightblue")
         except Exception as e:
             self._atualizar_status("⚠️ Erro na reimpressão", "orange")
-            import traceback
-
-            with open("crash_log.txt", "a", encoding="utf-8") as f:
-                f.write(
-                    f"[{datetime.now():%d/%m/%Y %H:%M:%S}] "
-                    f"Erro na reimpressão:\n{traceback.format_exc()}\n\n"
-                )
+            logger.exception("Erro na reimpressão")
             QMessageBox.critical(self, "Erro", str(e))
 
     def _reimprimir_faltantes(self) -> None:
@@ -504,14 +505,18 @@ class EtiquetaApp(QWidget):
             self._atualizar_status("♻️ Faltantes reimpressas", "lightblue")
         except Exception as e:
             self._atualizar_status("⚠️ Erro na reimpressão de faltantes", "orange")
-            import traceback
-
-            with open("crash_log.txt", "a", encoding="utf-8") as f:
-                f.write(
-                    f"[{datetime.now():%d/%m/%Y %H:%M:%S}] "
-                    f"Erro na reimpressão de faltantes:\n{traceback.format_exc()}\n\n"
-                )
+            logger.exception("Erro na reimpressão de faltantes")
             QMessageBox.critical(self, "Erro", str(e))
+
+    def _abrir_log(self) -> None:
+        """Abre o arquivo de log gerado pela aplicação."""
+
+        if not os.path.exists(LOG_FILE):
+            QMessageBox.information(
+                self, "Log", "O arquivo de log ainda não foi criado."
+            )
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(LOG_FILE))
 
     def _mostrar_historico_mensal(self) -> None:
         """Exibe um resumo das etiquetas impressas por mês."""
