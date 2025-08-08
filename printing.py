@@ -121,3 +121,79 @@ def imprimir_etiqueta(
                 return False, {"code": codigo, "message": mensagem}
             atraso = 0.5 * (2 ** (tentativa - 1))
             time.sleep(atraso)
+
+
+def imprimir_pagina_teste(
+    repetir_em_falha: bool = False,
+) -> tuple[bool, ErroImpressora | None]:
+    """Imprime uma página de teste padrão.
+
+    A etiqueta contém o logo, campos fictícios, numeração ``1 DE 1`` e uma
+    régua horizontal de 50 mm para calibração da impressora.
+    """
+
+    logo_path = recurso_caminho("logo.png")
+    bitmap, largura_bytes, altura_px = melhorar_logo(logo_path, largura_desejada=240)
+
+    dots_x = LARGURA_ETIQUETA_MM * DOTS_MM
+    x_logo = (dots_x - (largura_bytes * 8)) // 2
+
+    nome_imp = descobrir_impressora_padrao()
+    if nome_imp is None:
+        return False, {"code": 0, "message": "Nenhuma impressora padrão encontrada"}
+
+    max_tentativas = 3 if repetir_em_falha else 1
+    for tentativa in range(1, max_tentativas + 1):
+        logger.info("Tentativa %s de impressão", tentativa)
+        try:
+            h_prn = win32print.OpenPrinter(nome_imp)
+            win32print.StartDocPrinter(h_prn, 1, ("Etiqueta CONIMS", None, "RAW"))
+            win32print.StartPagePrinter(h_prn)
+
+            # --- monta pagina de teste ---
+            cmd = (
+                f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\n"
+                "GAP 2 mm,0 mm\n"
+                "CLS\n"
+                'TEXT 30,  20,"3",0,2,2,"CONIMS"\n'
+                'TEXT 30,  70,"2",0,1,1,"Saída: 000"\n'
+                'TEXT 30,  90,"2",0,1,1,"Categoria: TESTE"\n'
+                'TEXT 30, 120,"2",0,1,1,"Emissor: TESTE"\n'
+                'TEXT 30, 150,"2",0,1,1,"Município: TESTE"\n'
+                'TEXT 30, 180,"2",0,1,1,"Impresso em: 00/00/0000 00:00"\n'
+                'TEXT 30, 330,"4",0,2,2,"1 DE 1"\n'
+                f"BITMAP {x_logo},450,{largura_bytes},{altura_px},0,"
+            )
+
+            # Régua de 50 mm para calibração
+            ruler_start = 30
+            ruler_y = 600
+            ruler_len = 50 * DOTS_MM
+            barras = f"BAR {ruler_start},{ruler_y},{ruler_len},4\n"
+            for i in range(6):  # marcas a cada 10 mm
+                altura = 20 if i in (0, 5) else 12
+                x = ruler_start + i * 10 * DOTS_MM
+                y = ruler_y - altura
+                barras += f"BAR {x},{y},2,{altura}\n"
+
+            corpo = cmd.encode() + bitmap + f"\n{barras}PRINT 1\n".encode()
+            win32print.WritePrinter(h_prn, corpo)
+
+            win32print.EndPagePrinter(h_prn)
+            win32print.EndDocPrinter(h_prn)
+            win32print.ClosePrinter(h_prn)
+            logger.info("Impressão concluída na tentativa %s", tentativa)
+            return True, None
+        except Exception as e:  # captura erros do win32print
+            codigo = getattr(e, "winerror", -1)
+            mensagem = getattr(e, "strerror", str(e))
+            logger.warning(
+                "Falha na tentativa %s de impressão: %s - %s",
+                tentativa,
+                codigo,
+                mensagem,
+            )
+            if tentativa == max_tentativas:
+                return False, {"code": codigo, "message": mensagem}
+            atraso = 0.5 * (2 ** (tentativa - 1))
+            time.sleep(atraso)

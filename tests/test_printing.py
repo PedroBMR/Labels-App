@@ -78,6 +78,25 @@ def test_reimpressao_faltantes(monkeypatch):
     assert any("10 DE 10" in t for t in textos)
 
 
+def test_imprimir_pagina_teste(monkeypatch):
+    import printing
+
+    fake_win32.written.clear()
+    monkeypatch.setattr(
+        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
+    )
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+
+    ok, erro = printing.imprimir_pagina_teste()
+
+    assert ok
+    assert erro is None
+    assert len(fake_win32.written) == 1
+    texto = fake_win32.written[0].decode("latin1")
+    assert "1 DE 1" in texto
+    assert "BAR 30,600,400,4" in texto
+
+
 def test_retry_exponencial_logging(monkeypatch, caplog):
     import printing
     import logging

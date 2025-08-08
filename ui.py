@@ -39,7 +39,11 @@ from persistence import (
     salvar_contagem,
     salvar_historico,
 )
-from printing import imprimir_etiqueta, descobrir_impressora_padrao
+from printing import (
+    imprimir_etiqueta,
+    descobrir_impressora_padrao,
+    imprimir_pagina_teste,
+)
 from utils import backup_automatico, recurso_caminho
 from log import logger, LOG_FILE
 
@@ -224,6 +228,9 @@ class EtiquetaApp(QWidget):
         self.log_btn = QPushButton("Ver Log")
         self.log_btn.clicked.connect(self._abrir_log)
 
+        self.teste_pagina_btn = QPushButton("Imprimir página de teste")
+        self.teste_pagina_btn.clicked.connect(self._imprimir_teste)
+
         self.testar_conexao_btn = QPushButton("Testar conexão")
         self.testar_conexao_btn.clicked.connect(self._verificar_impressora)
 
@@ -234,6 +241,7 @@ class EtiquetaApp(QWidget):
             self.historico_btn,
             self.historico_mes_btn,
             self.log_btn,
+            self.teste_pagina_btn,
             self.testar_conexao_btn,
         ):
             b.setStyleSheet(
@@ -453,6 +461,22 @@ class EtiquetaApp(QWidget):
             self._atualizar_status("⚠️ Erro na impressão", "orange")
             logger.exception("Erro na impressão")
             QMessageBox.critical(self, "Erro", str(e))
+
+    def _imprimir_teste(self) -> None:
+        """Imprime uma página de teste padrão."""
+
+        self._atualizar_status("🖨️ Imprimindo teste…")
+        ok, erro = imprimir_pagina_teste(
+            repetir_em_falha=self.retry_checkbox.isChecked()
+        )
+        if ok:
+            self._atualizar_status("✅ Página de teste impressa", "lightgreen")
+        else:
+            self._atualizar_status("⚠️ Erro na impressão de teste", "orange")
+            logger.error("Erro na impressão de teste: %s", erro)
+            QMessageBox.critical(
+                self, "Erro", f"{erro['code']}: {erro['message']}"
+            )
 
     def _reimprimir_ultima(self) -> None:
         """Reimprime a última etiqueta gerada, se houver."""
