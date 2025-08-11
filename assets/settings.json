@@ -1,6 +1,7 @@
 {
-  "ultima_impressora": "",
-  "template": "Padrão",
-  "retry_automatico": false,
-  "backup_horario": "17:10"
+    "ultima_impressora": "dummy",
+    "template": "Padrão",
+    "retry_automatico": false,
+    "backup_horario": "17:10",
+    "backup_quantidade": 7
 }

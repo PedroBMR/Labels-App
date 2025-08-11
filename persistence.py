@@ -14,6 +14,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "template": "Padrão",
     "retry_automatico": False,
     "backup_horario": "17:10",
+    "backup_quantidade": 7,
 }
 
 
