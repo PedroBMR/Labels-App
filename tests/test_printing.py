@@ -78,6 +78,42 @@ def test_reimpressao_faltantes(monkeypatch):
     assert any("10 DE 10" in t for t in textos)
 
 
+def test_reimpressao_intervalo(monkeypatch):
+    import printing
+
+    fake_win32.written.clear()
+    monkeypatch.setattr(
+        printing,
+        "melhorar_logo",
+        lambda p, largura_desejada=240: (b"ABC", 1, 1),
+    )
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+
+    total = 10
+    inicio, fim = 5, 8
+    volumes = fim - inicio + 1
+
+    printing.imprimir_etiqueta(
+        "S1",
+        "Cat",
+        "Emissor",
+        "Mun",
+        volumes,
+        "2024-01-01",
+        0,
+        0,
+        inicio_indice=inicio,
+        total_exibicao=total,
+    )
+
+    assert len(fake_win32.written) == volumes
+    textos = [data.decode("latin1") for data in fake_win32.written]
+    assert any("5 DE 10" in t for t in textos)
+    assert any("8 DE 10" in t for t in textos)
+    assert all("4 DE 10" not in t for t in textos)
+    assert all("9 DE 10" not in t for t in textos)
+
+
 def test_imprimir_pagina_teste(monkeypatch):
     import printing
 

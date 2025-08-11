@@ -229,6 +229,9 @@ class EtiquetaApp(QWidget):
         self.reimprimir_faltantes_btn = QPushButton("Reimprimir Faltantes")
         self.reimprimir_faltantes_btn.clicked.connect(self._reimprimir_faltantes)
 
+        self.reimprimir_intervalo_btn = QPushButton("Reimprimir Intervalo…")
+        self.reimprimir_intervalo_btn.clicked.connect(self._reimprimir_intervalo)
+
         self.historico_btn = QPushButton("Abrir Histórico")
         self.historico_btn.clicked.connect(self._abrir_historico)
 
@@ -255,6 +258,7 @@ class EtiquetaApp(QWidget):
             self.imprimir_btn,
             self.reimprimir_btn,
             self.reimprimir_faltantes_btn,
+            self.reimprimir_intervalo_btn,
             self.historico_btn,
             self.historico_mes_btn,
             self.exportar_relatorio_btn,
@@ -594,6 +598,78 @@ class EtiquetaApp(QWidget):
         except Exception as e:
             self._atualizar_status("⚠️ Erro na reimpressão de faltantes", "orange")
             logger.exception("Erro na reimpressão de faltantes")
+            QMessageBox.critical(self, "Erro", str(e))
+
+    def _reimprimir_intervalo(self) -> None:
+        """Reimprime um intervalo específico da última etiqueta."""
+
+        if self.ultima_etiqueta is None:
+            QMessageBox.information(
+                self, "Nenhuma etiqueta", "Nenhuma etiqueta foi impressa ainda."
+            )
+            return
+
+        dados = self.ultima_etiqueta
+        total = int(dados["volumes"])
+
+        intervalo, ok = QInputDialog.getText(
+            self,
+            "Reimprimir Intervalo",
+            f"Informe o intervalo (1-{total}, ex.: 5-8):",
+        )
+        if not ok or not intervalo:
+            return
+
+        try:
+            intervalo = intervalo.replace("–", "-").replace(" ", "")
+            inicio_str, fim_str = intervalo.split("-")
+            inicio = int(inicio_str)
+            fim = int(fim_str)
+        except ValueError:
+            QMessageBox.warning(
+                self,
+                "Intervalo inválido",
+                "Use o formato início-fim, ex.: 5-8.",
+            )
+            return
+
+        if inicio < 1 or fim > total or inicio > fim:
+            QMessageBox.warning(
+                self,
+                "Intervalo inválido",
+                f"O intervalo deve estar entre 1 e {total}.",
+            )
+            return
+
+        volumes = fim - inicio + 1
+
+        try:
+            ok, erro = imprimir_etiqueta(
+                dados["saida"],
+                dados["categoria"],
+                dados["emissor"],
+                dados["municipio"],
+                volumes,
+                dados["data_hora"],
+                self.contagem_total,
+                self.contagem_mensal,
+                inicio_indice=inicio,
+                total_exibicao=total,
+                repetir_em_falha=self.retry_checkbox.isChecked(),
+            )
+            if ok:
+                self._atualizar_status("♻️ Intervalo reimpresso", "lightblue")
+            else:
+                self._atualizar_status(
+                    "⚠️ Erro na reimpressão do intervalo", "orange"
+                )
+                logger.error("Erro na reimpressão do intervalo: %s", erro)
+                QMessageBox.critical(
+                    self, "Erro", f"{erro['code']}: {erro['message']}"
+                )
+        except Exception as e:
+            self._atualizar_status("⚠️ Erro na reimpressão do intervalo", "orange")
+            logger.exception("Erro na reimpressão do intervalo")
             QMessageBox.critical(self, "Erro", str(e))
 
     def _abrir_log(self) -> None:
