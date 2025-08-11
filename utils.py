@@ -33,6 +33,26 @@ def recurso_caminho(rel_path: str) -> str:
     return os.path.join(_base_dir(), "assets", rel_path)
 
 
+def normalize_text(texto: str, *, max_len: int) -> tuple[str, str | None]:
+    """Remove espaços extras e caracteres inválidos de ``texto``.
+
+    Args:
+        texto (str): Texto de entrada.
+        max_len (int): Tamanho máximo permitido.
+
+    Returns:
+        tuple[str, str | None]: Texto normalizado e mensagem de erro, se houver.
+    """
+
+    limpo = texto.strip()
+    if ";" in limpo:
+        limpo = limpo.replace(";", "")
+        return limpo[:max_len], "Caracter ';' removido"
+    if len(limpo) > max_len:
+        return limpo[:max_len], f"Limite de {max_len} caracteres excedido"
+    return limpo, None
+
+
 def melhorar_logo(
     path_logo: str, largura_desejada: int = 160
 ) -> tuple[bytes, int, int]:
@@ -161,7 +181,9 @@ def migrate_legacy_data() -> None:
                 dst_lines,
             )
 
-            if os.path.exists(destino) and (dst_size > src_size or dst_lines > src_lines):
+            if os.path.exists(destino) and (
+                dst_size > src_size or dst_lines > src_lines
+            ):
                 logger.info(
                     "%s existente é maior; arquivo legado mantido como backup", nome
                 )
