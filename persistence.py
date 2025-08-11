@@ -115,3 +115,45 @@ def carregar_historico_mensal() -> dict[str, int]:
         with open(caminho, "r", encoding="utf-8") as arquivo:
             return cast(dict[str, int], json.load(arquivo))
     return {}
+
+
+def gerar_relatorio_mensal(mes: str) -> str:
+    """Gera um relatório consolidado de um mês específico.
+
+    O relatório contém os totais de etiquetas agrupados por categoria,
+    município e emissor. O arquivo é salvo na pasta ``reports`` na raiz do
+    aplicativo, com o nome ``relatorio_YYYY-MM.csv``.
+
+    Args:
+        mes (str): Mês desejado no formato ``YYYY-MM``.
+
+    Returns:
+        str: Caminho absoluto do relatório gerado.
+    """
+
+    hist_path = recurso_caminho("historico_impressoes.csv")
+    if not os.path.exists(hist_path):
+        raise FileNotFoundError("Histórico de impressões não encontrado")
+
+    totais: dict[tuple[str, str, str], int] = {}
+    with open(hist_path, newline="", encoding="utf-8-sig") as arquivo:
+        reader = csv.DictReader(arquivo, delimiter=";")
+        for row in reader:
+            data = datetime.strptime(row["Data e Hora"], "%d/%m/%Y %H:%M:%S")
+            if data.strftime("%Y-%m") != mes:
+                continue
+            chave = (row["Categoria"], row["Município"], row["Emissor"])
+            totais[chave] = totais.get(chave, 0) + int(row["Volumes"])
+
+    base_dir = os.path.dirname(recurso_caminho(""))
+    reports_dir = os.path.join(base_dir, "reports")
+    os.makedirs(reports_dir, exist_ok=True)
+    relatorio_path = os.path.join(reports_dir, f"relatorio_{mes}.csv")
+
+    with open(relatorio_path, "w", newline="", encoding="utf-8-sig") as arquivo:
+        writer = csv.writer(arquivo, delimiter=";")
+        writer.writerow(["Categoria", "Município", "Emissor", "Volumes"])
+        for (categoria, municipio, emissor), total in sorted(totais.items()):
+            writer.writerow([categoria, municipio, emissor, total])
+
+    return relatorio_path
