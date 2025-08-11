@@ -1,0 +1,12 @@
+{
+  "Padrão": {
+    "largura_mm": 60,
+    "altura_mm": 80,
+    "gap_mm": 2
+  },
+  "Compacto": {
+    "largura_mm": 50,
+    "altura_mm": 60,
+    "gap_mm": 2
+  }
+}

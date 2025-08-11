@@ -2,15 +2,50 @@
 
 from typing import TypedDict
 
+import json
 import time
 import win32print
 
 from utils import melhorar_logo, recurso_caminho
 from log import logger
 
+DOTS_MM: int = 8  # ~203 dpi
+
+# -------------------- templates --------------------
+try:
+    with open(recurso_caminho("templates.json"), "r", encoding="utf-8") as f:
+        TEMPLATES: dict[str, dict[str, int]] = json.load(f)
+except Exception:
+    # Fallback para garantir funcionamento mesmo sem arquivo
+    TEMPLATES = {
+        "Padrão": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2}
+    }
+
 LARGURA_ETIQUETA_MM: int = 60
 ALTURA_ETIQUETA_MM: int = 80
-DOTS_MM: int = 8  # ~203 dpi
+GAP_MM: int = 2
+
+
+def listar_templates() -> list[str]:
+    """Retorna a lista de nomes de templates disponíveis."""
+
+    return list(TEMPLATES.keys())
+
+
+def aplicar_template(nome: str) -> None:
+    """Define qual template será utilizado nas impressões."""
+
+    modelo = TEMPLATES.get(nome)
+    if not modelo:
+        modelo = TEMPLATES[list(TEMPLATES.keys())[0]]
+    global LARGURA_ETIQUETA_MM, ALTURA_ETIQUETA_MM, GAP_MM
+    LARGURA_ETIQUETA_MM = int(modelo.get("largura_mm", 60))
+    ALTURA_ETIQUETA_MM = int(modelo.get("altura_mm", 80))
+    GAP_MM = int(modelo.get("gap_mm", 2))
+
+
+# aplica template padrão ao importar módulo
+aplicar_template("Padrão")
 
 
 class ErroImpressora(TypedDict):
@@ -78,7 +113,7 @@ def imprimir_etiqueta(
                 numero_atual = inicio_indice + offset  # ex.: 7,8,9,10
                 cmd = (
                     f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\n"
-                    "GAP 2 mm,0 mm\n"
+                    f"GAP {GAP_MM} mm,0 mm\n"
                     "CLS\n"
                     'TEXT 30,  20,"3",0,2,2,"CONIMS"\n'
                     'TEXT 30,  70,"2",0,1,1,"Saida: {saida}"\n'
@@ -153,7 +188,7 @@ def imprimir_pagina_teste(
             # --- monta pagina de teste ---
             cmd = (
                 f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\n"
-                "GAP 2 mm,0 mm\n"
+                f"GAP {GAP_MM} mm,0 mm\n"
                 "CLS\n"
                 'TEXT 30,  20,"3",0,2,2,"CONIMS"\n'
                 'TEXT 30,  70,"2",0,1,1,"Saída: 000"\n'

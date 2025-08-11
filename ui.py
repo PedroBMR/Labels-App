@@ -43,6 +43,8 @@ from printing import (
     imprimir_etiqueta,
     descobrir_impressora_padrao,
     imprimir_pagina_teste,
+    listar_templates,
+    aplicar_template,
 )
 from utils import backup_automatico, recurso_caminho
 from log import logger, LOG_FILE
@@ -167,6 +169,10 @@ class EtiquetaApp(QWidget):
         self.municipio_input.setEditable(True)
         self.volumes_input = QSpinBox()
         self.volumes_input.setMinimum(1)
+        self.template_input = QComboBox()
+        self.template_input.addItems(listar_templates())
+        self.template_input.currentTextChanged.connect(aplicar_template)
+        aplicar_template(self.template_input.currentText())
         self._carregar_listas()
 
         def _estilo(w):
@@ -181,6 +187,7 @@ class EtiquetaApp(QWidget):
             self.emissor_input,
             self.municipio_input,
             self.volumes_input,
+            self.template_input,
         ):
             _estilo(w)
 
@@ -201,6 +208,8 @@ class EtiquetaApp(QWidget):
         grid.addWidget(self.municipio_input, 3, 1)
         grid.addWidget(_lbl("Número de Volumes:"), 4, 0)
         grid.addWidget(self.volumes_input, 4, 1)
+        grid.addWidget(_lbl("Modelo:"), 5, 0)
+        grid.addWidget(self.template_input, 5, 1)
 
         self.retry_checkbox = QCheckBox("Repetir automaticamente em falha (3x)")
         self.retry_checkbox.setStyleSheet(
