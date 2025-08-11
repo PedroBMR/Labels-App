@@ -1,130 +1,127 @@
-# Gerador de Etiquetas CONIMS
+# Labels-App
 
-**Aplicação modular para geração e impressão de etiquetas térmicas (60x80mm) no padrão CONIMS.**
+Aplicativo desktop para **geração e impressão de etiquetas térmicas** no padrão
+CONIMS. Desenvolvido em Python, ele facilita o controle de saídas de material,
+mantém histórico de impressões e permite personalizar o layout das etiquetas.
+
+---
+
+## Descrição Geral
+
+O Labels-App ajuda instituições que precisam emitir etiquetas de identificação
+para caixas e volumes. A aplicação gera etiquetas de 60x80&nbsp;mm, envia a
+impressão diretamente para impressoras térmicas compatíveis com TSPL e armazena
+todo o histórico gerado. É possível escolher modelos de layout, reimprimir
+etiquetas e realizar backup automático dos dados.
+
+---
+
+## Funcionalidades
+
+- Seleção da impressora padrão e configuração de modelos de etiqueta.
+- Geração e impressão imediata de etiquetas térmicas.
+- Reimpressão do último lote, de volumes faltantes ou de um intervalo
+  específico.
+- Histórico completo das impressões com exportação para CSV.
+- Relatório mensal consolidado por categoria, município e emissor.
+- Backup automático diário dos arquivos de dados.
+- Personalização de layout através de templates definidos em `assets/templates.json`.
+
+---
+
+## Requisitos do Sistema
+
+- **Python 3.11 ou superior**
+- **PyQt5** para a interface gráfica
+- **Pillow** para tratamento de imagens
+- **pywin32** (somente no Windows) para envio direto à impressora
+- Impressora térmica compatível com **TSPL** (ex.: Gainscha GS‑2406T)
+
+Instale as dependências com:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## Instalação
+
+### Ambiente de desenvolvimento
+
+1. Clone o repositório e entre na pasta do projeto.
+2. Crie um ambiente virtual opcional e instale as dependências.
+3. Execute o aplicativo:
+
+   ```bash
+   python main.py
+   ```
+
+### Versão compilada (Windows)
+
+1. Baixe `GeradorEtiquetas.exe` nas releases ou como artifact do fluxo de CI.
+2. Coloque o arquivo em uma pasta com permissão de escrita.
+3. Execute o `.exe` para abrir o aplicativo.
+
+---
+
+## Uso
+
+1. Na tela inicial informe **Saída**, **Categoria**, **Emissor**,
+   **Município** e **Volumes**.
+2. Escolha o modelo de etiqueta e pressione **Imprimir Agora**.
+3. Utilize os botões de reimpressão para repetir o último lote ou corrigir
+   faltantes.
+
+![Tela principal](assets/color.png)
+
+> *Exemplo de formulário principal. Substitua a imagem por capturas reais do
+> seu fluxo de impressão.*
+
+---
+
+## Atualizações
+
+O arquivo `Updater.bat` automatiza a atualização do executável e dos dados.
+Coloque `Updater.bat`, `manifest.json` e o novo `GeradorEtiquetas.exe` na mesma
+pasta e execute:
+
+```bat
+Updater.bat /D   :: simula a atualização (dry‑run)
+Updater.bat      :: aplica a atualização
+```
+
+O script valida o hash SHA256, cria backups e migra arquivos de histórico para a
+pasta `assets/`. Mantenha sempre um backup do diretório antes de atualizar.
 
 ---
 
 ## Estrutura do Projeto
 
-
-*(Os outros módulos serão adicionados nas próximas etapas)*
-
----
-
-## Requisitos
-
-- **Python 3.11+**
-- **Pillow** (`pip install Pillow`)
-- **PyQt5** (`pip install PyQt5`)
-- **pywin32** (`pip install pywin32`)  *(Para impressão direta no Windows)*
-- **Impressora térmica compatível com TSPL (ex: Gainscha GS-2406T)*
+- `main.py` – ponto de entrada da aplicação.
+- `ui.py` – interface gráfica e fluxo de interação com o usuário.
+- `printing.py` – montagem das etiquetas e comunicação com a impressora.
+- `persistence.py` – salvamento de configurações, contadores e histórico.
+- `utils.py` – utilitários, backup automático e migração de dados legados.
+- `assets/` – ícones, configurações, modelos e arquivos de histórico.
+- `Updater.bat` – script de atualização do executável e dos dados.
 
 ---
 
-## Modo de uso (após todos os arquivos prontos)
+## Contribuição
 
-1. Instale as dependências:
+Contribuições são bem-vindas! Para sugerir melhorias ou reportar problemas:
 
-2. Coloque sua logo em `_internal/logo.png` e/ou outros recursos.
-
-3. Rode o app com:
-
-4. Use o formulário para gerar e imprimir etiquetas.
-
----
-
-## Organização Modular
-
-- **utils.py**: Funções auxiliares (caminhos de recursos, tratamento da logo, etc)
-- **persistence.py**: Funções de salvar e carregar histórico/contagem
-- **printing.py**: Função de montar e enviar etiquetas TSPL para impressora
-- **ui.py**: Interface gráfica (PyQt5), formulário, status, integração total dos módulos.
-- **main.py**: Ponto de entrada do app (executável principal)
+1. Abra uma *issue* descrevendo o que deseja corrigir ou implementar.
+2. Faça um *fork* do projeto, crie um *branch* e envie um *pull request* com a
+   alteração proposta.
+3. Sempre inclua testes e descreva claramente as mudanças.
 
 ---
 
-## Testes
+## Licença
 
-Para executar a suíte de testes automatizados, instale as dependências e rode:
-
-```
-pytest -q
-```
-
-## Como buildar local
-
-1. Instale as dependências:
-
-   ```
-   pip install pyinstaller pyqt5 pillow pywin32
-   ```
-
-2. Gere o executável:
-
-   ```
-   pyinstaller GeradorEtiquetas_onefile.spec
-   ```
-
-   O binário será criado em `dist/GeradorEtiquetas.exe`.
-
-## Como baixar o artifact
-
-Após cada push ou pull request, o workflow **Build Windows Executable** compila o aplicativo e disponibiliza `GeradorEtiquetas.exe` como artifact.
-
-1. Acesse a aba **Actions** do repositório no GitHub.
-2. Abra a execução mais recente do workflow.
-3. Baixe o artifact **GeradorEtiquetas** para obter `dist/GeradorEtiquetas.exe`.
-
-## Atualização do aplicativo
-
-O pacote de atualização deve conter `Updater.bat`, `manifest.json` e o novo `GeradorEtiquetas.exe`.
-
-Exemplo de `manifest.json`:
-
-```json
-{
-  "exe": "GeradorEtiquetas.exe",
-  "version": "1.2.3",
-  "sha256": "EXEMPLODEHASH..."
-}
-```
-
-Sequência de uso:
-
-1. **Simular ações (dry-run)**:
-
-   ```
-   Updater.bat /D
-   ```
-
-   Saída típica:
-
-   ```
-   [Dry-run] Nenhuma alteracao sera feita.
-   [DRY-RUN] copy "GeradorEtiquetas.exe" "GeradorEtiquetas.exe"
-   [DRY-RUN] certutil -hashfile "GeradorEtiquetas.exe" SHA256
-   [DRY-RUN] echo 1.2.3 > version.txt
-   [DRY-RUN] copy "_internal\historico_impressoes.csv" "assets\historico_impressoes.csv"
-   [DRY-RUN] ren "_internal" "_internal.bak-AAAAMMDD_HHMM"
-   ```
-
-2. **Aplicar atualização**:
-
-   ```
-   Updater.bat
-   ```
-
-   Saída típica:
-
-   ```
-   Copiando novo executavel...
-   Hash SHA256 validado com sucesso.
-   Copiando historico_impressoes.csv para assets.
-   Renomeando _internal para _internal.bak-AAAAMMDD_HHMM.
-   Atualizacao concluida.
-   ```
-
----
-
-## Autor
+Este projeto é distribuído sob a **licença MIT**. Você pode usar, copiar,
+modificar e distribuir o software, desde que preserve o aviso de copyright e a
+licença original.
 
