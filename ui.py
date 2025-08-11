@@ -32,6 +32,7 @@ from PyQt5.QtWidgets import (
     QSpacerItem,
     QSpinBox,
     QTimeEdit,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -39,14 +40,14 @@ from PyQt5.QtWidgets import (
 from log import LOG_FILE, logger
 from persistence import (
     atualizar_recentes,
-    carregar_contagem,
     carregar_config,
+    carregar_contagem,
     carregar_historico_mensal,
     carregar_recentes_listas,
     gerar_relatorio_mensal,
     registrar_contagem_mensal,
-    salvar_contagem,
     salvar_config,
+    salvar_contagem,
     salvar_historico,
 )
 from printing import (
@@ -56,7 +57,7 @@ from printing import (
     imprimir_pagina_teste,
     listar_templates,
 )
-from utils import backup_automatico, recurso_caminho
+from utils import backup_automatico, normalize_text, recurso_caminho
 
 CATEGORIAS_PADRAO = [
     "LIMPEZA, COPA, COZINHA",
@@ -314,6 +315,23 @@ class EtiquetaApp(QWidget):
         aplicar_template(self.template_input.currentText())
         self._carregar_listas()
 
+        # Limitações de entrada e normalização básica
+        self.saida_input.setMaxLength(20)
+        self.saida_input.editingFinished.connect(
+            lambda: self._sanitize_input(self.saida_input, 20)
+        )
+
+        for campo in (
+            self.categoria_input,
+            self.emissor_input,
+            self.municipio_input,
+        ):
+            linha = campo.lineEdit()
+            linha.setMaxLength(50)
+            linha.editingFinished.connect(
+                lambda c=campo: self._sanitize_input(c, 50)
+            )
+
         def _estilo(w):
             w.setStyleSheet(
                 "background:#191919;color:#e5e5e5;padding:7px;"
@@ -470,6 +488,28 @@ class EtiquetaApp(QWidget):
             self.municipio_input, recentes.get("municipio", []), MUNICIPIOS_PADRAO
         )
 
+    def _sanitize_input(
+        self, widget: QLineEdit | QComboBox, max_len: int
+    ) -> tuple[str, bool]:
+        """Normaliza texto de um campo e sinaliza se houve erro."""
+
+        if isinstance(widget, QComboBox):
+            line_edit = widget.lineEdit()
+        else:
+            line_edit = widget
+        texto = line_edit.text()
+        texto_norm, erro = normalize_text(texto, max_len=max_len)
+        line_edit.setText(texto_norm)
+        if erro:
+            QToolTip.showText(
+                line_edit.mapToGlobal(line_edit.rect().bottomLeft()),
+                erro,
+                line_edit,
+            )
+            line_edit.setFocus()
+            return texto_norm, True
+        return texto_norm, False
+
     def _atualizar_listas_recentes(
         self, categoria: str, emissor: str, municipio: str
     ) -> None:
@@ -558,17 +598,31 @@ class EtiquetaApp(QWidget):
         """Coleta dados do formulário e solicita a impressão."""
 
         self._atualizar_status("🖨️ Imprimindo…")
-        saida = str(self.saida_input.text()).strip()
-        categoria = self.categoria_input.currentText()
-        emissor = self.emissor_input.currentText()
-        municipio = self.municipio_input.currentText()
-        volumes = self.volumes_input.value()
-        data_hora = datetime.now().strftime("%d/%m/%Y %H:%M")
-
-        if saida == "":
-            QMessageBox.warning(self, "Campo obrigatório", "Preencha o campo Saída.")
+        saida, err = self._sanitize_input(self.saida_input, 20)
+        if err or saida == "":
+            if saida == "":
+                QMessageBox.warning(
+                    self, "Campo obrigatório", "Preencha o campo Saída."
+                )
             self._atualizar_status()
             return
+
+        categoria, err = self._sanitize_input(self.categoria_input, 50)
+        if err:
+            self._atualizar_status()
+            return
+
+        emissor, err = self._sanitize_input(self.emissor_input, 50)
+        if err:
+            self._atualizar_status()
+            return
+
+        municipio, err = self._sanitize_input(self.municipio_input, 50)
+        if err:
+            self._atualizar_status()
+            return
+        volumes = self.volumes_input.value()
+        data_hora = datetime.now().strftime("%d/%m/%Y %H:%M")
 
         ok, erro = imprimir_etiqueta(
             saida,
