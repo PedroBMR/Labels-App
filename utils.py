@@ -107,11 +107,27 @@ def _install_dir() -> str:
 def migrate_legacy_data() -> None:
     """Migra arquivos legados para a nova estrutura de ``assets``."""
 
+    from log import logger
+
+    def _stats(caminho: str) -> tuple[int, int]:
+        """Retorna tamanho em bytes e número de linhas do arquivo."""
+
+        if not os.path.exists(caminho):
+            return 0, 0
+        size = os.path.getsize(caminho)
+        try:
+            with open(caminho, "rb") as f:
+                lines = sum(1 for _ in f)
+        except Exception:
+            lines = 0
+        return size, lines
+
     base = _install_dir()
     old_dir = os.path.join(base, "_internal")
     new_dir = os.path.join(base, "assets")
 
     if not os.path.isdir(old_dir):
+        logger.info("Diretório legado não encontrado: %s", old_dir)
         return  # nada pra migrar
 
     os.makedirs(new_dir, exist_ok=True)
@@ -129,15 +145,53 @@ def migrate_legacy_data() -> None:
     for nome in arquivos:
         origem = os.path.join(old_dir, nome)
         destino = os.path.join(new_dir, nome)
-        if os.path.exists(origem) and not os.path.exists(destino):
+
+        if not os.path.exists(origem):
+            continue
+
+        if nome == "historico_impressoes.csv":
+            src_size, src_lines = _stats(origem)
+            dst_size, dst_lines = _stats(destino)
+            logger.info(
+                "%s origem: %d bytes/%d linhas; destino: %d bytes/%d linhas",
+                nome,
+                src_size,
+                src_lines,
+                dst_size,
+                dst_lines,
+            )
+
+            if os.path.exists(destino) and (dst_size > src_size or dst_lines > src_lines):
+                logger.info(
+                    "%s existente é maior; arquivo legado mantido como backup", nome
+                )
+                continue
+
             try:
                 shutil.copy2(origem, destino)
-            except Exception:
-                pass
+                final_size, final_lines = _stats(destino)
+                logger.info(
+                    "%s migrado: %d bytes/%d linhas",
+                    nome,
+                    final_size,
+                    final_lines,
+                )
+            except Exception as exc:
+                logger.exception("Falha ao migrar %s: %s", nome, exc)
+        else:
+            if os.path.exists(destino):
+                logger.info("%s já existe no destino; ignorado", nome)
+                continue
+            try:
+                shutil.copy2(origem, destino)
+                logger.info("%s migrado", nome)
+            except Exception as exc:
+                logger.exception("Falha ao migrar %s: %s", nome, exc)
 
     # renomeia _internal para um backup (se der)
     try:
         stamp = datetime.now().strftime("%Y%m%d_%H%M")
         os.rename(old_dir, os.path.join(base, f"_internal.bak-{stamp}"))
-    except Exception:
-        pass
+        logger.info("Diretório legado renomeado para backup")
+    except Exception as exc:
+        logger.exception("Falha ao renomear diretório legado: %s", exc)
