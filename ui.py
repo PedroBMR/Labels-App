@@ -6,20 +6,20 @@ from typing import TypedDict
 
 from PyQt5.QtCore import QDateTime, Qt, QTime, QTimer, QUrl
 from PyQt5.QtGui import (
+    QCloseEvent,
     QColor,
+    QDesktopServices,
     QFont,
     QIcon,
     QPalette,
     QPixmap,
-    QCloseEvent,
-    QDesktopServices,
 )
 from PyQt5.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
-    QCheckBox,
     QInputDialog,
     QLabel,
     QLineEdit,
@@ -32,23 +32,93 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from log import LOG_FILE, logger
 from persistence import (
+    atualizar_recentes,
     carregar_contagem,
     carregar_historico_mensal,
+    carregar_recentes_listas,
     gerar_relatorio_mensal,
     registrar_contagem_mensal,
     salvar_contagem,
     salvar_historico,
 )
 from printing import (
-    imprimir_etiqueta,
+    aplicar_template,
     descobrir_impressora_padrao,
+    imprimir_etiqueta,
     imprimir_pagina_teste,
     listar_templates,
-    aplicar_template,
 )
 from utils import backup_automatico, recurso_caminho
-from log import logger, LOG_FILE
+
+CATEGORIAS_PADRAO = [
+    "LIMPEZA, COPA, COZINHA",
+    "DEVOLUCAO",
+    "ORTOPEDICO",
+    "CRE CHOPIM",
+    "EXPEDIENTE",
+    "OSTOMIA",
+    "CURATIVOS",
+    "LIMPEZA",
+    "NUTRIÇAO",
+    "MEDICAMENTO",
+    "AMBULATORIAL",
+    "ODONTO",
+]
+
+EMISSORES_PADRAO = [
+    "FERNANDO",
+    "DANIELA",
+    "RUDINEY",
+    "ELIZANGELA",
+    "DANIELA E RUDINEY",
+    "DANIELA E ELIZANGELA",
+    "RUDINEY E ELIZANGELA",
+    "DANIELA, RUDINEY E ELIZANGELA",
+    "LUAN",
+    "LUCAS",
+    "ANDREY",
+    "LUAN E LUCAS",
+    "LUAN E ANDREY",
+    "LUCAS E ANDREY",
+    "LUAN, LUCAS E ANDREY",
+    "PEDRO LUIZ",
+]
+
+MUNICIPIOS_PADRAO = [
+    "ABELARDO LUZ",
+    "BOM SUCESSO DO SUL",
+    "CAIBI",
+    "CAMPO ERE",
+    "CHOPINZINHO",
+    "CRE CHOPIN",
+    "CLEVELANDIA",
+    "CORONEL DOMINGOS SOARES",
+    "CORONEL MARTINS",
+    "CORONEL VIVIDA",
+    "FORMOSA DO SUL",
+    "GALVAO",
+    "HONORIO SERPA",
+    "IPUACU",
+    "IRATI",
+    "ITAPEJARA D' OESTE",
+    "JUPIA",
+    "MANGUEIRINHA",
+    "MARIOPOLIS",
+    "NOVO HORIZONTE",
+    "OURO VERDE",
+    "PALMA SOLA",
+    "PALMAS",
+    "PATO BRANCO",
+    "SANTIAGO DO SUL",
+    "SAO BERNARDINO",
+    "SAO JOAO",
+    "SAO LOURENCO DO OESTE",
+    "SAUDADE DO IGUACU",
+    "SULINA",
+    "VITORINO",
+]
 
 
 class EtiquetaInfo(TypedDict):
@@ -238,12 +308,8 @@ class EtiquetaApp(QWidget):
         self.historico_mes_btn = QPushButton("Histórico Mensal")
         self.historico_mes_btn.clicked.connect(self._mostrar_historico_mensal)
 
-        self.exportar_relatorio_btn = QPushButton(
-            "Exportar relatório do mês atual"
-        )
-        self.exportar_relatorio_btn.clicked.connect(
-            self._exportar_relatorio_mes_atual
-        )
+        self.exportar_relatorio_btn = QPushButton("Exportar relatório do mês atual")
+        self.exportar_relatorio_btn.clicked.connect(self._exportar_relatorio_mes_atual)
 
         self.log_btn = QPushButton("Ver Log")
         self.log_btn.clicked.connect(self._abrir_log)
@@ -298,83 +364,46 @@ class EtiquetaApp(QWidget):
         p.setColor(QPalette.ButtonText, Qt.white)
         self.setPalette(p)
 
-    def _carregar_listas(self) -> None:
-        """Preenche as listas de seleção com valores padrão."""
+    def _popular_combo(
+        self, combo: QComboBox, recentes: list[str], padroes: list[str]
+    ) -> None:
+        combo.clear()
+        combo.addItem("")
+        for item in recentes:
+            combo.addItem(item)
+        for item in padroes:
+            if item not in recentes:
+                combo.addItem(item)
 
-        self.categoria_input.addItems(
-            [
-                "",
-                "LIMPEZA, COPA, COZINHA",
-                "DEVOLUCAO",
-                "ORTOPEDICO",
-                "CRE CHOPIM",
-                "EXPEDIENTE",
-                "OSTOMIA",
-                "CURATIVOS",
-                "LIMPEZA",
-                "NUTRIÇAO",
-                "MEDICAMENTO",
-                "AMBULATORIAL",
-                "ODONTO",
-            ]
+    def _reordenar_combo(self, combo: QComboBox, recentes: list[str]) -> None:
+        atuais = [combo.itemText(i) for i in range(combo.count()) if combo.itemText(i)]
+        restantes = [item for item in atuais if item not in recentes]
+        combo.clear()
+        combo.addItem("")
+        combo.addItems(recentes + restantes)
+
+    def _carregar_listas(self) -> None:
+        """Preenche as listas de seleção com valores padrão e recentes."""
+
+        recentes = carregar_recentes_listas()
+        self._popular_combo(
+            self.categoria_input, recentes.get("categoria", []), CATEGORIAS_PADRAO
         )
-        self.emissor_input.addItems(
-            [
-                "",
-                "FERNANDO",
-                "DANIELA",
-                "RUDINEY",
-                "ELIZANGELA",
-                "DANIELA E RUDINEY",
-                "DANIELA E ELIZANGELA",
-                "RUDINEY E ELIZANGELA",
-                "DANIELA, RUDINEY E ELIZANGELA",
-                "LUAN",
-                "LUCAS",
-                "ANDREY",
-                "LUAN E LUCAS",
-                "LUAN E ANDREY",
-                "LUCAS E ANDREY",
-                "LUAN, LUCAS E ANDREY",
-                "PEDRO LUIZ",
-            ]
+        self._popular_combo(
+            self.emissor_input, recentes.get("emissor", []), EMISSORES_PADRAO
         )
-        self.municipio_input.addItems(
-            [
-                "",
-                "ABELARDO LUZ",
-                "BOM SUCESSO DO SUL",
-                "CAIBI",
-                "CAMPO ERE",
-                "CHOPINZINHO",
-                "CRE CHOPIN",
-                "CLEVELANDIA",
-                "CORONEL DOMINGOS SOARES",
-                "CORONEL MARTINS",
-                "CORONEL VIVIDA",
-                "FORMOSA DO SUL",
-                "GALVAO",
-                "HONORIO SERPA",
-                "IPUACU",
-                "IRATI",
-                "ITAPEJARA D' OESTE",
-                "JUPIA",
-                "MANGUEIRINHA",
-                "MARIOPOLIS",
-                "NOVO HORIZONTE",
-                "OURO VERDE",
-                "PALMA SOLA",
-                "PALMAS",
-                "PATO BRANCO",
-                "SANTIAGO DO SUL",
-                "SAO BERNARDINO",
-                "SAO JOAO",
-                "SAO LOURENCO DO OESTE",
-                "SAUDADE DO IGUACU",
-                "SULINA",
-                "VITORINO",
-            ]
+        self._popular_combo(
+            self.municipio_input, recentes.get("municipio", []), MUNICIPIOS_PADRAO
         )
+
+    def _atualizar_listas_recentes(
+        self, categoria: str, emissor: str, municipio: str
+    ) -> None:
+        atualizar_recentes(categoria, emissor, municipio)
+        recentes = carregar_recentes_listas()
+        self._reordenar_combo(self.categoria_input, recentes.get("categoria", []))
+        self._reordenar_combo(self.emissor_input, recentes.get("emissor", []))
+        self._reordenar_combo(self.municipio_input, recentes.get("municipio", []))
 
     def _limpar_campos(self) -> None:
         """Restaura os campos do formulário para os valores iniciais."""
@@ -454,9 +483,7 @@ class EtiquetaApp(QWidget):
         if not ok:
             self._atualizar_status("⚠️ Erro na impressão", "orange")
             logger.error("Erro na impressão: %s", erro)
-            QMessageBox.critical(
-                self, "Erro", f"{erro['code']}: {erro['message']}"
-            )
+            QMessageBox.critical(self, "Erro", f"{erro['code']}: {erro['message']}")
             return
 
         try:
@@ -473,6 +500,8 @@ class EtiquetaApp(QWidget):
                 volumes=volumes,
                 data_hora=data_hora,
             )
+
+            self._atualizar_listas_recentes(categoria, emissor, municipio)
 
             mes_atual = datetime.now().strftime("%m-%Y")
             registrar_contagem_mensal(mes_atual, volumes)
@@ -496,9 +525,7 @@ class EtiquetaApp(QWidget):
         else:
             self._atualizar_status("⚠️ Erro na impressão de teste", "orange")
             logger.error("Erro na impressão de teste: %s", erro)
-            QMessageBox.critical(
-                self, "Erro", f"{erro['code']}: {erro['message']}"
-            )
+            QMessageBox.critical(self, "Erro", f"{erro['code']}: {erro['message']}")
 
     def _reimprimir_ultima(self) -> None:
         """Reimprime a última etiqueta gerada, se houver."""
@@ -525,9 +552,7 @@ class EtiquetaApp(QWidget):
         else:
             self._atualizar_status("⚠️ Erro na reimpressão", "orange")
             logger.error("Erro na reimpressão: %s", erro)
-            QMessageBox.critical(
-                self, "Erro", f"{erro['code']}: {erro['message']}"
-            )
+            QMessageBox.critical(self, "Erro", f"{erro['code']}: {erro['message']}")
 
     def _reimprimir_faltantes(self) -> None:
         """Reimprime apenas as etiquetas que faltaram de um lote."""
@@ -575,9 +600,7 @@ class EtiquetaApp(QWidget):
             if not ok:
                 self._atualizar_status("⚠️ Erro na reimpressão de faltantes", "orange")
                 logger.error("Erro na reimpressão de faltantes: %s", erro)
-                QMessageBox.critical(
-                    self, "Erro", f"{erro['code']}: {erro['message']}"
-                )
+                QMessageBox.critical(self, "Erro", f"{erro['code']}: {erro['message']}")
                 return
 
             # Atualiza contadores e histórico apenas com as faltantes
@@ -660,13 +683,9 @@ class EtiquetaApp(QWidget):
             if ok:
                 self._atualizar_status("♻️ Intervalo reimpresso", "lightblue")
             else:
-                self._atualizar_status(
-                    "⚠️ Erro na reimpressão do intervalo", "orange"
-                )
+                self._atualizar_status("⚠️ Erro na reimpressão do intervalo", "orange")
                 logger.error("Erro na reimpressão do intervalo: %s", erro)
-                QMessageBox.critical(
-                    self, "Erro", f"{erro['code']}: {erro['message']}"
-                )
+                QMessageBox.critical(self, "Erro", f"{erro['code']}: {erro['message']}")
         except Exception as e:
             self._atualizar_status("⚠️ Erro na reimpressão do intervalo", "orange")
             logger.exception("Erro na reimpressão do intervalo")

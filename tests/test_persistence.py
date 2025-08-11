@@ -78,3 +78,17 @@ def test_gerar_relatorio_mensal(monkeypatch, tmp_path):
         ["Categoria", "Município", "Emissor", "Volumes"],
         ["Cat", "Mun", "Emi", "3"],
     ]
+
+
+def test_atualizar_recentes(monkeypatch, tmp_path):
+    persistence = _patch_paths(monkeypatch, tmp_path)
+    persistence.atualizar_recentes("cat1", "emi1", "mun1")
+    persistence.atualizar_recentes("cat1", "emi2", "mun2")
+    dados = persistence.carregar_recentes()
+    assert dados["categoria"]["cat1"] == 2
+    listas = persistence.carregar_recentes_listas()
+    assert listas["categoria"][0] == "cat1"
+    for i in range(25):
+        persistence.atualizar_recentes(f"c{i}", f"e{i}", f"m{i}")
+    dados = persistence.carregar_recentes()
+    assert len(dados["categoria"]) == 20
