@@ -84,6 +84,49 @@ def salvar_historico(
         writer.writerow([data_hora, saida, categoria, emissor, municipio, volumes])
 
 
+def carregar_recentes() -> dict[str, dict[str, int]]:
+    """Lê as listas de valores usados recentemente."""
+
+    caminho = recurso_caminho("recentes.json")
+    if os.path.exists(caminho):
+        with open(caminho, "r", encoding="utf-8") as arquivo:
+            return cast(dict[str, dict[str, int]], json.load(arquivo))
+    return {"categoria": {}, "emissor": {}, "municipio": {}}
+
+
+def atualizar_recentes(categoria: str, emissor: str, municipio: str) -> None:
+    """Atualiza o contador de valores mais utilizados."""
+
+    dados = carregar_recentes()
+    for campo, valor in (
+        ("categoria", categoria),
+        ("emissor", emissor),
+        ("municipio", municipio),
+    ):
+        valor = valor.strip()
+        if not valor:
+            continue
+        mapa = dados.setdefault(campo, {})
+        mapa[valor] = mapa.get(valor, 0) + 1
+        ordenado = sorted(mapa.items(), key=lambda x: x[1], reverse=True)[:20]
+        dados[campo] = {k: v for k, v in ordenado}
+
+    caminho = recurso_caminho("recentes.json")
+    os.makedirs(os.path.dirname(caminho), exist_ok=True)
+    with open(caminho, "w", encoding="utf-8") as arquivo:
+        json.dump(dados, arquivo, ensure_ascii=False, indent=4)
+
+
+def carregar_recentes_listas() -> dict[str, list[str]]:
+    """Obtém as listas de valores recentes ordenadas por uso."""
+
+    dados = carregar_recentes()
+    return {
+        campo: [k for k, _ in sorted(val.items(), key=lambda x: x[1], reverse=True)]
+        for campo, val in dados.items()
+    }
+
+
 def registrar_contagem_mensal(mes: str, quantidade: int) -> None:
     """Atualiza o total de etiquetas por mês.
 
