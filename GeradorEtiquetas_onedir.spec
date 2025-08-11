@@ -1,8 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""Spec file for building the application as a single executable.
+"""Spec file for building the application in onedir mode.
 
-This configuration targets Windows, bundles all assets and embeds
-version metadata. The resulting binary runs without a console window.
+Useful for debugging; places the executable and resources in a folder.
 """
 
 import os
@@ -19,12 +18,11 @@ from PyInstaller.utils.win32.versioninfo import (
 )
 
 # ------------------------------------------------------------------
-# Configurable parameters via environment variables
+# Configurable parameters
 APP_NAME = os.environ.get("APP_NAME", "GeradorEtiquetas")
 ICON_PATH = os.environ.get("APP_ICON", os.path.join("assets", "color.ico"))
 
-# ------------------------------------------------------------------
-# Windows file version information
+# Version information
 _ver_tuple = tuple(map(int, __version__.split("."))) + (0,)
 version_info = VSVersionInfo(
     ffi=FixedFileInfo(
@@ -58,7 +56,7 @@ version_info = VSVersionInfo(
 )
 
 # ------------------------------------------------------------------
-# 1) Analyse sources and include hidden imports
+# 1) Analyse sources and hidden imports
 a = Analysis(
     ["main.py"],
     pathex=[],
@@ -76,7 +74,7 @@ a = Analysis(
 # 2) Bundle Python bytecode
 pyz = PYZ(a.pure)
 
-# 3) First-stage executable (no binaries) for onefile build
+# 3) Build executable (binaries excluded, collected later)
 exe = EXE(
     pyz,
     a.scripts,
@@ -85,12 +83,14 @@ exe = EXE(
     name=APP_NAME,
     console=False,
     icon=ICON_PATH,
+    version=version_info,
     upx=True,
     contents_directory=".",  # avoid _internal folder
+    bootloader_runtime_opts=["--dpiaware", "--utf-8"],
 )
 
-# 4) Package dependencies and assets into a PKG archive
-pkg = PKG(
+# 4) Collect all dependencies and assets into dist/APP_NAME
+coll = COLLECT(
     exe,
     a.binaries,
     a.zipfiles,
@@ -100,16 +100,4 @@ pkg = PKG(
     upx=True,
     upx_exclude=[],
     name=APP_NAME,
-)
-
-# 5) Final executable with metadata and runtime options
-app = EXE(
-    pkg,
-    name=APP_NAME,
-    console=False,
-    icon=ICON_PATH,
-    version=version_info,
-    upx=True,
-    contents_directory=".",  # avoid _internal folder
-    bootloader_runtime_opts=["--dpiaware", "--utf-8"],
 )

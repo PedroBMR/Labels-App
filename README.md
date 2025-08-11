@@ -65,6 +65,33 @@ pip install -r requirements.txt
 
 ---
 
+## Build no Windows via .spec
+
+### Pré-requisitos
+
+- Python 3.11 ou superior instalado e acessível pelo `python`.
+- PowerShell.
+- (Opcional) ambiente virtual em `.venv` ou `venv`.
+- Pacotes `pyinstaller`, `pyqt5`, `pillow` e `pywin32` (instalados automaticamente pelos scripts).
+
+### Comandos
+
+```powershell
+# executável único, sem console
+scripts\build_onefile.ps1
+
+# modo pasta para depuração
+scripts\build_onedir.ps1
+```
+
+Os scripts ativam o ambiente virtual (se existir), instalam dependências
+ausentes, rodam os arquivos `.spec` e copiam o executável final para
+`dist\GeradorEtiquetas_v{versão}.exe`. É possível alterar o nome do
+executável e o ícone definindo as variáveis de ambiente `APP_NAME` e
+`APP_ICON` antes da execução.
+
+---
+
 ## Uso
 
 1. Na tela inicial informe **Saída**, **Categoria**, **Emissor**,
