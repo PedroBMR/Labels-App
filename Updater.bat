@@ -11,24 +11,46 @@ if /I "%~1"=="/D" (
 rem Ensure working directory is script location
 pushd "%~dp0" >nul
 
+rem Check manifest
+if not exist manifest.json (
+    echo Erro: manifest.json nao encontrado.
+    popd >nul
+    exit /b 1
+)
+
 rem Read manifest.json using PowerShell
 for /f %%i in ('powershell -NoProfile -Command "(Get-Content manifest.json | ConvertFrom-Json).exe"') do set "NEW_EXE=%%i"
 for /f %%i in ('powershell -NoProfile -Command "(Get-Content manifest.json | ConvertFrom-Json).version"') do set "NEW_VERSION=%%i"
 for /f %%i in ('powershell -NoProfile -Command "(Get-Content manifest.json | ConvertFrom-Json).sha256"') do set "NEW_SHA256=%%i"
 
-echo Atualizando para versao %NEW_VERSION% usando %NEW_EXE%
+if not exist "%NEW_EXE%" (
+    echo Erro: arquivo "%NEW_EXE%" nao encontrado.
+    popd >nul
+    exit /b 1
+)
+
+echo Preparando atualizacao...
+echo Versao nova: %NEW_VERSION%
+set "TARGET_EXE=GeradorEtiquetas.exe"
+echo Destino: %TARGET_EXE%
+echo Origem: %NEW_EXE%
 
 rem Timestamp for backups
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmm"') do set "STAMP=%%i"
 
-set "TARGET_EXE=GeradorEtiquetas.exe"
 if exist "%TARGET_EXE%" (
     set "BACKUP=%TARGET_EXE%.bak-%STAMP%"
     if "%DRYRUN%"=="1" (
+        echo Backup planejado: "%TARGET_EXE%" -> "%BACKUP%"
         echo [DRY-RUN] move "%TARGET_EXE%" "%BACKUP%"
     ) else (
         echo Fazendo backup de "%TARGET_EXE%" para "%BACKUP%"
         move /Y "%TARGET_EXE%" "%BACKUP%" >nul
+        if errorlevel 1 (
+            echo Erro ao fazer backup.
+            popd >nul
+            exit /b 1
+        )
     )
 )
 
@@ -38,6 +60,11 @@ if "%DRYRUN%"=="1" (
 ) else (
     echo Copiando novo executavel...
     copy /Y "%NEW_EXE%" "%TARGET_EXE%" >nul
+    if errorlevel 1 (
+        echo Erro ao copiar novo executavel.
+        popd >nul
+        exit /b 1
+    )
 )
 
 rem Validar SHA256
@@ -58,6 +85,11 @@ if "%DRYRUN%"=="1" (
     echo [DRY-RUN] echo %NEW_VERSION% ^> version.txt
 ) else (
     >version.txt echo %NEW_VERSION%
+    if errorlevel 1 (
+        echo Erro ao escrever version.txt.
+        popd >nul
+        exit /b 1
+    )
 )
 
 rem Migracao _internal -> assets
@@ -73,6 +105,10 @@ for %%f in (historico_impressoes.csv contagem.json contagem_mensal.json logo.png
             ) else (
                 echo Copiando %%f para %NEW_DIR%.
                 copy "%OLD_DIR%\%%f" "%NEW_DIR%\%%f" >nul
+                if errorlevel 1 (
+                    echo Erro ao copiar %%f para %NEW_DIR%.
+                    exit /b 1
+                )
             )
         )
     )
@@ -85,10 +121,20 @@ if exist "%OLD_DIR%" (
     ) else (
         echo Renomeando %OLD_DIR% para %BAK_DIR%.
         ren "%OLD_DIR%" "%BAK_DIR%"
+        if errorlevel 1 (
+            echo Erro ao renomear %OLD_DIR%.
+            popd >nul
+            exit /b 1
+        )
     )
 )
 
-echo Atualizacao concluida.
+if "%DRYRUN%"=="1" (
+    echo Simulacao concluida.
+) else (
+    echo Atualizacao concluida.
+)
 
 popd >nul
 endlocal
+exit /b 0
