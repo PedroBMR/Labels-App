@@ -100,11 +100,17 @@ def melhorar_logo(
 def backup_automatico() -> None:
     """Realiza cópia de segurança dos arquivos de dados."""
 
+    from log import logger
+    from persistence import carregar_config
+
     base = _base_dir()
     origem = os.path.join(base, "assets")
     destino = os.path.join(base, "_backup")
     os.makedirs(destino, exist_ok=True)
     agora = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+    config = carregar_config()
+    max_backups = int(config.get("backup_quantidade", 7))
 
     arquivos = ["historico_impressoes.csv", "contagem.json", "contagem_mensal.json"]
     for arq in arquivos:
@@ -112,6 +118,17 @@ def backup_automatico() -> None:
         if os.path.exists(orig):
             nome_backup = f"{arq.replace('.', f'_{agora}.')}"
             shutil.copy2(orig, os.path.join(destino, nome_backup))
+
+            base_nome, ext = os.path.splitext(arq)
+            backups = sorted(
+                f
+                for f in os.listdir(destino)
+                if f.startswith(f"{base_nome}_") and f.endswith(ext)
+            )
+            excedente = len(backups) - max_backups
+            for antigo in backups[:excedente]:
+                os.remove(os.path.join(destino, antigo))
+                logger.info("Backup removido: %s", antigo)
 
 
 def _install_dir() -> str:
