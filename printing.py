@@ -8,6 +8,7 @@ import win32print
 
 from utils import melhorar_logo, recurso_caminho
 from log import logger
+from persistence import carregar_config, salvar_config
 
 DOTS_MM: int = 8  # ~203 dpi
 
@@ -54,15 +55,23 @@ class ErroImpressora(TypedDict):
 
 
 def descobrir_impressora_padrao() -> str | None:
-    """Retorna o nome da impressora padrão ou ``None`` se não houver.
-
-    Captura quaisquer exceções vindas do ``win32print`` e devolve ``None``
-    para indicar ausência ou erro ao obter a impressora.
-    """
+    """Retorna o nome da impressora configurada ou a padrão do sistema."""
 
     try:
-        return win32print.GetDefaultPrinter()
-    except Exception:  # pragma: no cover - apenas em ambientes sem win32
+        config = carregar_config()
+        nome = config.get("ultima_impressora")
+        if nome:
+            try:
+                handle = win32print.OpenPrinter(nome)
+                win32print.ClosePrinter(handle)
+                return str(nome)
+            except Exception:
+                pass
+        nome = win32print.GetDefaultPrinter()
+        config["ultima_impressora"] = nome
+        salvar_config(config)
+        return nome
+    except Exception:  # pragma: no cover - ambientes sem win32
         return None
 
 

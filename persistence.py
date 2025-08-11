@@ -4,9 +4,43 @@ import csv
 import json
 import os
 from datetime import datetime
-from typing import cast
+from typing import Any, cast
 
 from utils import recurso_caminho
+
+
+DEFAULT_CONFIG: dict[str, Any] = {
+    "ultima_impressora": "",
+    "template": "Padrão",
+    "retry_automatico": False,
+    "backup_horario": "17:10",
+}
+
+
+def carregar_config() -> dict[str, Any]:
+    """Lê as configurações persistidas do aplicativo."""
+
+    caminho = recurso_caminho("settings.json")
+    if os.path.exists(caminho):
+        with open(caminho, "r", encoding="utf-8") as arquivo:
+            try:
+                dados: dict[str, Any] = json.load(arquivo)
+            except Exception:
+                dados = {}
+    else:
+        dados = {}
+    config = DEFAULT_CONFIG.copy()
+    config.update(dados)
+    return config
+
+
+def salvar_config(dados: dict[str, Any]) -> None:
+    """Persiste as configurações do aplicativo."""
+
+    caminho = recurso_caminho("settings.json")
+    os.makedirs(os.path.dirname(caminho), exist_ok=True)
+    with open(caminho, "w", encoding="utf-8") as arquivo:
+        json.dump(dados, arquivo, ensure_ascii=False, indent=4)
 
 
 def carregar_contagem() -> tuple[int, int]:

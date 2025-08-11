@@ -2,7 +2,7 @@
 
 import os
 from datetime import datetime
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from PyQt5.QtCore import QDateTime, Qt, QTime, QTimer, QUrl
 from PyQt5.QtGui import (
@@ -17,6 +17,9 @@ from PyQt5.QtGui import (
 from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -28,6 +31,7 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
     QSpacerItem,
     QSpinBox,
+    QTimeEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -36,11 +40,13 @@ from log import LOG_FILE, logger
 from persistence import (
     atualizar_recentes,
     carregar_contagem,
+    carregar_config,
     carregar_historico_mensal,
     carregar_recentes_listas,
     gerar_relatorio_mensal,
     registrar_contagem_mensal,
     salvar_contagem,
+    salvar_config,
     salvar_historico,
 )
 from printing import (
@@ -121,6 +127,56 @@ MUNICIPIOS_PADRAO = [
 ]
 
 
+class ConfigDialog(QDialog):
+    """Janela de configurações do aplicativo."""
+
+    def __init__(self, parent: QWidget, settings: dict[str, Any]):
+        super().__init__(parent)
+        self.setWindowTitle("Configurações")
+        layout = QVBoxLayout(self)
+
+        form = QFormLayout()
+        self.printer_edit = QLineEdit(settings.get("ultima_impressora", ""))
+        form.addRow("Impressora:", self.printer_edit)
+
+        self.template_combo = QComboBox()
+        self.template_combo.addItems(listar_templates())
+        idx = self.template_combo.findText(settings.get("template", "Padrão"))
+        if idx >= 0:
+            self.template_combo.setCurrentIndex(idx)
+        form.addRow("Modelo:", self.template_combo)
+
+        self.retry_check = QCheckBox("Repetir automaticamente em falha (3x)")
+        self.retry_check.setChecked(bool(settings.get("retry_automatico")))
+        form.addRow("Repetir em falha:", self.retry_check)
+
+        self.time_edit = QTimeEdit()
+        horario = settings.get("backup_horario", "17:10")
+        hora = QTime.fromString(str(horario), "HH:mm")
+        if not hora.isValid():
+            hora = QTime(17, 10)
+        self.time_edit.setDisplayFormat("HH:mm")
+        self.time_edit.setTime(hora)
+        form.addRow("Horário backup:", self.time_edit)
+
+        layout.addLayout(form)
+
+        botoes = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        botoes.accepted.connect(self.accept)
+        botoes.rejected.connect(self.reject)
+        layout.addWidget(botoes)
+
+    def obter_config(self) -> dict[str, Any]:
+        """Retorna as configurações ajustadas pelo usuário."""
+
+        return {
+            "ultima_impressora": self.printer_edit.text().strip(),
+            "template": self.template_combo.currentText(),
+            "retry_automatico": self.retry_check.isChecked(),
+            "backup_horario": self.time_edit.time().toString("HH:mm"),
+        }
+
+
 class EtiquetaInfo(TypedDict):
     saida: str
     categoria: str
@@ -140,7 +196,7 @@ class EtiquetaApp(QWidget):
         self.setWindowTitle("Gerador de Etiquetas CONIMS")
         self.setGeometry(300, 100, 800, 720)
         self.setWindowIcon(QIcon(recurso_caminho("color.png")))
-
+        self.config = carregar_config()
         self.contagem_total, self.contagem_mensal = carregar_contagem()
         self.ultima_etiqueta: EtiquetaInfo | None = None
         self._contagem_label = QLabel()
@@ -157,14 +213,22 @@ class EtiquetaApp(QWidget):
         self._verificar_impressora()
 
     def _agendar_backup_diario(self) -> None:
-        """Agenda a execução do backup diário às 17h10."""
+        """Agenda a execução do backup diário conforme configuração."""
+
+        horario = str(self.config.get("backup_horario", "17:10"))
+        try:
+            horas, minutos = [int(x) for x in horario.split(":", 1)]
+        except Exception:
+            horas, minutos = 17, 10
 
         agora = QDateTime.currentDateTime()
-        fim_do_dia = QDateTime(agora.date(), QTime(17, 10, 0))
+        fim_do_dia = QDateTime(agora.date(), QTime(horas, minutos, 0))
         if agora > fim_do_dia:
             fim_do_dia = fim_do_dia.addDays(1)
         ms_ate_backup = agora.msecsTo(fim_do_dia)
 
+        if hasattr(self, "_timer_backup"):
+            self._timer_backup.stop()
         self._timer_backup = QTimer(self)
         self._timer_backup.setSingleShot(True)
         self._timer_backup.timeout.connect(self._executar_backup_diario)
@@ -243,6 +307,10 @@ class EtiquetaApp(QWidget):
         self.template_input = QComboBox()
         self.template_input.addItems(listar_templates())
         self.template_input.currentTextChanged.connect(aplicar_template)
+        self.template_input.currentTextChanged.connect(self._salvar_template_config)
+        idx_tpl = self.template_input.findText(self.config.get("template", "Padrão"))
+        if idx_tpl >= 0:
+            self.template_input.setCurrentIndex(idx_tpl)
         aplicar_template(self.template_input.currentText())
         self._carregar_listas()
 
@@ -286,6 +354,8 @@ class EtiquetaApp(QWidget):
         self.retry_checkbox.setStyleSheet(
             "color: #bbb; font-size: 13px; padding: 5px; border: none;"
         )
+        self.retry_checkbox.setChecked(bool(self.config.get("retry_automatico")))
+        self.retry_checkbox.stateChanged.connect(self._salvar_retry_config)
         layout_quadro.addWidget(self.retry_checkbox)
 
         # Botões
@@ -317,6 +387,9 @@ class EtiquetaApp(QWidget):
         self.teste_pagina_btn = QPushButton("Imprimir página de teste")
         self.teste_pagina_btn.clicked.connect(self._imprimir_teste)
 
+        self.config_btn = QPushButton("Configurações")
+        self.config_btn.clicked.connect(self._abrir_configuracoes)
+
         self.testar_conexao_btn = QPushButton("Testar conexão")
         self.testar_conexao_btn.clicked.connect(self._verificar_impressora)
 
@@ -330,6 +403,7 @@ class EtiquetaApp(QWidget):
             self.exportar_relatorio_btn,
             self.log_btn,
             self.teste_pagina_btn,
+            self.config_btn,
             self.testar_conexao_btn,
         ):
             b.setStyleSheet(
@@ -413,6 +487,32 @@ class EtiquetaApp(QWidget):
             combo.setCurrentIndex(0)
         self.volumes_input.setValue(1)
 
+    def _salvar_template_config(self, texto: str) -> None:
+        """Persistir seleção de template."""
+
+        self.config["template"] = texto
+        salvar_config(self.config)
+
+    def _salvar_retry_config(self, estado: int) -> None:
+        """Persistir opção de repetição automática."""
+
+        self.config["retry_automatico"] = bool(estado)
+        salvar_config(self.config)
+
+    def _abrir_configuracoes(self) -> None:
+        """Mostra a janela de configurações."""
+
+        dlg = ConfigDialog(self, self.config)
+        if dlg.exec_():
+            self.config.update(dlg.obter_config())
+            salvar_config(self.config)
+            idx = self.template_input.findText(self.config.get("template", "Padrão"))
+            if idx >= 0:
+                self.template_input.setCurrentIndex(idx)
+            self.retry_checkbox.setChecked(bool(self.config.get("retry_automatico")))
+            self._agendar_backup_diario()
+            self._verificar_impressora()
+
     def _verificar_impressora(self) -> None:
         """Verifica a existência de impressora padrão e ajusta a UI."""
 
@@ -425,6 +525,8 @@ class EtiquetaApp(QWidget):
             self.imprimir_btn.setEnabled(True)
             self.testar_conexao_btn.hide()
             self._atualizar_status("🟢 Pronto")
+            self.config["ultima_impressora"] = nome
+            salvar_config(self.config)
 
     def _atualizar_status(
         self, mensagem: str = "🟢 Pronto", cor: str = "white"
