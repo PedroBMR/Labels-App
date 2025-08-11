@@ -97,6 +97,22 @@ def test_imprimir_pagina_teste(monkeypatch):
     assert "BAR 30,600,400,4" in texto
 
 
+def test_templates_alteram_layout(monkeypatch):
+    import printing
+
+    fake_win32.written.clear()
+    monkeypatch.setattr(
+        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
+    )
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+
+    printing.aplicar_template("Compacto")
+    printing.imprimir_etiqueta("S", "C", "E", "M", 1, "2024-01-01")
+    texto = fake_win32.written[-1].decode("latin1")
+    assert "SIZE 50 mm,60 mm" in texto
+    printing.aplicar_template("Padrão")
+
+
 def test_retry_exponencial_logging(monkeypatch, caplog):
     import printing
     import logging
