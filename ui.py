@@ -35,6 +35,7 @@ from PyQt5.QtWidgets import (
 from persistence import (
     carregar_contagem,
     carregar_historico_mensal,
+    gerar_relatorio_mensal,
     registrar_contagem_mensal,
     salvar_contagem,
     salvar_historico,
@@ -234,6 +235,13 @@ class EtiquetaApp(QWidget):
         self.historico_mes_btn = QPushButton("Histórico Mensal")
         self.historico_mes_btn.clicked.connect(self._mostrar_historico_mensal)
 
+        self.exportar_relatorio_btn = QPushButton(
+            "Exportar relatório do mês atual"
+        )
+        self.exportar_relatorio_btn.clicked.connect(
+            self._exportar_relatorio_mes_atual
+        )
+
         self.log_btn = QPushButton("Ver Log")
         self.log_btn.clicked.connect(self._abrir_log)
 
@@ -249,6 +257,7 @@ class EtiquetaApp(QWidget):
             self.reimprimir_faltantes_btn,
             self.historico_btn,
             self.historico_mes_btn,
+            self.exportar_relatorio_btn,
             self.log_btn,
             self.teste_pagina_btn,
             self.testar_conexao_btn,
@@ -608,6 +617,27 @@ class EtiquetaApp(QWidget):
         for mes, total in sorted(hist.items()):
             texto += f"Mês: {mes}   —   Total: {total}\n"
         QMessageBox.information(self, "Histórico Mensal", texto)
+
+    def _exportar_relatorio_mes_atual(self) -> None:
+        """Exporta o relatório consolidado do mês atual."""
+
+        mes = datetime.now().strftime("%Y-%m")
+        try:
+            caminho = gerar_relatorio_mensal(mes)
+            QMessageBox.information(
+                self,
+                "Relatório Mensal",
+                f"Relatório salvo em:\n{caminho}",
+            )
+        except FileNotFoundError:
+            QMessageBox.information(
+                self,
+                "Relatório Mensal",
+                "Histórico de impressões não encontrado.",
+            )
+        except Exception as e:
+            logger.exception("Erro ao gerar relatório mensal")
+            QMessageBox.critical(self, "Erro", str(e))
 
     def _atualizar_contagem_label(self) -> None:
         """Atualiza o texto que mostra os totais de etiquetas."""

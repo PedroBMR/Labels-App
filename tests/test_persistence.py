@@ -55,3 +55,26 @@ def test_salvar_historico_e_registrar(monkeypatch, tmp_path):
 
     persistence.registrar_contagem_mensal("05-2024", 3)
     assert persistence.carregar_historico_mensal() == {"05-2024": 3}
+
+
+def test_gerar_relatorio_mensal(monkeypatch, tmp_path):
+    persistence = _patch_paths(monkeypatch, tmp_path)
+    with open(
+        tmp_path / "historico_impressoes.csv",
+        "w",
+        newline="",
+        encoding="utf-8-sig",
+    ) as f:
+        f.write("Data e Hora;Saída;Categoria;Emissor;Município;Volumes\n")
+        f.write("06/08/2025 09:30:13;1;Cat;Emi;Mun;1\n")
+        f.write("07/08/2025 10:00:00;2;Cat;Emi;Mun;2\n")
+        f.write("01/09/2025 00:00:00;3;Cat2;Emi2;Mun2;3\n")
+
+    path = persistence.gerar_relatorio_mensal("2025-08")
+    assert (tmp_path / "reports" / "relatorio_2025-08.csv").exists()
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        rows = list(csv.reader(f, delimiter=";"))
+    assert rows == [
+        ["Categoria", "Município", "Emissor", "Volumes"],
+        ["Cat", "Mun", "Emi", "3"],
+    ]
