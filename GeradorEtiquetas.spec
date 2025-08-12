@@ -26,7 +26,7 @@ for pkg in ("PyQt5", "win32print", "win32api", "win32ui"):
     hiddenimports += collect_submodules(pkg)
 
 # Include the entire assets directory preserving structure
-asset_tree = Tree(ASSETS_DIR, prefix=ASSETS_DIR)
+datas = Tree(ASSETS_DIR, prefix=ASSETS_DIR)
 
 # ---------------------------------------------------------------------------
 # 1) Analyse the application and dependencies
@@ -36,7 +36,7 @@ a = Analysis(
     [MAIN_SCRIPT],
     pathex=[],
     binaries=[],
-    datas=[asset_tree],
+    datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
