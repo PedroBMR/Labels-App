@@ -9,17 +9,18 @@ mantém histórico de impressões e permite personalizar o layout das etiquetas.
 ## Descrição Geral
 
 O Labels-App ajuda instituições que precisam emitir etiquetas de identificação
-para caixas e volumes. A aplicação gera etiquetas de 60x80&nbsp;mm, envia a
-impressão diretamente para impressoras térmicas compatíveis com TSPL e armazena
-todo o histórico gerado. É possível escolher modelos de layout, reimprimir
-etiquetas e realizar backup automático dos dados.
+para caixas e volumes. A aplicação gera etiquetas de 60x80&nbsp;mm e 100x30&nbsp;mm,
+envia a impressão diretamente para impressoras térmicas compatíveis com TSPL e
+armazena todo o histórico gerado. É possível escolher modelos de layout,
+reimprimir etiquetas e realizar backup automático dos dados.
 
 ---
 
 ## Funcionalidades
 
 - Seleção da impressora padrão e configuração de modelos de etiqueta.
-- Geração e impressão imediata de etiquetas térmicas.
+- Geração e impressão imediata de etiquetas térmicas nos modelos 60x80&nbsp;mm e
+  100x30&nbsp;mm.
 - Reimpressão do último lote, de volumes faltantes ou de um intervalo
   específico.
 - Histórico completo das impressões com exportação para CSV.
@@ -104,7 +105,6 @@ executável e o ícone definindo as variáveis de ambiente `APP_NAME` e
 
 > *Exemplo de formulário principal. Substitua a imagem por capturas reais do
 > seu fluxo de impressão.*
-
 ---
 
 ## Atualizações
