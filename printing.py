@@ -42,6 +42,7 @@ class Layout(TypedDict):
     fragil: TextoLayout
     numeracao: TextoLayout
     logo_y: int
+    logo_largura: int
 
 
 LAYOUTS: dict[str, Layout] = {
@@ -56,6 +57,7 @@ LAYOUTS: dict[str, Layout] = {
         "fragil": {"x": 30, "y": 270, "font": "2", "xm": 1, "ym": 1},
         "numeracao": {"x": 30, "y": 330, "font": "4", "xm": 2, "ym": 2},
         "logo_y": 450,
+        "logo_largura": 240,
     },
     "Compacto": {
         "titulo": {"x": 30, "y": 15, "font": "3", "xm": 2, "ym": 2},
@@ -68,6 +70,7 @@ LAYOUTS: dict[str, Layout] = {
         "fragil": {"x": 30, "y": 202, "font": "2", "xm": 1, "ym": 1},
         "numeracao": {"x": 30, "y": 248, "font": "4", "xm": 2, "ym": 2},
         "logo_y": 338,
+        "logo_largura": 240,
     },
     "Panoramico": {
         "titulo": {"x": 20, "y": 20, "font": "2", "xm": 1, "ym": 1},
@@ -80,6 +83,7 @@ LAYOUTS: dict[str, Layout] = {
         "fragil": {"x": 420, "y": 90, "font": "1", "xm": 1, "ym": 1},
         "numeracao": {"x": 420, "y": 180, "font": "2", "xm": 1, "ym": 1},
         "logo_y": 120,
+        "logo_largura": 120,
     },
 }
 
@@ -168,12 +172,20 @@ def imprimir_etiqueta(
     ocorrer algum problema, contendo código e mensagem da falha.
     """
 
+    layout = LAYOUT_ATUAL
+
     # -------- prepara logo --------
     logo_path = recurso_caminho("logo.png")
-    bitmap, largura_bytes, altura_px = melhorar_logo(logo_path, largura_desejada=240)
+    bitmap, largura_bytes, altura_px = melhorar_logo(
+        logo_path, largura_desejada=layout.get("logo_largura", 240)
+    )
 
     dots_x = LARGURA_ETIQUETA_MM * DOTS_MM
+    dots_y = ALTURA_ETIQUETA_MM * DOTS_MM
     x_logo = (dots_x - (largura_bytes * 8)) // 2  # centraliza logo
+
+    if layout["logo_y"] + altura_px > dots_y:
+        return False, {"code": 0, "message": "Logo fora da área do template"}
 
     # Total exibido no rodapé
     if total_exibicao is None:
@@ -190,8 +202,6 @@ def imprimir_etiqueta(
             h_prn = win32print.OpenPrinter(nome_imp)
             win32print.StartDocPrinter(h_prn, 1, ("Etiqueta CONIMS", None, "RAW"))
             win32print.StartPagePrinter(h_prn)
-
-            layout = LAYOUT_ATUAL
 
             def t(chave: str, texto: str) -> str:
                 return _texto_layout(chave, texto, layout)
@@ -249,14 +259,16 @@ def imprimir_pagina_teste(
     impressão normal das etiquetas.
     """
 
+    layout = LAYOUT_ATUAL
+
     logo_path = recurso_caminho("logo.png")
-    bitmap, largura_bytes, altura_px = melhorar_logo(logo_path, largura_desejada=240)
+    bitmap, largura_bytes, altura_px = melhorar_logo(
+        logo_path, largura_desejada=layout.get("logo_largura", 240)
+    )
 
     dots_x = LARGURA_ETIQUETA_MM * DOTS_MM
     dots_y = ALTURA_ETIQUETA_MM * DOTS_MM
     x_logo = (dots_x - (largura_bytes * 8)) // 2
-
-    layout = LAYOUT_ATUAL
 
     # valida posições do layout
     for chave in (

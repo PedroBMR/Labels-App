@@ -205,15 +205,23 @@ def test_panoramico_pagina_teste(monkeypatch):
 
     fake_win32.written.clear()
     monkeypatch.setattr(
-        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
+        printing,
+        "melhorar_logo",
+        lambda p, largura_desejada=240: (
+            b"A",
+            max(1, largura_desejada // 8),
+            largura_desejada,
+        ),
     )
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
     printing.aplicar_template("Panoramico")
     ok, erro = printing.imprimir_pagina_teste()
     assert ok and erro is None
+    assert len(fake_win32.written) == 1
     texto = fake_win32.written[-1].decode("latin1")
     assert "SIZE 100 mm,30 mm" in texto
+    assert ",15,120,0," in texto
     dots_y = printing.ALTURA_ETIQUETA_MM * printing.DOTS_MM
     ruler_start = printing.LAYOUT_ATUAL["titulo"]["x"]
     ruler_len = min(
