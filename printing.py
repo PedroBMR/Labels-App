@@ -139,6 +139,16 @@ def descobrir_impressora_padrao() -> str | None:
         return None
 
 
+def _texto_layout(chave: str, texto: str, layout: Layout) -> str:
+    """Gera comando ``TEXT`` baseado nas coordenadas do layout informado."""
+
+    p = layout[chave]
+    return (
+        f'TEXT {p["x"]},{p["y"]},"{p["font"]}",0,'
+        f'{p["xm"]},{p["ym"]},"{texto}"\n'
+    )
+
+
 def imprimir_etiqueta(
     saida: str,
     categoria: str,
@@ -184,11 +194,7 @@ def imprimir_etiqueta(
             layout = LAYOUT_ATUAL
 
             def t(chave: str, texto: str) -> str:
-                p = layout[chave]
-                return (
-                    f'TEXT {p["x"]},{p["y"]},"{p["font"]}",0,'
-                    f'{p["xm"]},{p["ym"]},"{texto}"\n'
-                )
+                return _texto_layout(chave, texto, layout)
 
             # -------- monta e imprime etiquetas ----------
             for offset in range(volumes):
@@ -239,14 +245,43 @@ def imprimir_pagina_teste(
     """Imprime uma página de teste padrão.
 
     A etiqueta contém o logo, campos fictícios, numeração ``1 DE 1`` e uma
-    régua horizontal de 50 mm para calibração da impressora.
+    régua horizontal de calibração. O layout utilizado é o mesmo da
+    impressão normal das etiquetas.
     """
 
     logo_path = recurso_caminho("logo.png")
     bitmap, largura_bytes, altura_px = melhorar_logo(logo_path, largura_desejada=240)
 
     dots_x = LARGURA_ETIQUETA_MM * DOTS_MM
+    dots_y = ALTURA_ETIQUETA_MM * DOTS_MM
     x_logo = (dots_x - (largura_bytes * 8)) // 2
+
+    layout = LAYOUT_ATUAL
+
+    # valida posições do layout
+    for chave in (
+        "titulo",
+        "saida",
+        "categoria",
+        "emissor",
+        "municipio",
+        "data",
+        "fracao",
+        "fragil",
+        "numeracao",
+    ):
+        pos = layout[chave]
+        if pos["x"] >= dots_x or pos["y"] >= dots_y:
+            return False, {"code": 0, "message": f"Campo {chave} fora da área do template"}
+    if layout["logo_y"] + altura_px > dots_y:
+        return False, {"code": 0, "message": "Logo fora da área do template"}
+
+    ruler_start = layout["titulo"]["x"]
+    ruler_y = dots_y - 40
+    ruler_len = min(50 * DOTS_MM, dots_x - ruler_start)
+    ruler_len -= ruler_len % (10 * DOTS_MM)  # garante múltiplos de 10 mm
+    if ruler_len <= 0 or ruler_start + ruler_len > dots_x or ruler_y + 4 > dots_y:
+        return False, {"code": 0, "message": "Régua fora da área do template"}
 
     nome_imp = descobrir_impressora_padrao()
     if nome_imp is None:
@@ -265,23 +300,22 @@ def imprimir_pagina_teste(
                 f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\n"
                 f"GAP {GAP_MM} mm,0 mm\n"
                 "CLS\n"
-                'TEXT 30,  20,"3",0,2,2,"CONIMS"\n'
-                'TEXT 30,  70,"2",0,1,1,"Saída: 000"\n'
-                'TEXT 30,  90,"2",0,1,1,"Categoria: TESTE"\n'
-                'TEXT 30, 120,"2",0,1,1,"Emissor: TESTE"\n'
-                'TEXT 30, 150,"2",0,1,1,"Município: TESTE"\n'
-                'TEXT 30, 180,"2",0,1,1,"Impresso em: 00/00/0000 00:00"\n'
-                'TEXT 30, 330,"4",0,2,2,"1 DE 1"\n'
-                f"BITMAP {x_logo},450,{largura_bytes},{altura_px},0,"
             )
+            cmd += _texto_layout("titulo", "CONIMS", layout)
+            cmd += _texto_layout("saida", "Saida: 000", layout)
+            cmd += _texto_layout("categoria", "Categoria: TESTE", layout)
+            cmd += _texto_layout("emissor", "Emissor: TESTE", layout)
+            cmd += _texto_layout("municipio", "Municipio: TESTE", layout)
+            cmd += _texto_layout("data", "Impresso em: 00/00/0000 00:00", layout)
+            cmd += _texto_layout("fracao", "[ ] Fracao", layout)
+            cmd += _texto_layout("fragil", "[ ] Fragil", layout)
+            cmd += _texto_layout("numeracao", "1 DE 1", layout)
+            cmd += f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},{altura_px},0,"
 
-            # Régua de 50 mm para calibração
-            ruler_start = 30
-            ruler_y = 600
-            ruler_len = 50 * DOTS_MM
             barras = f"BAR {ruler_start},{ruler_y},{ruler_len},4\n"
-            for i in range(6):  # marcas a cada 10 mm
-                altura = 20 if i in (0, 5) else 12
+            marcas = ruler_len // (10 * DOTS_MM)
+            for i in range(marcas + 1):  # marcas a cada 10 mm
+                altura = 20 if i in (0, marcas) else 12
                 x = ruler_start + i * 10 * DOTS_MM
                 y = ruler_y - altura
                 barras += f"BAR {x},{y},2,{altura}\n"
