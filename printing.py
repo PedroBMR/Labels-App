@@ -22,9 +22,71 @@ except Exception:
         "Padrão": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2}
     }
 
+
+class TextoLayout(TypedDict):
+    x: int
+    y: int
+    font: str
+    xm: int
+    ym: int
+
+
+class Layout(TypedDict):
+    titulo: TextoLayout
+    saida: TextoLayout
+    categoria: TextoLayout
+    emissor: TextoLayout
+    municipio: TextoLayout
+    data: TextoLayout
+    fracao: TextoLayout
+    fragil: TextoLayout
+    numeracao: TextoLayout
+    logo_y: int
+
+
+LAYOUTS: dict[str, Layout] = {
+    "Padrão": {
+        "titulo": {"x": 30, "y": 20, "font": "3", "xm": 2, "ym": 2},
+        "saida": {"x": 30, "y": 70, "font": "2", "xm": 1, "ym": 1},
+        "categoria": {"x": 30, "y": 90, "font": "2", "xm": 1, "ym": 1},
+        "emissor": {"x": 30, "y": 120, "font": "2", "xm": 1, "ym": 1},
+        "municipio": {"x": 30, "y": 150, "font": "2", "xm": 1, "ym": 1},
+        "data": {"x": 30, "y": 180, "font": "2", "xm": 1, "ym": 1},
+        "fracao": {"x": 30, "y": 220, "font": "2", "xm": 1, "ym": 1},
+        "fragil": {"x": 30, "y": 270, "font": "2", "xm": 1, "ym": 1},
+        "numeracao": {"x": 30, "y": 330, "font": "4", "xm": 2, "ym": 2},
+        "logo_y": 450,
+    },
+    "Compacto": {
+        "titulo": {"x": 30, "y": 15, "font": "3", "xm": 2, "ym": 2},
+        "saida": {"x": 30, "y": 52, "font": "2", "xm": 1, "ym": 1},
+        "categoria": {"x": 30, "y": 68, "font": "2", "xm": 1, "ym": 1},
+        "emissor": {"x": 30, "y": 90, "font": "2", "xm": 1, "ym": 1},
+        "municipio": {"x": 30, "y": 112, "font": "2", "xm": 1, "ym": 1},
+        "data": {"x": 30, "y": 135, "font": "2", "xm": 1, "ym": 1},
+        "fracao": {"x": 30, "y": 165, "font": "2", "xm": 1, "ym": 1},
+        "fragil": {"x": 30, "y": 202, "font": "2", "xm": 1, "ym": 1},
+        "numeracao": {"x": 30, "y": 248, "font": "4", "xm": 2, "ym": 2},
+        "logo_y": 338,
+    },
+    "Panoramico": {
+        "titulo": {"x": 20, "y": 20, "font": "2", "xm": 1, "ym": 1},
+        "saida": {"x": 20, "y": 60, "font": "1", "xm": 1, "ym": 1},
+        "categoria": {"x": 20, "y": 90, "font": "1", "xm": 1, "ym": 1},
+        "emissor": {"x": 20, "y": 120, "font": "1", "xm": 1, "ym": 1},
+        "municipio": {"x": 20, "y": 150, "font": "1", "xm": 1, "ym": 1},
+        "data": {"x": 20, "y": 180, "font": "1", "xm": 1, "ym": 1},
+        "fracao": {"x": 420, "y": 60, "font": "1", "xm": 1, "ym": 1},
+        "fragil": {"x": 420, "y": 90, "font": "1", "xm": 1, "ym": 1},
+        "numeracao": {"x": 420, "y": 180, "font": "2", "xm": 1, "ym": 1},
+        "logo_y": 120,
+    },
+}
+
 LARGURA_ETIQUETA_MM: int = 60
 ALTURA_ETIQUETA_MM: int = 80
 GAP_MM: int = 2
+LAYOUT_ATUAL: Layout = LAYOUTS["Padrão"]
 
 
 def listar_templates() -> list[str]:
@@ -38,11 +100,13 @@ def aplicar_template(nome: str) -> None:
 
     modelo = TEMPLATES.get(nome)
     if not modelo:
-        modelo = TEMPLATES[list(TEMPLATES.keys())[0]]
-    global LARGURA_ETIQUETA_MM, ALTURA_ETIQUETA_MM, GAP_MM
+        nome = list(TEMPLATES.keys())[0]
+        modelo = TEMPLATES[nome]
+    global LARGURA_ETIQUETA_MM, ALTURA_ETIQUETA_MM, GAP_MM, LAYOUT_ATUAL
     LARGURA_ETIQUETA_MM = int(modelo.get("largura_mm", 60))
     ALTURA_ETIQUETA_MM = int(modelo.get("altura_mm", 80))
     GAP_MM = int(modelo.get("gap_mm", 2))
+    LAYOUT_ATUAL = LAYOUTS.get(nome, LAYOUTS[list(LAYOUTS.keys())[0]])
 
 
 # aplica template padrão ao importar módulo
@@ -117,6 +181,15 @@ def imprimir_etiqueta(
             win32print.StartDocPrinter(h_prn, 1, ("Etiqueta CONIMS", None, "RAW"))
             win32print.StartPagePrinter(h_prn)
 
+            layout = LAYOUT_ATUAL
+
+            def t(chave: str, texto: str) -> str:
+                p = layout[chave]
+                return (
+                    f'TEXT {p["x"]},{p["y"]},"{p["font"]}",0,'
+                    f'{p["xm"]},{p["ym"]},"{texto}"\n'
+                )
+
             # -------- monta e imprime etiquetas ----------
             for offset in range(volumes):
                 numero_atual = inicio_indice + offset  # ex.: 7,8,9,10
@@ -124,25 +197,18 @@ def imprimir_etiqueta(
                     f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\n"
                     f"GAP {GAP_MM} mm,0 mm\n"
                     "CLS\n"
-                    'TEXT 30,  20,"3",0,2,2,"CONIMS"\n'
-                    'TEXT 30,  70,"2",0,1,1,"Saida: {saida}"\n'
-                    'TEXT 30,  90,"2",0,1,1,"Categoria: {categoria}"\n'
-                    'TEXT 30, 120,"2",0,1,1,"Emissor: {emissor}"\n'
-                    'TEXT 30, 150,"2",0,1,1,"Municipio: {municipio}"\n'
-                    'TEXT 30, 180,"2",0,1,1,"Impresso em: {data_hora}"\n'
-                    'TEXT 30, 220,"2",0,1,1,"[ ] Fracao"\n'
-                    'TEXT 30, 270,"2",0,1,1,"[ ] Fragil"\n'
-                    'TEXT 30, 330,"4",0,2,2,"{i} DE {volumes_total}"\n'
-                    f"BITMAP {x_logo},450,{largura_bytes},{altura_px},0,"
                 )
-                cmd = cmd.format(
-                    saida=saida,
-                    categoria=categoria,
-                    emissor=emissor,
-                    municipio=municipio,
-                    data_hora=data_hora,
-                    i=numero_atual,
-                    volumes_total=total_exibicao,
+                cmd += t("titulo", "CONIMS")
+                cmd += t("saida", f"Saida: {saida}")
+                cmd += t("categoria", f"Categoria: {categoria}")
+                cmd += t("emissor", f"Emissor: {emissor}")
+                cmd += t("municipio", f"Municipio: {municipio}")
+                cmd += t("data", f"Impresso em: {data_hora}")
+                cmd += t("fracao", "[ ] Fracao")
+                cmd += t("fragil", "[ ] Fragil")
+                cmd += t("numeracao", f"{numero_atual} DE {total_exibicao}")
+                cmd += (
+                    f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},{altura_px},0,"
                 )
                 corpo = cmd.encode() + bitmap + b"\nPRINT 1\n"
                 win32print.WritePrinter(h_prn, corpo)
