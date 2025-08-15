@@ -130,7 +130,15 @@ def test_imprimir_pagina_teste(monkeypatch):
     assert len(fake_win32.written) == 1
     texto = fake_win32.written[0].decode("latin1")
     assert "1 DE 1" in texto
-    assert "BAR 30,600,400,4" in texto
+    dots_y = printing.ALTURA_ETIQUETA_MM * printing.DOTS_MM
+    ruler_start = printing.LAYOUT_ATUAL["titulo"]["x"]
+    ruler_len = min(
+        50 * printing.DOTS_MM,
+        printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM - ruler_start,
+    )
+    ruler_len -= ruler_len % (10 * printing.DOTS_MM)
+    expected = f"BAR {ruler_start},{dots_y - 40},{ruler_len},4"
+    assert expected in texto
 
 
 def test_templates_alteram_layout(monkeypatch):
@@ -164,6 +172,32 @@ def test_panoramico_layout(monkeypatch):
     assert "SIZE 100 mm,30 mm" in texto
     spec = printing.LAYOUTS["Panoramico"]["numeracao"]
     assert f'TEXT {spec["x"]},{spec["y"]}' in texto
+    printing.aplicar_template("Padrão")
+
+
+def test_panoramico_pagina_teste(monkeypatch):
+    import printing
+
+    fake_win32.written.clear()
+    monkeypatch.setattr(
+        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
+    )
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+
+    printing.aplicar_template("Panoramico")
+    ok, erro = printing.imprimir_pagina_teste()
+    assert ok and erro is None
+    texto = fake_win32.written[-1].decode("latin1")
+    assert "SIZE 100 mm,30 mm" in texto
+    dots_y = printing.ALTURA_ETIQUETA_MM * printing.DOTS_MM
+    ruler_start = printing.LAYOUT_ATUAL["titulo"]["x"]
+    ruler_len = min(
+        50 * printing.DOTS_MM,
+        printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM - ruler_start,
+    )
+    ruler_len -= ruler_len % (10 * printing.DOTS_MM)
+    expected = f"BAR {ruler_start},{dots_y - 40},{ruler_len},4"
+    assert expected in texto
     printing.aplicar_template("Padrão")
 
 
