@@ -175,6 +175,31 @@ def test_panoramico_layout(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
+def test_panoramico_coordenadas(monkeypatch):
+    import printing
+    import re
+
+    fake_win32.written.clear()
+    monkeypatch.setattr(
+        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
+    )
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+
+    printing.aplicar_template("Panoramico")
+    printing.imprimir_etiqueta("S", "C", "E", "M", 1, "2024-01-01")
+    texto = fake_win32.written[-1].decode("latin1")
+    assert "SIZE 100 mm,30 mm" in texto
+    max_x = printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM
+    max_y = printing.ALTURA_ETIQUETA_MM * printing.DOTS_MM
+    for linha in texto.splitlines():
+        m = re.match(r"TEXT (\d+),(\d+)", linha)
+        if m:
+            x, y = map(int, m.groups())
+            assert 0 <= x <= max_x
+            assert 0 <= y <= max_y
+    printing.aplicar_template("Padrão")
+
+
 def test_panoramico_pagina_teste(monkeypatch):
     import printing
 
