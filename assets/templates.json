@@ -8,5 +8,10 @@
     "largura_mm": 50,
     "altura_mm": 60,
     "gap_mm": 2
+  },
+  "Panoramico": {
+    "largura_mm": 100,
+    "altura_mm": 30,
+    "gap_mm": 2
   }
 }
