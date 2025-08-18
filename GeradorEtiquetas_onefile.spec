@@ -1,8 +1,11 @@
 
 # -*- mode: python ; coding: utf-8 -*-
-# One-file build for Windows (no console).
+# One-file build for Windows (no console, Python 3.13).
 import os
-from PyInstaller.building.datastruct import Tree
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.dirname(sys.argv[0])))
+import qt_compat
 from PyInstaller.utils.hooks import collect_submodules
 from _version import __version__
 
@@ -11,7 +14,7 @@ ICON_PATH = os.path.join("assets", "color.ico")
 
 # Collect a few dynamic modules that PyInstaller sometimes misses
 hidden = []
-hidden += collect_submodules("PyQt5")
+hidden += collect_submodules(qt_compat.QT_API)
 hidden += collect_submodules("win32com")
 hidden += collect_submodules("PIL")
 

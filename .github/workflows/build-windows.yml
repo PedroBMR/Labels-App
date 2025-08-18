@@ -17,10 +17,14 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller pyqt5 pillow pywin32
+          pip install -r requirements-py313.txt
+          pip install ruff pytest
+      - name: Lint
+        run: ruff .
+      - name: Test
+        run: pytest
       - name: Build executable
-        run: |
-          pyinstaller main.py --onefile --windowed --icon assets/color.ico --add-data "assets;assets"
+        run: pyinstaller GeradorEtiquetas.spec
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

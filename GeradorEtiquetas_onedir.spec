@@ -1,7 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""One-dir build for Windows (easier to debug)."""
+"""One-dir build for Windows (easier to debug, Python 3.13)."""
 
 import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.dirname(sys.argv[0])))
+import qt_compat
 from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.building.datastruct import Tree
 
@@ -9,9 +13,9 @@ APP_NAME = "GeradorEtiquetas"
 ICON_PATH = os.path.join("assets", "color.ico")
 block_cipher = None
 
-# Hidden imports necessários (PyQt5, Pillow, pywin32)
+# Hidden imports necessários (Qt, Pillow, pywin32)
 hidden = []
-hidden += collect_submodules("PyQt5")
+hidden += collect_submodules(qt_compat.QT_API)
 hidden += collect_submodules("win32com")
 hidden += collect_submodules("PIL")
 

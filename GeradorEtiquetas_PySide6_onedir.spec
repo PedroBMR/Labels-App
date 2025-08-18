@@ -1,14 +1,18 @@
 
 # -*- mode: python ; coding: utf-8 -*-
-One-dir build for Windows (easier to debug) — PySide6 (Python 3.13).
+One-dir build for Windows (easier to debug) — Python 3.13.
 import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.dirname(sys.argv[0])))
+import qt_compat
 from PyInstaller.utils.hooks import collect_submodules
 
 APP_NAME = "GeradorEtiquetas"
 ICON_PATH = os.path.join("assets", "color.ico")
 
 hidden = []
-hidden += collect_submodules("PySide6")
+hidden += collect_submodules(qt_compat.QT_API)
 hidden += ["pywintypes", "pythoncom", "win32timezone"]
 
 a = Analysis(

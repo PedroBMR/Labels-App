@@ -3,15 +3,19 @@
 
 Designed for Python 3.13 on Windows 11, this configuration produces
 a single executable that bundles the entire ``assets`` directory (used
-by ``utils.recurso_caminho``), works with PyQt5 and pywin32 modules,
-suppresses the console window and applies UPX compression.
+by ``utils.recurso_caminho``), works with Qt via ``qt_compat`` and
+pywin32 modules, suppresses the console window and applies UPX
+compression.
 
 The final executable is saved as ``dist/GeradorEtiquetas.exe``.
 """
 
 import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.dirname(sys.argv[0])))
+import qt_compat
 from PyInstaller.utils.hooks import collect_submodules
-from PyInstaller.building.datastruct import Tree
 
 # ---------------------------------------------------------------------------
 # Basic project paths and metadata
@@ -22,11 +26,11 @@ ICON_PATH = os.path.join(ASSETS_DIR, "color.ico")
 
 # Collect submodules automatically so manual hiddenimports are not required.
 hiddenimports = []
-for pkg in ("PyQt5", "win32print", "win32api", "win32ui"):
+for pkg in (qt_compat.QT_API, "win32print", "win32api", "win32ui"):
     hiddenimports += collect_submodules(pkg)
 
 # Include the entire assets directory preserving structure
-datas = Tree(ASSETS_DIR, prefix=ASSETS_DIR)
+datas = [(os.path.join(ASSETS_DIR, "*"), ASSETS_DIR)]
 
 # ---------------------------------------------------------------------------
 # 1) Analyse the application and dependencies
