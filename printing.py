@@ -1,16 +1,16 @@
 """Rotinas relacionadas à impressão das etiquetas."""
 
+import json
+import threading
+import time
+import unicodedata
 from typing import TypedDict
 
-import json
-import unicodedata
-import time
-import threading
 import win32print
 
-from utils import melhorar_logo, recurso_caminho
 from log import logger
 from persistence import carregar_config, salvar_config
+from utils import melhorar_logo, recurso_caminho
 
 DOTS_MM: int = 8  # ~203 dpi
 ENCODING: str = "cp1252"  # TSPL espera 8-bit (latin-1/cp1252)
@@ -220,7 +220,10 @@ def aplicar_template(nome: str) -> None:
                         nome = k
                         break
     if not layout_escolhido:
-        logger.warning("Layout '%s' não encontrado. Usando o primeiro disponível.", nome)
+        logger.warning(
+            "Layout '%s' não encontrado. Usando o primeiro disponível.",
+            nome,
+        )
         layout_escolhido = LAYOUTS[next(iter(LAYOUTS))]
 
     # 3) Aplica dimensões e layout
@@ -237,7 +240,9 @@ def aplicar_template(nome: str) -> None:
 
 # aplica template padrão ao importar módulo, de forma segura
 try:
-    _DEFAULT_TEMPLATE_NAME = "Padrão" if "Padrão" in TEMPLATES else next(iter(TEMPLATES))
+    _DEFAULT_TEMPLATE_NAME = (
+        "Padrão" if "Padrão" in TEMPLATES else next(iter(TEMPLATES))
+    )
 except StopIteration:
     # fallback extremo se TEMPLATES estiver vazio
     _DEFAULT_TEMPLATE_NAME = next(iter(LAYOUTS))
@@ -392,18 +397,26 @@ def imprimir_etiqueta(
                     gap_mm = float(p_tot.get("gap_mm", 2.0))  # type: ignore[call-arg]
 
                     if follow:
-                        largura_num = _text_width_dots(str(numero_atual), p_num["font"], p_num["xm"])
+                        largura_num = _text_width_dots(
+                            str(numero_atual), p_num["font"], p_num["xm"]
+                        )
                         x_de = int(p_num["x"] + largura_num + gap_mm * DOTS_MM)
                     else:
                         x_de = int(p_tot.get("x", p_num["x"]))  # type: ignore[arg-type]
 
                     y_de = int(p_tot.get("y", p_num["y"]))  # type: ignore[arg-type]
-                    cmd += f'TEXT {x_de},{y_de},"{p_tot["font"]}",0,{p_tot["xm"]},{p_tot["ym"]},"DE {total_display}"\n'
+                    cmd += (
+                        f'TEXT {x_de},{y_de},"{p_tot["font"]}",0,{p_tot["xm"]},'
+                        f'{p_tot["ym"]},"DE {total_display}"\n'
+                    )
                 else:
                     cmd += t("numeracao", f"{numero_atual} DE {total_display}")
 
                 # --- logo ---
-                cmd += f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},{altura_px},0,"
+                cmd += (
+                    f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},"
+                    f"{altura_px},0,"
+                )
 
                 logger.debug("tspl_first_200=%r", cmd[:200])
                 corpo = cmd.encode(ENCODING, errors="replace") + bitmap + b"\nPRINT 1\n"
@@ -527,12 +540,18 @@ def imprimir_pagina_teste(
                     x_de = int(p_tot.get("x", p_num["x"]))  # type: ignore[arg-type]
 
                 y_de = int(p_tot.get("y", p_num["y"]))  # type: ignore[arg-type]
-                cmd += f'TEXT {x_de},{y_de},"{p_tot["font"]}",0,{p_tot["xm"]},{p_tot["ym"]},"DE 1"\n'
+                cmd += (
+                    f'TEXT {x_de},{y_de},"{p_tot["font"]}",0,{p_tot["xm"]},'
+                    f'{p_tot["ym"]},"DE 1"\n'
+                )
             else:
                 cmd += t("numeracao", "1 DE 1")
 
             # --- logo ---
-            cmd += f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},{altura_px},0,"
+            cmd += (
+                f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},"
+                f"{altura_px},0,"
+            )
 
             # Régua (marcas a cada 10 mm)
             barras = f"BAR {ruler_start},{ruler_y},{ruler_len},4\n"
@@ -544,7 +563,11 @@ def imprimir_pagina_teste(
                 barras += f"BAR {x},{y},2,{altura}\n"
 
             logger.debug("tspl_first_200=%r", cmd[:200])
-            corpo = cmd.encode(ENCODING, errors="replace") + bitmap + f"\n{barras}PRINT 1\n".encode(ENCODING)
+            corpo = (
+                cmd.encode(ENCODING, errors="replace")
+                + bitmap
+                + f"\n{barras}PRINT 1\n".encode(ENCODING)
+            )
             win32print.WritePrinter(h_prn, corpo)
 
             win32print.EndPagePrinter(h_prn)
