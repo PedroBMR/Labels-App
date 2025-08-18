@@ -1,14 +1,15 @@
-"""Ponto de entrada do aplicativo de geração de etiquetas (com captura de crash ultra-cedo)."""
+"""Ponto de entrada do aplicativo de geração de etiquetas
+(com captura de crash ultra-cedo)."""
 
 # =========================
 # PREÂMBULO: captura de crash ANTES de qualquer import pesado
 # =========================
-import os
-import sys
 import atexit
-import traceback
 import faulthandler
+import os
 import signal
+import sys
+import traceback
 from datetime import datetime
 
 # Diretório do script (funciona no .py e também com PyInstaller em desenvolvimento)
@@ -22,10 +23,18 @@ os.makedirs(_LOG_DIR, exist_ok=True)
 _EARLY_CRASH_FILE = os.path.join(_LOG_DIR, "crash_stderr.log")
 
 # Abrimos o stream com flush por linha
-_EARLY_CRASH_STREAM = open(_EARLY_CRASH_FILE, "a", buffering=1, encoding="utf-8", errors="replace")
+_EARLY_CRASH_STREAM = open(
+    _EARLY_CRASH_FILE,
+    "a",
+    buffering=1,
+    encoding="utf-8",
+    errors="replace",
+)
 
 # Banner de boot (útil para saber se esse preâmbulo rodou)
-_EARLY_CRASH_STREAM.write(f"\n=== BOOT {datetime.now().isoformat(timespec='seconds')} ===\n")
+_EARLY_CRASH_STREAM.write(
+    f"\n=== BOOT {datetime.now().isoformat(timespec='seconds')} ===\n"
+)
 
 # Redireciona stdout/err para capturar qualquer print/traceback de import
 sys.stdout = _EARLY_CRASH_STREAM  # type: ignore[assignment]
@@ -68,13 +77,11 @@ def _early_close_stream():
 # =========================
 # IMPORTS reais do app (depois do preâmbulo)
 # =========================
-from qt_compat import QApplication, qInstallMessageHandler, QtMsgType
-
-from _version import __version__
-from ui import EtiquetaApp
-from log import logger, LOG_FILE
-from utils import migrate_legacy_data
-
+from _version import __version__  # noqa: E402
+from log import LOG_FILE, logger  # noqa: E402
+from qt_compat import QApplication, QtMsgType, qInstallMessageHandler  # noqa: E402
+from ui import EtiquetaApp  # noqa: E402
+from utils import migrate_legacy_data  # noqa: E402
 
 # =========================
 # Captura "oficial" (integra com logger e Qt)
@@ -86,7 +93,8 @@ def _setup_crash_capture() -> None:
     """Integra captura com LOG_FILE e mensagens do Qt."""
     global _CRASH_STREAM, _CRASH_FILE
 
-    # Se existir LOG_FILE, apenas garanta que a pasta existe (mantemos o mesmo crash_stderr.log)
+    # Se existir LOG_FILE, apenas garanta que a pasta existe (mantemos o
+    # mesmo crash_stderr.log)
     try:
         if LOG_FILE:
             os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
@@ -155,7 +163,8 @@ def _setup_crash_capture() -> None:
 
 
 def ensure_version_file() -> None:
-    """Garante a criação do arquivo de versão (version.txt) ao lado do executável/código."""
+    """Garante a criação do arquivo de versão (version.txt) ao lado do
+    executável/código."""
     try:
         if getattr(sys, "frozen", False):
             install_dir = os.path.dirname(sys.executable)  # PyInstaller
@@ -195,7 +204,8 @@ if __name__ == "__main__":
         sys.exit(getattr(app, "exec", app.exec_)())
 
     except Exception:
-        # Loga qualquer falha inesperada; também vai para crash_stderr.log via excepthook
+        # Loga qualquer falha inesperada; também vai para crash_stderr.log via
+        # excepthook
         logger.exception("Crash fatal na thread principal")
         try:
             _CRASH_STREAM.write("\n=== MAIN EXCEPTION ===\n")  # type: ignore[union-attr]
