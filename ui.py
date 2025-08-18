@@ -1,10 +1,12 @@
 """Elementos da interface gráfica do gerador de etiquetas."""
 
 import os
+import threading
 from datetime import datetime
 from typing import Any, TypedDict
 
-from PyQt5.QtCore import QDateTime, Qt, QTime, QTimer, QUrl
+from PyQt5.QtCore import QDateTime, Qt, QTime, QTimer, QUrl, QFutureWatcher
+from PyQt5.QtCore import QtConcurrent
 from PyQt5.QtGui import (
     QCloseEvent,
     QColor,
@@ -200,6 +202,10 @@ class EtiquetaApp(QWidget):
         self.config = carregar_config()
         self.contagem_total, self.contagem_mensal = carregar_contagem()
         self.ultima_etiqueta: EtiquetaInfo | None = None
+        self.cancel_event = threading.Event()
+        self._future_watcher = QFutureWatcher()
+        self._future_watcher.finished.connect(self._impressao_finalizada)
+        self._impressao_context: tuple[str, str, str, str, int, str] | None = None
 
         # Estilo base precisa existir antes de sinais dispararem
         self._input_style_base = (
@@ -426,6 +432,11 @@ class EtiquetaApp(QWidget):
             )
             botoes.addWidget(b)
 
+        self.cancelar_btn.setStyleSheet(
+            "background:#24292e;color:#ff5555;padding:8px 18px;border-radius:6px;"
+            "font-size: 14px;border: none;"
+        )
+
         layout_quadro.addLayout(botoes)
 
         # Status
@@ -638,10 +649,18 @@ class EtiquetaApp(QWidget):
             return
 
         self._atualizar_status("🖨️ Imprimindo…")
-
+        self.cancel_event.clear()
         saida, categoria, emissor, municipio, volumes, data_hora = self._coletar_campos()
-
-        ok, erro = imprimir_etiqueta(
+        self._impressao_context = (
+            saida,
+            categoria,
+            emissor,
+            municipio,
+            volumes,
+            data_hora,
+        )
+        future = QtConcurrent.run(
+            imprimir_etiqueta,
             saida,
             categoria,
             emissor,
@@ -651,44 +670,56 @@ class EtiquetaApp(QWidget):
             self.contagem_total,
             self.contagem_mensal,
             repetir_em_falha=self.retry_checkbox.isChecked(),
+            cancel_event=self.cancel_event,
         )
-
-        if not ok:
-            self._atualizar_status("⚠️ Erro na impressão", "orange")
-            logger.error("Erro na impressão: %s", erro)
-            QMessageBox.critical(self, "Erro", f"{erro['code']}: {erro['message']}")
-            return
-
-        try:
-            self.contagem_total += volumes
-            self.contagem_mensal += volumes
-            salvar_contagem(self.contagem_total, self.contagem_mensal)
-
-            salvar_historico(saida, categoria, emissor, municipio, volumes, data_hora)
-            self.ultima_etiqueta = EtiquetaInfo(
-                saida=saida,
-                categoria=categoria,
-                emissor=emissor,
-                municipio=municipio,
-                volumes=volumes,
-                data_hora=data_hora,
-            )
-
-            self._atualizar_listas_recentes(categoria, emissor, municipio)
-
-            mes_atual = datetime.now().strftime("%m-%Y")
-            registrar_contagem_mensal(mes_atual, volumes)
-            self._atualizar_status("✅ Impressão concluída", "lightgreen")
-            QTimer.singleShot(30000, self._limpar_campos)
-            self._atualizar_contagem_label()
-        except Exception as e:
-            self._atualizar_status("⚠️ Erro na impressão", "orange")
-            logger.exception("Erro na impressão")
-            QMessageBox.critical(self, "Erro", str(e))
+        self._future_watcher.setFuture(future)
 
     def _cancelar_impressao(self) -> None:
-        self._limpar_campos()
+        self.cancel_event.set()
         self._atualizar_status("❌ Impressão cancelada", "orange")
+
+    def _impressao_finalizada(self) -> None:
+        if self._impressao_context is None:
+            return
+        ok, erro = self._future_watcher.result()
+        saida, categoria, emissor, municipio, volumes, data_hora = self._impressao_context
+        if not ok:
+            if self.cancel_event.is_set():
+                self._atualizar_status("❌ Impressão cancelada", "orange")
+            else:
+                self._atualizar_status("⚠️ Erro na impressão", "orange")
+                logger.error("Erro na impressão: %s", erro)
+                QMessageBox.critical(self, "Erro", f"{erro['code']}: {erro['message']}")
+        else:
+            try:
+                self.contagem_total += volumes
+                self.contagem_mensal += volumes
+                salvar_contagem(self.contagem_total, self.contagem_mensal)
+
+                salvar_historico(saida, categoria, emissor, municipio, volumes, data_hora)
+                self.ultima_etiqueta = EtiquetaInfo(
+                    saida=saida,
+                    categoria=categoria,
+                    emissor=emissor,
+                    municipio=municipio,
+                    volumes=volumes,
+                    data_hora=data_hora,
+                )
+
+                self._atualizar_listas_recentes(categoria, emissor, municipio)
+
+                mes_atual = datetime.now().strftime("%m-%Y")
+                registrar_contagem_mensal(mes_atual, volumes)
+                self._atualizar_status("✅ Impressão concluída", "lightgreen")
+                QTimer.singleShot(30000, self._limpar_campos)
+                self._atualizar_contagem_label()
+            except Exception as e:
+                self._atualizar_status("⚠️ Erro na impressão", "orange")
+                logger.exception("Erro na impressão")
+                QMessageBox.critical(self, "Erro", str(e))
+
+        self.cancel_event.clear()
+        self._impressao_context = None
 
     def _imprimir_teste(self) -> None:
         self._atualizar_status("🖨️ Imprimindo teste…")
@@ -709,6 +740,7 @@ class EtiquetaApp(QWidget):
             )
             return
         dados = self.ultima_etiqueta
+        self.cancel_event.clear()
         ok, erro = imprimir_etiqueta(
             dados["saida"],
             dados["categoria"],
@@ -719,6 +751,7 @@ class EtiquetaApp(QWidget):
             self.contagem_total,
             self.contagem_mensal,
             repetir_em_falha=self.retry_checkbox.isChecked(),
+            cancel_event=self.cancel_event,
         )
         if ok:
             self._atualizar_status("♻️ Reimpressão concluída", "lightblue")
@@ -752,6 +785,7 @@ class EtiquetaApp(QWidget):
         inicio = total - faltantes + 1
 
         try:
+            self.cancel_event.clear()
             ok, erro = imprimir_etiqueta(
                 dados["saida"],
                 dados["categoria"],
@@ -764,6 +798,7 @@ class EtiquetaApp(QWidget):
                 inicio_indice=inicio,
                 total_exibicao=total,
                 repetir_em_falha=self.retry_checkbox.isChecked(),
+                cancel_event=self.cancel_event,
             )
 
             if not ok:
@@ -833,6 +868,7 @@ class EtiquetaApp(QWidget):
         volumes = fim - inicio + 1
 
         try:
+            self.cancel_event.clear()
             ok, erro = imprimir_etiqueta(
                 dados["saida"],
                 dados["categoria"],
@@ -845,6 +881,7 @@ class EtiquetaApp(QWidget):
                 inicio_indice=inicio,
                 total_exibicao=total,
                 repetir_em_falha=self.retry_checkbox.isChecked(),
+                cancel_event=self.cancel_event,
             )
             if ok:
                 self._atualizar_status("♻️ Intervalo reimposto", "lightblue")

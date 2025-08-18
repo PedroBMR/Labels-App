@@ -5,6 +5,7 @@ from typing import TypedDict
 import json
 import unicodedata
 import time
+import threading
 import win32print
 
 from utils import melhorar_logo, recurso_caminho
@@ -110,7 +111,7 @@ LAYOUTS: dict[str, Layout] = {
 
         # Logo
         "logo_y": 75,
-        "logo_largura": 160,
+        "logo_largura": 120,
         "logo_x": 550
     }
 
@@ -127,6 +128,9 @@ LAYOUTS["100x30"]["numeracao_total"] = {  # type: ignore[index]
     "follow": True,   # True = calcula X com base na largura do número
     "gap_mm": 2.0,    # folga entre número e "DE", em milímetros
 }
+
+# Alias de layout para acesso direto
+LAYOUTS["Panoramico"] = LAYOUTS["100x30"]
 
 # -------------------- Aliases de nomes (compatibilidade) --------------------
 # Só usamos se o nome solicitado NÃO existir em TEMPLATES/LAYOUTS.
@@ -248,20 +252,21 @@ class ErroImpressora(TypedDict):
 def descobrir_impressora_padrao() -> str | None:
     """Retorna o nome da impressora configurada ou a padrão do sistema."""
     try:
-        config = carregar_config()
-        nome = config.get("ultima_impressora")
-        if nome:
-            try:
-                handle = win32print.OpenPrinter(nome)
-                win32print.ClosePrinter(handle)
-                return str(nome)
-            except Exception:
-                pass
         nome = win32print.GetDefaultPrinter()
+        config = carregar_config()
         config["ultima_impressora"] = nome
         salvar_config(config)
         return str(nome)
     except Exception:
+        try:
+            config = carregar_config()
+            nome = config.get("ultima_impressora")
+            if nome:
+                handle = win32print.OpenPrinter(nome)
+                win32print.ClosePrinter(handle)
+                return str(nome)
+        except Exception:
+            pass
         return None
 
 
@@ -296,6 +301,7 @@ def imprimir_etiqueta(
     inicio_indice: int = 1,
     total_exibicao: int | None = None,
     repetir_em_falha: bool = False,
+    cancel_event: threading.Event | None = None,
 ) -> tuple[bool, ErroImpressora | None]:
     """Monta e envia comandos TSPL para a impressora padrão.
 
@@ -350,8 +356,14 @@ def imprimir_etiqueta(
 
             # -------- monta e imprime etiquetas ----------
             total_display = total_exibicao if total_exibicao is not None else volumes
+            cancelado = False
 
             for offset in range(volumes):
+                if cancel_event and cancel_event.is_set():
+                    win32print.WritePrinter(h_prn, b"CLS\n")
+                    cancelado = True
+                    break
+
                 numero_atual = inicio_indice + offset  # ex.: 7,8,9,10
                 cmd = (
                     f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\n"
@@ -400,6 +412,9 @@ def imprimir_etiqueta(
             win32print.EndPagePrinter(h_prn)
             win32print.EndDocPrinter(h_prn)
             win32print.ClosePrinter(h_prn)
+            if cancelado:
+                logger.info("Impressão cancelada na tentativa %s", tentativa)
+                return False, {"code": 0, "message": "Impressão cancelada"}
             logger.info("Impressão concluída na tentativa %s", tentativa)
             return True, None
         except Exception as e:  # captura erros do win32print
