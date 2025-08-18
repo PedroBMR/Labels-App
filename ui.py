@@ -28,6 +28,7 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QToolButton,
     QSizePolicy,
     QSpacerItem,
     QSpinBox,
@@ -35,6 +36,8 @@ from PyQt5.QtWidgets import (
     QToolTip,
     QVBoxLayout,
     QWidget,
+    QMenu,
+    QStyle,
 )
 
 from log import LOG_FILE, logger
@@ -381,52 +384,48 @@ class EtiquetaApp(QWidget):
         self.reimprimir_btn = QPushButton("Reimprimir Última")
         self.reimprimir_btn.clicked.connect(self._reimprimir_ultima)
 
-        self.reimprimir_faltantes_btn = QPushButton("Reimprimir Faltantes")
-        self.reimprimir_faltantes_btn.clicked.connect(self._reimprimir_faltantes)
+        self.cancelar_btn = QPushButton("Cancelar")
+        self.cancelar_btn.clicked.connect(self._cancelar_impressao)
 
-        self.reimprimir_intervalo_btn = QPushButton("Reimprimir Intervalo…")
-        self.reimprimir_intervalo_btn.clicked.connect(self._reimprimir_intervalo)
+        self.menu_btn = QToolButton()
+        self.menu_btn.setIcon(self.style().standardIcon(QStyle.SP_TitleBarMenuButton))
+        self.menu_btn.setPopupMode(QToolButton.InstantPopup)
+        menu = QMenu(self.menu_btn)
+        self.menu_btn.setMenu(menu)
 
-        self.historico_btn = QPushButton("Abrir Histórico")
-        self.historico_btn.clicked.connect(self._abrir_historico)
-
-        self.historico_mes_btn = QPushButton("Histórico Mensal")
-        self.historico_mes_btn.clicked.connect(self._mostrar_historico_mensal)
-
-        self.exportar_relatorio_btn = QPushButton("Exportar relatório do mês atual")
-        self.exportar_relatorio_btn.clicked.connect(self._exportar_relatorio_mes_atual)
-
-        self.log_btn = QPushButton("Ver Log")
-        self.log_btn.clicked.connect(self._abrir_log)
-
-        self.teste_pagina_btn = QPushButton("Imprimir página de teste")
-        self.teste_pagina_btn.clicked.connect(self._imprimir_teste)
-
-        self.config_btn = QPushButton("Configurações")
-        self.config_btn.clicked.connect(self._abrir_configuracoes)
-
-        self.testar_conexao_btn = QPushButton("Testar conexão")
-        self.testar_conexao_btn.clicked.connect(self._verificar_impressora)
+        ac_faltantes = menu.addAction("Reimprimir Faltantes", self._reimprimir_faltantes)
+        ac_faltantes.setShortcut("Ctrl+F")
+        ac_intervalo = menu.addAction("Reimprimir Intervalo…", self._reimprimir_intervalo)
+        ac_intervalo.setShortcut("Ctrl+I")
+        ac_hist = menu.addAction("Abrir Histórico", self._abrir_historico)
+        ac_hist.setShortcut("Ctrl+H")
+        ac_hist_mes = menu.addAction("Histórico Mensal", self._mostrar_historico_mensal)
+        ac_hist_mes.setShortcut("Ctrl+M")
+        ac_relatorio = menu.addAction(
+            "Exportar relatório do mês atual", self._exportar_relatorio_mes_atual
+        )
+        ac_relatorio.setShortcut("Ctrl+E")
+        ac_log = menu.addAction("Ver Log", self._abrir_log)
+        ac_log.setShortcut("Ctrl+L")
+        ac_teste = menu.addAction("Imprimir página de teste", self._imprimir_teste)
+        ac_teste.setShortcut("Ctrl+T")
+        ac_config = menu.addAction("Configurações", self._abrir_configuracoes)
+        ac_config.setShortcut("Ctrl+,")
+        ac_verificar = menu.addAction("Testar conexão", self._verificar_impressora)
+        ac_verificar.setShortcut("F5")
 
         for b in (
             self.imprimir_btn,
             self.reimprimir_btn,
-            self.reimprimir_faltantes_btn,
-            self.reimprimir_intervalo_btn,
-            self.historico_btn,
-            self.historico_mes_btn,
-            self.exportar_relatorio_btn,
-            self.log_btn,
-            self.teste_pagina_btn,
-            self.config_btn,
-            self.testar_conexao_btn,
+            self.cancelar_btn,
+            self.menu_btn,
         ):
             b.setStyleSheet(
                 "background:#24292e;color:#eeeeee;padding:8px 18px;border-radius:6px;"
-                "font-size: 14px;border: none;"
+                "font-size: 14px;border: none;",
             )
             botoes.addWidget(b)
-        self.testar_conexao_btn.hide()
+
         layout_quadro.addLayout(botoes)
 
         # Status
@@ -604,10 +603,8 @@ class EtiquetaApp(QWidget):
         if nome is None:
             if hasattr(self, "imprimir_btn"):
                 self.imprimir_btn.setEnabled(False)
-            self.testar_conexao_btn.show()
             self._atualizar_status("⚠️ Nenhuma impressora detectada", "orange")
         else:
-            self.testar_conexao_btn.hide()
             self._atualizar_status("🟢 Pronto")
             self.config["ultima_impressora"] = nome
             salvar_config(self.config)
@@ -688,6 +685,10 @@ class EtiquetaApp(QWidget):
             self._atualizar_status("⚠️ Erro na impressão", "orange")
             logger.exception("Erro na impressão")
             QMessageBox.critical(self, "Erro", str(e))
+
+    def _cancelar_impressao(self) -> None:
+        self._limpar_campos()
+        self._atualizar_status("❌ Impressão cancelada", "orange")
 
     def _imprimir_teste(self) -> None:
         self._atualizar_status("🖨️ Imprimindo teste…")
