@@ -20,7 +20,7 @@ jobs:
           pip install -r requirements-py313.txt
           pip install ruff pytest
       - name: Lint
-        run: ruff .
+        run: ruff check .
       - name: Test
         run: pytest
       - name: Build executable
