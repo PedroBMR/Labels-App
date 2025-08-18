@@ -5,8 +5,16 @@ import threading
 from datetime import datetime
 from typing import Any, TypedDict
 
-from PyQt5.QtCore import QDateTime, Qt, QTime, QTimer, QUrl, QFutureWatcher
-from PyQt5.QtCore import QtConcurrent
+from PyQt5.QtCore import (
+    QDateTime,
+    Qt,
+    QTime,
+    QTimer,
+    QUrl,
+    QObject,
+    pyqtSignal,
+    QThread,
+)
 from PyQt5.QtGui import (
     QCloseEvent,
     QColor,
@@ -190,6 +198,19 @@ class EtiquetaInfo(TypedDict):
     data_hora: str
 
 
+class PrintingWorker(QObject):
+    finished = pyqtSignal(bool, dict)
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__()
+        self.args = args
+        self.kwargs = kwargs
+
+    def run(self) -> None:
+        ok, erro = imprimir_etiqueta(*self.args, **self.kwargs)
+        self.finished.emit(ok, erro)
+
+
 class EtiquetaApp(QWidget):
     """Janela principal do gerador de etiquetas."""
 
@@ -203,8 +224,8 @@ class EtiquetaApp(QWidget):
         self.contagem_total, self.contagem_mensal = carregar_contagem()
         self.ultima_etiqueta: EtiquetaInfo | None = None
         self.cancel_event = threading.Event()
-        self._future_watcher = QFutureWatcher()
-        self._future_watcher.finished.connect(self._impressao_finalizada)
+        self._worker: PrintingWorker | None = None
+        self._thread: QThread | None = None
         self._impressao_context: tuple[str, str, str, str, int, str] | None = None
 
         # Estilo base precisa existir antes de sinais dispararem
@@ -659,8 +680,7 @@ class EtiquetaApp(QWidget):
             volumes,
             data_hora,
         )
-        future = QtConcurrent.run(
-            imprimir_etiqueta,
+        self._worker = PrintingWorker(
             saida,
             categoria,
             emissor,
@@ -672,16 +692,23 @@ class EtiquetaApp(QWidget):
             repetir_em_falha=self.retry_checkbox.isChecked(),
             cancel_event=self.cancel_event,
         )
-        self._future_watcher.setFuture(future)
+        self._thread = QThread()
+        self._worker.moveToThread(self._thread)
+        self._thread.started.connect(self._worker.run)
+        self._worker.finished.connect(self._impressao_finalizada)
+        self._worker.finished.connect(self._thread.quit)
+        self._thread.finished.connect(self._cleanup_thread)
+        self._thread.start()
 
     def _cancelar_impressao(self) -> None:
         self.cancel_event.set()
+        if self._thread and self._thread.isRunning():
+            self._thread.quit()
         self._atualizar_status("❌ Impressão cancelada", "orange")
 
-    def _impressao_finalizada(self) -> None:
+    def _impressao_finalizada(self, ok: bool, erro: dict) -> None:
         if self._impressao_context is None:
             return
-        ok, erro = self._future_watcher.result()
         saida, categoria, emissor, municipio, volumes, data_hora = self._impressao_context
         if not ok:
             if self.cancel_event.is_set():
@@ -720,6 +747,14 @@ class EtiquetaApp(QWidget):
 
         self.cancel_event.clear()
         self._impressao_context = None
+
+    def _cleanup_thread(self) -> None:
+        if self._worker is not None:
+            self._worker.deleteLater()
+            self._worker = None
+        if self._thread is not None:
+            self._thread.deleteLater()
+            self._thread = None
 
     def _imprimir_teste(self) -> None:
         self._atualizar_status("🖨️ Imprimindo teste…")
