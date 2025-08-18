@@ -1,115 +1,49 @@
+
 # -*- mode: python ; coding: utf-8 -*-
-"""Spec file for building the application as a single executable.
-
-This configuration targets Windows, bundles all assets and embeds
-version metadata. The resulting binary runs without a console window.
-"""
-
+# One-file build for Windows (no console).
 import os
-from _version import __version__
 from PyInstaller.building.datastruct import Tree
-from PyInstaller.utils.win32.versioninfo import (
-    VSVersionInfo,
-    FixedFileInfo,
-    StringFileInfo,
-    StringTable,
-    StringStruct,
-    VarFileInfo,
-    VarStruct,
-)
+from PyInstaller.utils.hooks import collect_submodules
+from _version import __version__
 
-# ------------------------------------------------------------------
-# Configurable parameters via environment variables
-APP_NAME = os.environ.get("APP_NAME", "GeradorEtiquetas")
-ICON_PATH = os.environ.get("APP_ICON", os.path.join("assets", "color.ico"))
+APP_NAME = "GeradorEtiquetas"
+ICON_PATH = os.path.join("assets", "color.ico")
 
-# ------------------------------------------------------------------
-# Windows file version information
-_ver_tuple = tuple(map(int, __version__.split("."))) + (0,)
-version_info = VSVersionInfo(
-    ffi=FixedFileInfo(
-        filevers=_ver_tuple,
-        prodvers=_ver_tuple,
-        mask=0x3F,
-        flags=0x0,
-        OS=0x4,
-        fileType=0x1,
-        subtype=0x0,
-        date=(0, 0),
-    ),
-    kids=[
-        StringFileInfo(
-            [
-                StringTable(
-                    "040904B0",
-                    [
-                        StringStruct("CompanyName", "CONIMS"),
-                        StringStruct("FileDescription", "Gerador de Etiquetas CONIMS"),
-                        StringStruct("FileVersion", __version__),
-                        StringStruct("ProductVersion", __version__),
-                        StringStruct("ProductName", "Gerador de Etiquetas"),
-                        StringStruct("LegalCopyright", "Copyright (C) CONIMS"),
-                    ],
-                )
-            ]
-        ),
-        VarFileInfo([VarStruct("Translation", [0x0409, 0x04B0])]),
-    ],
-)
+# Collect a few dynamic modules that PyInstaller sometimes misses
+hidden = []
+hidden += collect_submodules("PyQt5")
+hidden += collect_submodules("win32com")
+hidden += collect_submodules("PIL")
 
-# ------------------------------------------------------------------
-# 1) Analyse sources and include hidden imports
 a = Analysis(
     ["main.py"],
     pathex=[],
     binaries=[],
-    datas=[],
-    hiddenimports=["pyqt5", "PyQt5.sip", "win32print", "win32api", "win32ui"],
+    datas=[("assets" + os.sep + "*", "assets")],
+    hiddenimports=hidden + ["pywintypes", "pythoncom", "win32timezone"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
     noarchive=False,
-    optimize=0,
 )
 
-# 2) Bundle Python bytecode
-pyz = PYZ(a.pure)
+pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 
-# 3) First-stage executable (no binaries) for onefile build
 exe = EXE(
     pyz,
     a.scripts,
-    [],
-    exclude_binaries=True,
-    name=APP_NAME,
-    console=False,
-    icon=ICON_PATH,
-    upx=True,
-    contents_directory=".",  # avoid _internal folder
-)
-
-# 4) Package dependencies and assets into a PKG archive
-pkg = PKG(
-    exe,
     a.binaries,
     a.zipfiles,
     a.datas,
-    Tree("assets", prefix="assets"),
+    name=APP_NAME,
+    debug=False,
+    bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
-    name=APP_NAME,
+    console=False,
+    disable_windowed_traceback=False,
+    icon=ICON_PATH,
 )
 
-# 5) Final executable with metadata and runtime options
-app = EXE(
-    pkg,
-    name=APP_NAME,
-    console=False,
-    icon=ICON_PATH,
-    version=version_info,
-    upx=True,
-    contents_directory=".",  # avoid _internal folder
-    bootloader_runtime_opts=["--dpiaware", "--utf-8"],
-)
+# one-file builds do not use COLLECT; the .exe goes to dist/

@@ -3,6 +3,7 @@
 from typing import TypedDict
 
 import json
+import unicodedata
 import time
 import win32print
 
@@ -11,6 +12,24 @@ from log import logger
 from persistence import carregar_config, salvar_config
 
 DOTS_MM: int = 8  # ~203 dpi
+ENCODING: str = "cp1252"  # TSPL espera 8-bit (latin-1/cp1252)
+
+# Largura base aproximada (em dots) dos fonts TSPL internos (ajuste fino se precisar)
+FONT_BASE_W = {
+    "1": 8,
+    "2": 12,
+    "3": 16,
+    "4": 24,
+    "5": 32,
+}
+
+
+def _text_width_dots(texto: str, font: str, xm: int) -> int:
+    """Largura aproximada do texto em dots (considerando fontes internas TSPL)."""
+    base = FONT_BASE_W.get(str(font), 12)
+    xm = int(xm) if int(xm) > 0 else 1
+    return len(str(texto)) * base * xm
+
 
 # -------------------- templates --------------------
 try:
@@ -19,7 +38,7 @@ try:
 except Exception:
     # Fallback para garantir funcionamento mesmo sem arquivo
     TEMPLATES = {
-        "Padrão": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2}
+        "60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2}
     }
 
 
@@ -43,10 +62,12 @@ class Layout(TypedDict):
     numeracao: TextoLayout
     logo_y: int
     logo_largura: int
+    # opcional: numeracao_total -> quando presente, imprime "DE N" separado
+    # numeracao_total: TextoLayout  # deixamos não tipado para evitar dependências
 
 
 LAYOUTS: dict[str, Layout] = {
-    "Padrão": {
+    "60x80": {
         "titulo": {"x": 30, "y": 20, "font": "3", "xm": 2, "ym": 2},
         "saida": {"x": 30, "y": 70, "font": "2", "xm": 1, "ym": 1},
         "categoria": {"x": 30, "y": 90, "font": "2", "xm": 1, "ym": 1},
@@ -56,7 +77,7 @@ LAYOUTS: dict[str, Layout] = {
         "fracao": {"x": 30, "y": 220, "font": "2", "xm": 1, "ym": 1},
         "fragil": {"x": 30, "y": 270, "font": "2", "xm": 1, "ym": 1},
         "numeracao": {"x": 30, "y": 330, "font": "4", "xm": 2, "ym": 2},
-        "logo_y": 450,
+        "logo_y": 400,
         "logo_largura": 240,
     },
     "Compacto": {
@@ -72,49 +93,151 @@ LAYOUTS: dict[str, Layout] = {
         "logo_y": 338,
         "logo_largura": 240,
     },
-    "Panoramico": {
-        "titulo": {"x": 20, "y": 20, "font": "2", "xm": 1, "ym": 1},
-        "saida": {"x": 20, "y": 60, "font": "1", "xm": 1, "ym": 1},
-        "categoria": {"x": 20, "y": 90, "font": "1", "xm": 1, "ym": 1},
-        "emissor": {"x": 20, "y": 120, "font": "1", "xm": 1, "ym": 1},
-        "municipio": {"x": 20, "y": 150, "font": "1", "xm": 1, "ym": 1},
-        "data": {"x": 20, "y": 180, "font": "1", "xm": 1, "ym": 1},
-        "fracao": {"x": 420, "y": 60, "font": "1", "xm": 1, "ym": 1},
-        "fragil": {"x": 420, "y": 90, "font": "1", "xm": 1, "ym": 1},
-        "numeracao": {"x": 420, "y": 180, "font": "2", "xm": 1, "ym": 1},
-        "logo_y": 120,
-        "logo_largura": 120,
-    },
+    "100x30": {
+        "titulo": {"x": 20, "y": 20, "font": "3", "xm": 1, "ym": 1},
+        "saida": {"x": 20, "y": 60, "font": "2", "xm": 1, "ym": 1},
+        "categoria": {"x": 20, "y": 90, "font": "2", "xm": 1, "ym": 1},
+        "emissor": {"x": 20, "y": 120, "font": "2", "xm": 1, "ym": 1},
+        "municipio": {"x": 20, "y": 150, "font": "2", "xm": 1, "ym": 1},
+        "data": {"x": 20, "y": 180, "font": "2", "xm": 1, "ym": 1},
+
+        # [ ] Fração e [ ] Frágil lado a lado (mesma linha)
+        "fracao": {"x": 20,  "y": 220, "font": "2", "xm": 1, "ym": 1},
+        "fragil": {"x": 200, "y": 220, "font": "2", "xm": 1, "ym": 1},
+
+        # Numeração (número e "DE N" na mesma linha; "DE N" segue a largura do número)
+        "numeracao": {"x": 500, "y": 36, "font": "2", "xm": 2, "ym": 2},
+
+        # Logo
+        "logo_y": 75,
+        "logo_largura": 160,
+        "logo_x": 550
+    }
+
 }
 
+# Campo opcional: imprime "DE N" separado (seguir X dinamicamente)
+LAYOUTS["100x30"]["numeracao_total"] = {  # type: ignore[index]
+    "x": 550,
+    "y": 36,
+    "font": "2",
+    "xm": 2,
+    "ym": 2,
+    # parâmetros extras (não TSPL): seguem o número automaticamente
+    "follow": True,   # True = calcula X com base na largura do número
+    "gap_mm": 2.0,    # folga entre número e "DE", em milímetros
+}
+
+# -------------------- Aliases de nomes (compatibilidade) --------------------
+# Só usamos se o nome solicitado NÃO existir em TEMPLATES/LAYOUTS.
+ALIASES = {
+    "panoramico": "100x30",
+    "panorâmico": "100x30",
+    "padrao": "60x80",
+    "padrão": "60x80",
+}
+
+# -------------------- Defaults seguros (sem depender de "Padrão") --------------------
+# Dimensões default até aplicar um template real
 LARGURA_ETIQUETA_MM: int = 60
 ALTURA_ETIQUETA_MM: int = 80
 GAP_MM: int = 2
-LAYOUT_ATUAL: Layout = LAYOUTS["Padrão"]
+
+# Layout default: usa o primeiro disponível se "Padrão" não existir
+_DEFAULT_LAYOUT_KEY = next(iter(LAYOUTS))
+LAYOUT_ATUAL: Layout = LAYOUTS.get("Padrão", LAYOUTS[_DEFAULT_LAYOUT_KEY])
+
+
+def _norm_key(s: str) -> str:
+    """Normaliza string para comparação (sem acentos, minúsculas, trim)."""
+    s = unicodedata.normalize("NFKD", s) if s else ""
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return s.strip().lower()
+
+
+def _sanitize_text(s: str) -> str:
+    """Sanitiza texto para TSPL (remove quebras e troca aspas duplas por simples)."""
+    if s is None:
+        return ""
+    s = s.replace("\r", " ").replace("\n", " ")
+    s = s.replace('"', "'")
+    return s
 
 
 def listar_templates() -> list[str]:
     """Retorna a lista de nomes de templates disponíveis."""
-
     return list(TEMPLATES.keys())
 
 
 def aplicar_template(nome: str) -> None:
     """Define qual template será utilizado nas impressões."""
 
+    # 1) Resolve o modelo (TEMPLATES)
     modelo = TEMPLATES.get(nome)
     if not modelo:
-        nome = list(TEMPLATES.keys())[0]
+        n_alvo = _norm_key(nome)
+        # tenta normalizado
+        for k, v in TEMPLATES.items():
+            if _norm_key(k) == n_alvo:
+                modelo = v
+                nome = k
+                break
+        # se ainda não encontrou, aplica alias
+        if not modelo and n_alvo in ALIASES:
+            nome = ALIASES[n_alvo]
+            modelo = TEMPLATES.get(nome)
+            if not modelo:
+                for k, v in TEMPLATES.items():
+                    if _norm_key(k) == _norm_key(nome):
+                        modelo = v
+                        nome = k
+                        break
+    if not modelo:
+        # fallback: primeiro template disponível
+        nome = next(iter(TEMPLATES))
         modelo = TEMPLATES[nome]
+
+    # 2) Resolve o layout (LAYOUTS) com o mesmo nome (ou alias se preciso)
+    layout_escolhido = LAYOUTS.get(nome)
+    if not layout_escolhido:
+        n_alvo = _norm_key(nome)
+        for k, v in LAYOUTS.items():
+            if _norm_key(k) == n_alvo:
+                layout_escolhido = v
+                nome = k
+                break
+        if not layout_escolhido and n_alvo in ALIASES:
+            nome2 = ALIASES[n_alvo]
+            layout_escolhido = LAYOUTS.get(nome2)
+            if not layout_escolhido:
+                for k, v in LAYOUTS.items():
+                    if _norm_key(k) == _norm_key(nome2):
+                        layout_escolhido = v
+                        nome = k
+                        break
+    if not layout_escolhido:
+        logger.warning("Layout '%s' não encontrado. Usando o primeiro disponível.", nome)
+        layout_escolhido = LAYOUTS[next(iter(LAYOUTS))]
+
+    # 3) Aplica dimensões e layout
     global LARGURA_ETIQUETA_MM, ALTURA_ETIQUETA_MM, GAP_MM, LAYOUT_ATUAL
     LARGURA_ETIQUETA_MM = int(modelo.get("largura_mm", 60))
     ALTURA_ETIQUETA_MM = int(modelo.get("altura_mm", 80))
     GAP_MM = int(modelo.get("gap_mm", 2))
-    LAYOUT_ATUAL = LAYOUTS.get(nome, LAYOUTS[list(LAYOUTS.keys())[0]])
+    LAYOUT_ATUAL = layout_escolhido
+    logger.info(
+        "Template aplicado: nome=%s largura_mm=%s altura_mm=%s gap_mm=%s",
+        nome, LARGURA_ETIQUETA_MM, ALTURA_ETIQUETA_MM, GAP_MM
+    )
 
 
-# aplica template padrão ao importar módulo
-aplicar_template("Padrão")
+# aplica template padrão ao importar módulo, de forma segura
+try:
+    _DEFAULT_TEMPLATE_NAME = "Padrão" if "Padrão" in TEMPLATES else next(iter(TEMPLATES))
+except StopIteration:
+    # fallback extremo se TEMPLATES estiver vazio
+    _DEFAULT_TEMPLATE_NAME = next(iter(LAYOUTS))
+aplicar_template(_DEFAULT_TEMPLATE_NAME)
 
 
 class ErroImpressora(TypedDict):
@@ -124,7 +247,6 @@ class ErroImpressora(TypedDict):
 
 def descobrir_impressora_padrao() -> str | None:
     """Retorna o nome da impressora configurada ou a padrão do sistema."""
-
     try:
         config = carregar_config()
         nome = config.get("ultima_impressora")
@@ -138,19 +260,28 @@ def descobrir_impressora_padrao() -> str | None:
         nome = win32print.GetDefaultPrinter()
         config["ultima_impressora"] = nome
         salvar_config(config)
-        return nome
-    except Exception:  # pragma: no cover - ambientes sem win32
+        return str(nome)
+    except Exception:
         return None
 
 
 def _texto_layout(chave: str, texto: str, layout: Layout) -> str:
     """Gera comando ``TEXT`` baseado nas coordenadas do layout informado."""
-
     p = layout[chave]
-    return (
-        f'TEXT {p["x"]},{p["y"]},"{p["font"]}",0,'
-        f'{p["xm"]},{p["ym"]},"{texto}"\n'
-    )
+    v = _sanitize_text(texto)
+    return (f'TEXT {p["x"]},{p["y"]},"{p["font"]}",0,{p["xm"]},{p["ym"]},"{v}"\n')
+
+
+def _calc_logo_x(layout: Layout, dots_x: int, largura_bytes: int) -> int:
+    """Calcula a posição X do logo com override por layout (logo_x ou logo_x_mm)."""
+    if "logo_x_mm" in layout:  # type: ignore[operator]
+        x_logo = int(layout["logo_x_mm"] * DOTS_MM)  # type: ignore[index]
+    elif "logo_x" in layout:  # type: ignore[operator]
+        x_logo = int(layout["logo_x"])  # type: ignore[index]
+    else:
+        x_logo = (dots_x - (largura_bytes * 8)) // 2  # centraliza
+    # limita à área imprimível
+    return max(0, min(x_logo, max(0, dots_x - (largura_bytes * 8))))
 
 
 def imprimir_etiqueta(
@@ -181,15 +312,26 @@ def imprimir_etiqueta(
     )
 
     dots_x = LARGURA_ETIQUETA_MM * DOTS_MM
-    dots_y = ALTURA_ETIQUETA_MM * DOTS_MM
-    x_logo = (dots_x - (largura_bytes * 8)) // 2  # centraliza logo
+    # dots_y = ALTURA_ETIQUETA_MM * DOTS_MM  # (não usado aqui)
+    x_logo = _calc_logo_x(layout, dots_x, largura_bytes)
 
-    if layout["logo_y"] + altura_px > dots_y:
-        return False, {"code": 0, "message": "Logo fora da área do template"}
-
-    # Total exibido no rodapé
-    if total_exibicao is None:
-        total_exibicao = volumes
+    # valida posições do layout
+    for chave in (
+        "titulo",
+        "saida",
+        "categoria",
+        "emissor",
+        "municipio",
+        "data",
+        "fracao",
+        "fragil",
+        "numeracao",
+    ):
+        if chave not in layout:
+            return False, {
+                "code": 0,
+                "message": f"Layout incorreto: campo '{chave}' ausente.",
+            }
 
     nome_imp = descobrir_impressora_padrao()
     if nome_imp is None:
@@ -203,15 +345,20 @@ def imprimir_etiqueta(
             win32print.StartDocPrinter(h_prn, 1, ("Etiqueta CONIMS", None, "RAW"))
             win32print.StartPagePrinter(h_prn)
 
-            def t(chave: str, texto: str) -> str:
-                return _texto_layout(chave, texto, layout)
+            def t(ch: str, txt: str) -> str:
+                return _texto_layout(ch, txt, layout)
 
             # -------- monta e imprime etiquetas ----------
+            total_display = total_exibicao if total_exibicao is not None else volumes
+
             for offset in range(volumes):
                 numero_atual = inicio_indice + offset  # ex.: 7,8,9,10
                 cmd = (
                     f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\n"
-                    f"GAP {GAP_MM} mm,0 mm\n"
+                    f"GAP {GAP_MM} mm,0\n"
+                    "DENSITY 8\n"
+                    "SPEED 4\n"
+                    "DIRECTION 1\n"
                     "CLS\n"
                 )
                 cmd += t("titulo", "CONIMS")
@@ -222,11 +369,32 @@ def imprimir_etiqueta(
                 cmd += t("data", f"Impresso em: {data_hora}")
                 cmd += t("fracao", "[ ] Fracao")
                 cmd += t("fragil", "[ ] Fragil")
-                cmd += t("numeracao", f"{numero_atual} DE {total_exibicao}")
-                cmd += (
-                    f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},{altura_px},0,"
-                )
-                corpo = cmd.encode() + bitmap + b"\nPRINT 1\n"
+
+                # --- numeração ---
+                if "numeracao_total" in layout:  # caminho com "DE N" separado
+                    cmd += t("numeracao", f"{numero_atual}")
+
+                    p_num = layout["numeracao"]
+                    p_tot = layout["numeracao_total"]  # type: ignore[index]
+                    follow = bool(p_tot.get("follow", True))  # type: ignore[call-arg]
+                    gap_mm = float(p_tot.get("gap_mm", 2.0))  # type: ignore[call-arg]
+
+                    if follow:
+                        largura_num = _text_width_dots(str(numero_atual), p_num["font"], p_num["xm"])
+                        x_de = int(p_num["x"] + largura_num + gap_mm * DOTS_MM)
+                    else:
+                        x_de = int(p_tot.get("x", p_num["x"]))  # type: ignore[arg-type]
+
+                    y_de = int(p_tot.get("y", p_num["y"]))  # type: ignore[arg-type]
+                    cmd += f'TEXT {x_de},{y_de},"{p_tot["font"]}",0,{p_tot["xm"]},{p_tot["ym"]},"DE {total_display}"\n'
+                else:
+                    cmd += t("numeracao", f"{numero_atual} DE {total_display}")
+
+                # --- logo ---
+                cmd += f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},{altura_px},0,"
+
+                logger.debug("tspl_first_200=%r", cmd[:200])
+                corpo = cmd.encode(ENCODING, errors="replace") + bitmap + b"\nPRINT 1\n"
                 win32print.WritePrinter(h_prn, corpo)
 
             win32print.EndPagePrinter(h_prn)
@@ -254,9 +422,8 @@ def imprimir_pagina_teste(
 ) -> tuple[bool, ErroImpressora | None]:
     """Imprime uma página de teste padrão.
 
-    A etiqueta contém o logo, campos fictícios, numeração ``1 DE 1`` e uma
-    régua horizontal de calibração. O layout utilizado é o mesmo da
-    impressão normal das etiquetas.
+    A etiqueta contém o logo, campos fictícios, numeração e uma régua de calibração.
+    O layout utilizado é o mesmo da impressão normal das etiquetas.
     """
 
     layout = LAYOUT_ATUAL
@@ -268,7 +435,7 @@ def imprimir_pagina_teste(
 
     dots_x = LARGURA_ETIQUETA_MM * DOTS_MM
     dots_y = ALTURA_ETIQUETA_MM * DOTS_MM
-    x_logo = (dots_x - (largura_bytes * 8)) // 2
+    x_logo = _calc_logo_x(layout, dots_x, largura_bytes)
 
     # valida posições do layout
     for chave in (
@@ -282,18 +449,19 @@ def imprimir_pagina_teste(
         "fragil",
         "numeracao",
     ):
-        pos = layout[chave]
-        if pos["x"] >= dots_x or pos["y"] >= dots_y:
-            return False, {"code": 0, "message": f"Campo {chave} fora da área do template"}
-    if layout["logo_y"] + altura_px > dots_y:
-        return False, {"code": 0, "message": "Logo fora da área do template"}
+        if chave not in layout:
+            return False, {
+                "code": 0,
+                "message": f"Layout incorreto: campo '{chave}' ausente.",
+            }
 
+    # régua horizontal para calibração (até 50 mm)
     ruler_start = layout["titulo"]["x"]
     ruler_y = dots_y - 40
     ruler_len = min(50 * DOTS_MM, dots_x - ruler_start)
-    ruler_len -= ruler_len % (10 * DOTS_MM)  # garante múltiplos de 10 mm
+    ruler_len -= ruler_len % (10 * DOTS_MM)  # múltiplos de 10 mm
     if ruler_len <= 0 or ruler_start + ruler_len > dots_x or ruler_y + 4 > dots_y:
-        return False, {"code": 0, "message": "Régua fora da área do template"}
+        return False, {"code": 0, "message": "Layout inválido p/ régua de calibração."}
 
     nome_imp = descobrir_impressora_padrao()
     if nome_imp is None:
@@ -307,32 +475,61 @@ def imprimir_pagina_teste(
             win32print.StartDocPrinter(h_prn, 1, ("Etiqueta CONIMS", None, "RAW"))
             win32print.StartPagePrinter(h_prn)
 
+            def t(ch: str, txt: str) -> str:
+                return _texto_layout(ch, txt, layout)
+
             # --- monta pagina de teste ---
             cmd = (
                 f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\n"
-                f"GAP {GAP_MM} mm,0 mm\n"
+                f"GAP {GAP_MM} mm,0\n"
+                "DENSITY 8\n"
+                "SPEED 4\n"
+                "DIRECTION 1\n"
                 "CLS\n"
             )
-            cmd += _texto_layout("titulo", "CONIMS", layout)
-            cmd += _texto_layout("saida", "Saida: 000", layout)
-            cmd += _texto_layout("categoria", "Categoria: TESTE", layout)
-            cmd += _texto_layout("emissor", "Emissor: TESTE", layout)
-            cmd += _texto_layout("municipio", "Municipio: TESTE", layout)
-            cmd += _texto_layout("data", "Impresso em: 00/00/0000 00:00", layout)
-            cmd += _texto_layout("fracao", "[ ] Fracao", layout)
-            cmd += _texto_layout("fragil", "[ ] Fragil", layout)
-            cmd += _texto_layout("numeracao", "1 DE 1", layout)
+            cmd += t("titulo", "CONIMS")
+            cmd += t("saida", "Saida: 000")
+            cmd += t("categoria", "Categoria: TESTE")
+            cmd += t("emissor", "Emissor: TESTE")
+            cmd += t("municipio", "Municipio: TESTE")
+            cmd += t("data", "Impresso em: 00/00/0000 00:00")
+            cmd += t("fracao", "[ ] Fracao")
+            cmd += t("fragil", "[ ] Fragil")
+
+            # --- numeração teste ---
+            if "numeracao_total" in layout:
+                cmd += t("numeracao", "1")
+
+                p_num = layout["numeracao"]
+                p_tot = layout["numeracao_total"]  # type: ignore[index]
+                follow = bool(p_tot.get("follow", True))  # type: ignore[call-arg]
+                gap_mm = float(p_tot.get("gap_mm", 2.0))  # type: ignore[call-arg]
+
+                if follow:
+                    largura_num = _text_width_dots("1", p_num["font"], p_num["xm"])
+                    x_de = int(p_num["x"] + largura_num + gap_mm * DOTS_MM)
+                else:
+                    x_de = int(p_tot.get("x", p_num["x"]))  # type: ignore[arg-type]
+
+                y_de = int(p_tot.get("y", p_num["y"]))  # type: ignore[arg-type]
+                cmd += f'TEXT {x_de},{y_de},"{p_tot["font"]}",0,{p_tot["xm"]},{p_tot["ym"]},"DE 1"\n'
+            else:
+                cmd += t("numeracao", "1 DE 1")
+
+            # --- logo ---
             cmd += f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},{altura_px},0,"
 
+            # Régua (marcas a cada 10 mm)
             barras = f"BAR {ruler_start},{ruler_y},{ruler_len},4\n"
             marcas = ruler_len // (10 * DOTS_MM)
-            for i in range(marcas + 1):  # marcas a cada 10 mm
+            for i in range(marcas + 1):
                 altura = 20 if i in (0, marcas) else 12
                 x = ruler_start + i * 10 * DOTS_MM
                 y = ruler_y - altura
                 barras += f"BAR {x},{y},2,{altura}\n"
 
-            corpo = cmd.encode() + bitmap + f"\n{barras}PRINT 1\n".encode()
+            logger.debug("tspl_first_200=%r", cmd[:200])
+            corpo = cmd.encode(ENCODING, errors="replace") + bitmap + f"\n{barras}PRINT 1\n".encode(ENCODING)
             win32print.WritePrinter(h_prn, corpo)
 
             win32print.EndPagePrinter(h_prn)

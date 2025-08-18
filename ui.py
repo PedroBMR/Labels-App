@@ -168,8 +168,6 @@ class ConfigDialog(QDialog):
         layout.addWidget(botoes)
 
     def obter_config(self) -> dict[str, Any]:
-        """Retorna as configurações ajustadas pelo usuário."""
-
         return {
             "ultima_impressora": self.printer_edit.text().strip(),
             "template": self.template_combo.currentText(),
@@ -191,15 +189,23 @@ class EtiquetaApp(QWidget):
     """Janela principal do gerador de etiquetas."""
 
     def __init__(self) -> None:
-        """Inicializa a interface gráfica e configura a janela."""
-
         super().__init__()
         self.setWindowTitle("Gerador de Etiquetas CONIMS")
-        self.setGeometry(300, 100, 800, 720)
+        # tamanho inicial (redimensionável pelo usuário depois):
+        self.resize(600, 1080)
         self.setWindowIcon(QIcon(recurso_caminho("color.png")))
         self.config = carregar_config()
         self.contagem_total, self.contagem_mensal = carregar_contagem()
         self.ultima_etiqueta: EtiquetaInfo | None = None
+
+        # Estilo base precisa existir antes de sinais dispararem
+        self._input_style_base = (
+            "background:#191919;color:#e5e5e5;padding:7px;"
+            "border:1px solid #282828;border-radius: 6px;font-size: 14px;"
+        )
+        # Guard de inicialização da UI
+        self._ui_ready = False
+
         self._contagem_label = QLabel()
         self._contagem_label.setStyleSheet(
             "color: #CCCCCC; font-size: 15px; font-weight: 500; padding: 8px; "
@@ -209,13 +215,18 @@ class EtiquetaApp(QWidget):
 
         self._setup_ui()
         self._aplicar_tema_escuro()
+
+        # Validação dinâmica
+        self._wire_validation_signals()
+        # Marca UI como pronta e atualiza estado dos botões
+        self._ui_ready = True
+        self._update_print_button_state()
+
         self._atualizar_status("🟢 Pronto")
         self._agendar_backup_diario()
         self._verificar_impressora()
 
     def _agendar_backup_diario(self) -> None:
-        """Agenda a execução do backup diário conforme configuração."""
-
         horario = str(self.config.get("backup_horario", "17:10"))
         try:
             horas, minutos = [int(x) for x in horario.split(":", 1)]
@@ -236,24 +247,14 @@ class EtiquetaApp(QWidget):
         self._timer_backup.start(ms_ate_backup)
 
     def _executar_backup_diario(self) -> None:
-        """Executa o backup e reagenda a próxima execução."""
-
         backup_automatico()
         self._agendar_backup_diario()
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        """Garante um backup ao fechar a janela.
-
-        Args:
-            event: Evento de fechamento recebido do Qt.
-        """
-
         backup_automatico()
         event.accept()
 
     def _setup_ui(self) -> None:
-        """Monta todos os widgets e layouts da interface."""
-
         layout_base = QVBoxLayout(self)
         layout_base.setContentsMargins(0, 0, 0, 0)
         layout_base.addSpacerItem(
@@ -309,34 +310,17 @@ class EtiquetaApp(QWidget):
         self.template_input.addItems(listar_templates())
         self.template_input.currentTextChanged.connect(aplicar_template)
         self.template_input.currentTextChanged.connect(self._salvar_template_config)
+        self.template_input.currentTextChanged.connect(self._update_print_button_state)
+
         idx_tpl = self.template_input.findText(self.config.get("template", "Padrão"))
         if idx_tpl >= 0:
             self.template_input.setCurrentIndex(idx_tpl)
         aplicar_template(self.template_input.currentText())
         self._carregar_listas()
 
-        # Limitações de entrada e normalização básica
-        self.saida_input.setMaxLength(20)
-        self.saida_input.editingFinished.connect(
-            lambda: self._sanitize_input(self.saida_input, 20)
-        )
-
-        for campo in (
-            self.categoria_input,
-            self.emissor_input,
-            self.municipio_input,
-        ):
-            linha = campo.lineEdit()
-            linha.setMaxLength(50)
-            linha.editingFinished.connect(
-                lambda c=campo: self._sanitize_input(c, 50)
-            )
-
+        # Estilo base para inputs (reaplicado nas validações)
         def _estilo(w):
-            w.setStyleSheet(
-                "background:#191919;color:#e5e5e5;padding:7px;"
-                "border:1px solid #282828;border-radius: 6px;font-size: 14px;"
-            )
+            w.setStyleSheet(self._input_style_base)
 
         for w in (
             self.saida_input,
@@ -445,8 +429,6 @@ class EtiquetaApp(QWidget):
         )
 
     def _aplicar_tema_escuro(self) -> None:
-        """Aplica esquema de cores escuro à aplicação."""
-
         p = QPalette()
         p.setColor(QPalette.Window, QColor(30, 30, 30))
         p.setColor(QPalette.WindowText, Qt.white)
@@ -456,6 +438,71 @@ class EtiquetaApp(QWidget):
         p.setColor(QPalette.ButtonText, Qt.white)
         self.setPalette(p)
 
+    # =========================
+    # Validação dinâmica
+    # =========================
+    def _wire_validation_signals(self) -> None:
+        self.saida_input.textChanged.connect(self._update_print_button_state)
+        for combo in (self.categoria_input, self.emissor_input, self.municipio_input):
+            combo.currentTextChanged.connect(self._update_print_button_state)
+            if combo.isEditable() and combo.lineEdit() is not None:
+                combo.lineEdit().textChanged.connect(self._update_print_button_state)
+        self.volumes_input.valueChanged.connect(self._update_print_button_state)
+
+    def _is_form_valid(self) -> tuple[bool, str]:
+        saida_ok = bool(self.saida_input.text().strip())
+        cat_ok = bool(self.categoria_input.currentText().strip())
+        emi_ok = bool(self.emissor_input.currentText().strip())
+        mun_ok = bool(self.municipio_input.currentText().strip())
+        vol_ok = self.volumes_input.value() >= 1
+
+        if not saida_ok:
+            return False, "Preencha o campo 'Saída'."
+        if not cat_ok:
+            return False, "Preencha o campo 'Categoria'."
+        if not emi_ok:
+            return False, "Preencha o campo 'Emissor'."
+        if not mun_ok:
+            return False, "Preencha o campo 'Município'."
+        if not vol_ok:
+            return False, "O campo 'Número de Volumes' deve ser ≥ 1."
+        return True, ""
+
+    def _apply_field_highlights(self) -> None:
+        base = getattr(
+            self,
+            "_input_style_base",
+            "background:#191919;color:#e5e5e5;padding:7px;border:1px solid #282828;border-radius: 6px;font-size: 14px;",
+        )
+
+        def mark(widget, bad: bool):
+            widget.setStyleSheet(base + ("border:1px solid #ff4d4d;" if bad else ""))
+
+        saida_bad = not bool(self.saida_input.text().strip())
+        cat_bad = not bool(self.categoria_input.currentText().strip())
+        emi_bad = not bool(self.emissor_input.currentText().strip())
+        mun_bad = not bool(self.municipio_input.currentText().strip())
+        vol_bad = self.volumes_input.value() < 1
+
+        mark(self.saida_input, saida_bad)
+        mark(self.categoria_input, cat_bad)
+        mark(self.emissor_input, emi_bad)
+        mark(self.municipio_input, mun_bad)
+        mark(self.volumes_input, vol_bad)
+
+    def _update_print_button_state(self) -> None:
+        # Evita rodar antes de a UI terminar de montar
+        if not getattr(self, "_ui_ready", False):
+            return
+        ok, _ = self._is_form_valid()
+        self._apply_field_highlights()
+        tem_imp = descobrir_impressora_padrao() is not None
+        if hasattr(self, "imprimir_btn"):
+            self.imprimir_btn.setEnabled(ok and tem_imp)
+
+    # =========================
+    # Listas e normalização
+    # =========================
     def _popular_combo(
         self, combo: QComboBox, recentes: list[str], padroes: list[str]
     ) -> None:
@@ -475,8 +522,6 @@ class EtiquetaApp(QWidget):
         combo.addItems(recentes + restantes)
 
     def _carregar_listas(self) -> None:
-        """Preenche as listas de seleção com valores padrão e recentes."""
-
         recentes = carregar_recentes_listas()
         self._popular_combo(
             self.categoria_input, recentes.get("categoria", []), CATEGORIAS_PADRAO
@@ -488,27 +533,18 @@ class EtiquetaApp(QWidget):
             self.municipio_input, recentes.get("municipio", []), MUNICIPIOS_PADRAO
         )
 
-    def _sanitize_input(
-        self, widget: QLineEdit | QComboBox, max_len: int
-    ) -> tuple[str, bool]:
-        """Normaliza texto de um campo e sinaliza se houve erro."""
-
-        if isinstance(widget, QComboBox):
-            line_edit = widget.lineEdit()
-        else:
-            line_edit = widget
-        texto = line_edit.text()
-        texto_norm, erro = normalize_text(texto, max_len=max_len)
-        line_edit.setText(texto_norm)
-        if erro:
-            QToolTip.showText(
-                line_edit.mapToGlobal(line_edit.rect().bottomLeft()),
-                erro,
-                line_edit,
-            )
-            line_edit.setFocus()
-            return texto_norm, True
-        return texto_norm, False
+    def _coletar_campos(self) -> tuple[str, str, str, str, int, str]:
+        saida = self.saida_input.text().strip()
+        categoria = self.categoria_input.currentText().strip()
+        emissor = self.emissor_input.currentText().strip()
+        municipio = self.municipio_input.currentText().strip()
+        saida, _ = normalize_text(saida, max_len=20)
+        categoria, _ = normalize_text(categoria, max_len=50)
+        emissor, _ = normalize_text(emissor, max_len=50)
+        municipio, _ = normalize_text(municipio, max_len=50)
+        volumes = int(self.volumes_input.value())
+        data_hora = datetime.now().strftime("%d/%m/%Y %H:%M")
+        return saida, categoria, emissor, municipio, volumes, data_hora
 
     def _atualizar_listas_recentes(
         self, categoria: str, emissor: str, municipio: str
@@ -520,28 +556,24 @@ class EtiquetaApp(QWidget):
         self._reordenar_combo(self.municipio_input, recentes.get("municipio", []))
 
     def _limpar_campos(self) -> None:
-        """Restaura os campos do formulário para os valores iniciais."""
-
         self.saida_input.clear()
         for combo in (self.categoria_input, self.emissor_input, self.municipio_input):
             combo.setCurrentIndex(0)
         self.volumes_input.setValue(1)
+        self._update_print_button_state()
 
+    # =========================
+    # Persistência e ações
+    # =========================
     def _salvar_template_config(self, texto: str) -> None:
-        """Persistir seleção de template."""
-
         self.config["template"] = texto
         salvar_config(self.config)
 
     def _salvar_retry_config(self, estado: int) -> None:
-        """Persistir opção de repetição automática."""
-
         self.config["retry_automatico"] = bool(estado)
         salvar_config(self.config)
 
     def _abrir_configuracoes(self) -> None:
-        """Mostra a janela de configurações."""
-
         dlg = ConfigDialog(self, self.config)
         if dlg.exec_():
             self.config.update(dlg.obter_config())
@@ -552,40 +584,33 @@ class EtiquetaApp(QWidget):
             self.retry_checkbox.setChecked(bool(self.config.get("retry_automatico")))
             self._agendar_backup_diario()
             self._verificar_impressora()
+            self._update_print_button_state()
 
     def _verificar_impressora(self) -> None:
-        """Verifica a existência de impressora padrão e ajusta a UI."""
-
         nome = descobrir_impressora_padrao()
         if nome is None:
-            self.imprimir_btn.setEnabled(False)
+            if hasattr(self, "imprimir_btn"):
+                self.imprimir_btn.setEnabled(False)
             self.testar_conexao_btn.show()
             self._atualizar_status("⚠️ Nenhuma impressora detectada", "orange")
         else:
-            self.imprimir_btn.setEnabled(True)
             self.testar_conexao_btn.hide()
             self._atualizar_status("🟢 Pronto")
             self.config["ultima_impressora"] = nome
             salvar_config(self.config)
+            self._update_print_button_state()
 
     def _atualizar_status(
         self, mensagem: str = "🟢 Pronto", cor: str = "white"
     ) -> None:
-        """Atualiza a mensagem de status exibida ao usuário.
-
-        Args:
-            mensagem (str, optional): Texto a ser mostrado. Padrão "🟢 Pronto".
-            cor (str, optional): Cor do texto. Padrão ``white``.
-        """
-
         self.status_label.setText(mensagem)
         self.status_label.setStyleSheet(f"color:{cor};padding:5px")
 
+    # =========================
+    # Ações de impressão e utilitários
+    # =========================
     def _abrir_historico(self) -> None:
-        """Abre o arquivo CSV de histórico no sistema operacional."""
-
         import subprocess
-
         caminho = recurso_caminho("historico_impressoes.csv")
         if os.path.exists(caminho):
             subprocess.Popen(["start", "", caminho], shell=True)
@@ -595,34 +620,16 @@ class EtiquetaApp(QWidget):
             )
 
     def _imprimir_etiqueta(self) -> None:
-        """Coleta dados do formulário e solicita a impressão."""
+        self._update_print_button_state()
+        ok, msg = self._is_form_valid()
+        if not ok:
+            self._atualizar_status("⚠️ Campos obrigatórios", "orange")
+            QMessageBox.warning(self, "Campos obrigatórios", msg)
+            return
 
         self._atualizar_status("🖨️ Imprimindo…")
-        saida, err = self._sanitize_input(self.saida_input, 20)
-        if err or saida == "":
-            if saida == "":
-                QMessageBox.warning(
-                    self, "Campo obrigatório", "Preencha o campo Saída."
-                )
-            self._atualizar_status()
-            return
 
-        categoria, err = self._sanitize_input(self.categoria_input, 50)
-        if err:
-            self._atualizar_status()
-            return
-
-        emissor, err = self._sanitize_input(self.emissor_input, 50)
-        if err:
-            self._atualizar_status()
-            return
-
-        municipio, err = self._sanitize_input(self.municipio_input, 50)
-        if err:
-            self._atualizar_status()
-            return
-        volumes = self.volumes_input.value()
-        data_hora = datetime.now().strftime("%d/%m/%Y %H:%M")
+        saida, categoria, emissor, municipio, volumes, data_hora = self._coletar_campos()
 
         ok, erro = imprimir_etiqueta(
             saida,
@@ -670,8 +677,6 @@ class EtiquetaApp(QWidget):
             QMessageBox.critical(self, "Erro", str(e))
 
     def _imprimir_teste(self) -> None:
-        """Imprime uma página de teste padrão."""
-
         self._atualizar_status("🖨️ Imprimindo teste…")
         ok, erro = imprimir_pagina_teste(
             repetir_em_falha=self.retry_checkbox.isChecked()
@@ -684,8 +689,6 @@ class EtiquetaApp(QWidget):
             QMessageBox.critical(self, "Erro", f"{erro['code']}: {erro['message']}")
 
     def _reimprimir_ultima(self) -> None:
-        """Reimprime a última etiqueta gerada, se houver."""
-
         if self.ultima_etiqueta is None:
             QMessageBox.information(
                 self, "Nenhuma etiqueta", "Nenhuma etiqueta foi impressa ainda."
@@ -711,8 +714,6 @@ class EtiquetaApp(QWidget):
             QMessageBox.critical(self, "Erro", f"{erro['code']}: {erro['message']}")
 
     def _reimprimir_faltantes(self) -> None:
-        """Reimprime apenas as etiquetas que faltaram de um lote."""
-
         if self.ultima_etiqueta is None:
             QMessageBox.information(
                 self, "Nenhuma etiqueta", "Nenhuma etiqueta foi impressa ainda."
@@ -737,8 +738,6 @@ class EtiquetaApp(QWidget):
         inicio = total - faltantes + 1
 
         try:
-            from persistence import salvar_contagem, salvar_historico
-
             ok, erro = imprimir_etiqueta(
                 dados["saida"],
                 dados["categoria"],
@@ -759,7 +758,6 @@ class EtiquetaApp(QWidget):
                 QMessageBox.critical(self, "Erro", f"{erro['code']}: {erro['message']}")
                 return
 
-            # Atualiza contadores e histórico apenas com as faltantes
             self.contagem_total += faltantes
             self.contagem_mensal += faltantes
             salvar_contagem(self.contagem_total, self.contagem_mensal)
@@ -780,8 +778,6 @@ class EtiquetaApp(QWidget):
             QMessageBox.critical(self, "Erro", str(e))
 
     def _reimprimir_intervalo(self) -> None:
-        """Reimprime um intervalo específico da última etiqueta."""
-
         if self.ultima_etiqueta is None:
             QMessageBox.information(
                 self, "Nenhuma etiqueta", "Nenhuma etiqueta foi impressa ainda."
@@ -837,7 +833,7 @@ class EtiquetaApp(QWidget):
                 repetir_em_falha=self.retry_checkbox.isChecked(),
             )
             if ok:
-                self._atualizar_status("♻️ Intervalo reimpresso", "lightblue")
+                self._atualizar_status("♻️ Intervalo reimposto", "lightblue")
             else:
                 self._atualizar_status("⚠️ Erro na reimpressão do intervalo", "orange")
                 logger.error("Erro na reimpressão do intervalo: %s", erro)
@@ -848,8 +844,6 @@ class EtiquetaApp(QWidget):
             QMessageBox.critical(self, "Erro", str(e))
 
     def _abrir_log(self) -> None:
-        """Abre o arquivo de log gerado pela aplicação."""
-
         if not os.path.exists(LOG_FILE):
             QMessageBox.information(
                 self, "Log", "O arquivo de log ainda não foi criado."
@@ -858,8 +852,6 @@ class EtiquetaApp(QWidget):
         QDesktopServices.openUrl(QUrl.fromLocalFile(LOG_FILE))
 
     def _mostrar_historico_mensal(self) -> None:
-        """Exibe um resumo das etiquetas impressas por mês."""
-
         hist = carregar_historico_mensal()
         if not hist:
             QMessageBox.information(self, "Histórico Mensal", "Nenhum dado encontrado.")
@@ -870,8 +862,6 @@ class EtiquetaApp(QWidget):
         QMessageBox.information(self, "Histórico Mensal", texto)
 
     def _exportar_relatorio_mes_atual(self) -> None:
-        """Exporta o relatório consolidado do mês atual."""
-
         mes = datetime.now().strftime("%Y-%m")
         try:
             caminho = gerar_relatorio_mensal(mes)
@@ -891,8 +881,6 @@ class EtiquetaApp(QWidget):
             QMessageBox.critical(self, "Erro", str(e))
 
     def _atualizar_contagem_label(self) -> None:
-        """Atualiza o texto que mostra os totais de etiquetas."""
-
         nome_mes = datetime.now().strftime("%m/%Y")
         self._contagem_label.setText(
             "Etiquetas do mês: "

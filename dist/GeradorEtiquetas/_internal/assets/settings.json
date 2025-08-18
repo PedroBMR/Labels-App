@@ -1,0 +1,7 @@
+{
+    "ultima_impressora": "Concordia",
+    "template": "60x80",
+    "retry_automatico": false,
+    "backup_horario": "17:10",
+    "backup_quantidade": 7
+}
