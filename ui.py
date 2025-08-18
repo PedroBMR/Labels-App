@@ -6,44 +6,42 @@ from datetime import datetime
 from typing import Any, TypedDict
 
 from qt_compat import (
-    QDateTime,
-    Qt,
-    QTime,
-    QTimer,
-    QUrl,
-    QObject,
-    pyqtSignal,
-    QThread,
+    QCheckBox,
     QCloseEvent,
     QColor,
-    QDesktopServices,
-    QFont,
-    QIcon,
-    QPalette,
-    QPixmap,
-    QCheckBox,
     QComboBox,
+    QDateTime,
+    QDesktopServices,
     QDialog,
     QDialogButtonBox,
+    QFont,
     QFormLayout,
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QIcon,
     QInputDialog,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
+    QObject,
+    QPalette,
+    QPixmap,
     QPushButton,
-    QToolButton,
     QSizePolicy,
     QSpacerItem,
     QSpinBox,
+    QThread,
+    QTime,
     QTimeEdit,
-    QToolTip,
+    QTimer,
+    QToolButton,
+    QUrl,
     QVBoxLayout,
     QWidget,
-    QMenu,
-    QStyle,
+    Qt,
+    pyqtSignal,
 )
 
 from log import LOG_FILE, logger
@@ -418,9 +416,13 @@ class EtiquetaApp(QWidget):
         menu = QMenu(self.menu_btn)
         self.menu_btn.setMenu(menu)
 
-        ac_faltantes = menu.addAction("Reimprimir Faltantes", self._reimprimir_faltantes)
+        ac_faltantes = menu.addAction(
+            "Reimprimir Faltantes", self._reimprimir_faltantes
+        )
         ac_faltantes.setShortcut("Ctrl+F")
-        ac_intervalo = menu.addAction("Reimprimir Intervalo…", self._reimprimir_intervalo)
+        ac_intervalo = menu.addAction(
+            "Reimprimir Intervalo…", self._reimprimir_intervalo
+        )
         ac_intervalo.setShortcut("Ctrl+I")
         ac_hist = menu.addAction("Abrir Histórico", self._abrir_historico)
         ac_hist.setShortcut("Ctrl+H")
@@ -515,7 +517,10 @@ class EtiquetaApp(QWidget):
         base = getattr(
             self,
             "_input_style_base",
-            "background:#191919;color:#e5e5e5;padding:7px;border:1px solid #282828;border-radius: 6px;font-size: 14px;",
+            (
+                "background:#191919;color:#e5e5e5;padding:7px;border:1px solid "
+                "#282828;border-radius: 6px;font-size: 14px;"
+            ),
         )
 
         def mark(widget, bad: bool):
@@ -670,7 +675,14 @@ class EtiquetaApp(QWidget):
 
         self._atualizar_status("🖨️ Imprimindo…")
         self.cancel_event.clear()
-        saida, categoria, emissor, municipio, volumes, data_hora = self._coletar_campos()
+        (
+            saida,
+            categoria,
+            emissor,
+            municipio,
+            volumes,
+            data_hora,
+        ) = self._coletar_campos()
         self._impressao_context = (
             saida,
             categoria,
@@ -708,7 +720,14 @@ class EtiquetaApp(QWidget):
     def _impressao_finalizada(self, ok: bool, erro: dict) -> None:
         if self._impressao_context is None:
             return
-        saida, categoria, emissor, municipio, volumes, data_hora = self._impressao_context
+        (
+            saida,
+            categoria,
+            emissor,
+            municipio,
+            volumes,
+            data_hora,
+        ) = self._impressao_context
         if not ok:
             if self.cancel_event.is_set():
                 self._atualizar_status("❌ Impressão cancelada", "orange")
@@ -722,7 +741,9 @@ class EtiquetaApp(QWidget):
                 self.contagem_mensal += volumes
                 salvar_contagem(self.contagem_total, self.contagem_mensal)
 
-                salvar_historico(saida, categoria, emissor, municipio, volumes, data_hora)
+                salvar_historico(
+                    saida, categoria, emissor, municipio, volumes, data_hora
+                )
                 self.ultima_etiqueta = EtiquetaInfo(
                     saida=saida,
                     categoria=categoria,
