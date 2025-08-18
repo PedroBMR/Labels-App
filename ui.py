@@ -415,7 +415,9 @@ class EtiquetaApp(QWidget):
         self.cancelar_btn.clicked.connect(self._cancelar_impressao)
 
         self.menu_btn = QToolButton()
-        self.menu_btn.setIcon(self.style().standardIcon(QStyle.SP_TitleBarMenuButton))
+        self.menu_btn.setIcon(QIcon(recurso_caminho("menu-aberto.png")))
+        self.menu_btn.setAutoRaise(True)                # remove relevo
+        self.menu_btn.setStyleSheet("border: none;")    # evita moldura/ fundo
         self.menu_btn.setPopupMode(QToolButton.InstantPopup)
         menu = QMenu(self.menu_btn)
         self.menu_btn.setMenu(menu)
@@ -445,13 +447,14 @@ class EtiquetaApp(QWidget):
             self.imprimir_btn,
             self.reimprimir_btn,
             self.cancelar_btn,
-            self.menu_btn,
         ):
             b.setStyleSheet(
-                "background:#24292e;color:#eeeeee;padding:8px 18px;border-radius:6px;"
+                "background:#24292e;color:#eeeeee;padding:8px 18px;border-radius:6px;",
                 "font-size: 14px;border: none;",
             )
             botoes.addWidget(b)
+
+        botoes.addWidget(self.menu_btn)
 
         self.cancelar_btn.setStyleSheet(
             "background:#24292e;color:#ff5555;padding:8px 18px;border-radius:6px;"
