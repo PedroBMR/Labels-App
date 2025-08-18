@@ -191,8 +191,8 @@ class EtiquetaApp(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Gerador de Etiquetas CONIMS")
-        # tamanho inicial (redimensionável pelo usuário depois):
-        self.resize(600, 1080)
+        # tamanho inicial (aplicado já aqui, e reforçado no showEvent)
+        self.resize(600, 800)
         self.setWindowIcon(QIcon(recurso_caminho("color.png")))
         self.config = carregar_config()
         self.contagem_total, self.contagem_mensal = carregar_contagem()
@@ -203,9 +203,7 @@ class EtiquetaApp(QWidget):
             "background:#191919;color:#e5e5e5;padding:7px;"
             "border:1px solid #282828;border-radius: 6px;font-size: 14px;"
         )
-        # Guard de inicialização da UI
         self._ui_ready = False
-
         self._contagem_label = QLabel()
         self._contagem_label.setStyleSheet(
             "color: #CCCCCC; font-size: 15px; font-weight: 500; padding: 8px; "
@@ -218,13 +216,28 @@ class EtiquetaApp(QWidget):
 
         # Validação dinâmica
         self._wire_validation_signals()
-        # Marca UI como pronta e atualiza estado dos botões
         self._ui_ready = True
         self._update_print_button_state()
 
         self._atualizar_status("🟢 Pronto")
         self._agendar_backup_diario()
         self._verificar_impressora()
+
+        # flag para aplicar o tamanho/centralização só uma vez após mostrar
+        self._aplicou_tamanho_inicial = False
+
+    # --- garante 600x1080 e centraliza DEPOIS que o layout calculou tudo ---
+    def showEvent(self, event: QCloseEvent) -> None:
+        super().showEvent(event)
+        if not getattr(self, "_aplicou_tamanho_inicial", False):
+            # reaplica para vencer size hints dos filhos
+            self.resize(600, 800)
+            # centraliza na tela disponível (desconta barra de tarefas)
+            geo = self.frameGeometry()
+            centro = self.screen().availableGeometry().center()
+            geo.moveCenter(centro)
+            self.move(geo.topLeft())
+            self._aplicou_tamanho_inicial = True
 
     def _agendar_backup_diario(self) -> None:
         horario = str(self.config.get("backup_horario", "17:10"))
