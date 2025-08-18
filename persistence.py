@@ -8,7 +8,6 @@ from typing import Any, cast
 
 from utils import recurso_caminho
 
-
 DEFAULT_CONFIG: dict[str, Any] = {
     "ultima_impressora": "",
     "template": "Padrão",
