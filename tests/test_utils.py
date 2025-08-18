@@ -1,7 +1,7 @@
+import logging
 import os
 import sys
 from datetime import datetime
-import logging
 
 from PIL import Image
 
