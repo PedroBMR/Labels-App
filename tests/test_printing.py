@@ -176,8 +176,9 @@ def test_panoramico_layout(monkeypatch):
 
 
 def test_panoramico_coordenadas(monkeypatch):
-    import printing
     import re
+
+    import printing
 
     fake_win32.written.clear()
     monkeypatch.setattr(
@@ -235,8 +236,9 @@ def test_panoramico_pagina_teste(monkeypatch):
 
 
 def test_retry_exponencial_logging(monkeypatch, caplog):
-    import printing
     import logging
+
+    import printing
 
     class FailingWin32:
         def __init__(self):
