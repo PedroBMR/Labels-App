@@ -449,8 +449,8 @@ class EtiquetaApp(QWidget):
             self.cancelar_btn,
         ):
             b.setStyleSheet(
-                "background:#24292e;color:#eeeeee;padding:8px 18px;border-radius:6px;",
-                "font-size: 14px;border: none;",
+                "background:#24292e;color:#eeeeee;padding:8px 18px;border-radius:6px;"
+                "font-size: 14px;border: none;"
             )
             botoes.addWidget(b)
 
