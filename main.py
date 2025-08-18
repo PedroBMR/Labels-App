@@ -68,8 +68,7 @@ def _early_close_stream():
 # =========================
 # IMPORTS reais do app (depois do preâmbulo)
 # =========================
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import qInstallMessageHandler, QtMsgType
+from qt_compat import QApplication, qInstallMessageHandler, QtMsgType
 
 from _version import __version__
 from ui import EtiquetaApp
@@ -192,7 +191,8 @@ if __name__ == "__main__":
         janela.show()
 
         # 4) Entra no loop da UI
-        sys.exit(app.exec_())
+        # exec_ was renamed to exec in Qt6 / PySide6; use getattr for compatibility
+        sys.exit(getattr(app, "exec", app.exec_)())
 
     except Exception:
         # Loga qualquer falha inesperada; também vai para crash_stderr.log via excepthook

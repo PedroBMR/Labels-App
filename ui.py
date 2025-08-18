@@ -5,7 +5,7 @@ import threading
 from datetime import datetime
 from typing import Any, TypedDict
 
-from PyQt5.QtCore import (
+from qt_compat import (
     QDateTime,
     Qt,
     QTime,
@@ -14,8 +14,6 @@ from PyQt5.QtCore import (
     QObject,
     pyqtSignal,
     QThread,
-)
-from PyQt5.QtGui import (
     QCloseEvent,
     QColor,
     QDesktopServices,
@@ -23,8 +21,6 @@ from PyQt5.QtGui import (
     QIcon,
     QPalette,
     QPixmap,
-)
-from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
