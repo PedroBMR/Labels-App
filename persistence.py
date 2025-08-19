@@ -240,7 +240,7 @@ def gerar_relatorio_mensal(mes: str) -> str:
     with open(hist_path, newline="", encoding="utf-8-sig") as arquivo:
         reader = csv.DictReader(arquivo, delimiter=";")
         for row in reader:
-            data = datetime.strptime(row["Data e Hora"], "%d/%m/%Y %H:%M:%S")
+            data = datetime.strptime(row["Data e Hora"], "%d/%m/%Y %H:%M")
             if data.strftime("%Y-%m") != mes:
                 continue
             chave = (row["Categoria"], row["Município"], row["Emissor"])
