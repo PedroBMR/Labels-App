@@ -3,6 +3,7 @@
 import csv
 import json
 import os
+import shutil
 from datetime import datetime
 from typing import Any, cast
 
@@ -84,8 +85,17 @@ def salvar_contagem(contagem_total: int, contagem_mensal: int) -> None:
         "total_mes": int(contagem_mensal or 0),
         "mes_atual": datetime.now().strftime("%m-%Y"),
     }
-    with open(caminho, "w", encoding="utf-8") as arquivo:
+
+    tmp_path = f"{caminho}.tmp"
+    bak_path = f"{caminho}.bak"
+
+    with open(tmp_path, "w", encoding="utf-8") as arquivo:
         json.dump(dados, arquivo, ensure_ascii=False, indent=4)
+
+    if os.path.exists(caminho):
+        shutil.copy2(caminho, bak_path)
+
+    os.replace(tmp_path, caminho)
 
 
 def salvar_historico(
@@ -108,14 +118,28 @@ def salvar_historico(
     """
 
     caminho = recurso_caminho("historico_impressoes.csv")
+    os.makedirs(os.path.dirname(caminho), exist_ok=True)
+    tmp_path = f"{caminho}.tmp"
+    bak_path = f"{caminho}.bak"
     existe = os.path.exists(caminho)
-    with open(caminho, "a", newline="", encoding="utf-8-sig") as arquivo:
-        writer = csv.writer(arquivo, delimiter=";")
-        if not existe:
+
+    if existe:
+        shutil.copyfile(caminho, tmp_path)
+    else:
+        with open(tmp_path, "w", newline="", encoding="utf-8-sig") as arquivo:
+            writer = csv.writer(arquivo, delimiter=";")
             writer.writerow(
                 ["Data e Hora", "Saída", "Categoria", "Emissor", "Município", "Volumes"]
             )
+
+    with open(tmp_path, "a", newline="", encoding="utf-8-sig") as arquivo:
+        writer = csv.writer(arquivo, delimiter=";")
         writer.writerow([data_hora, saida, categoria, emissor, municipio, volumes])
+
+    if existe:
+        shutil.copy2(caminho, bak_path)
+
+    os.replace(tmp_path, caminho)
 
 
 def carregar_recentes() -> dict[str, dict[str, int]]:
