@@ -173,6 +173,18 @@ log ficam em `logs/app.log` com rotação automática de arquivos.
 
 ---
 
+## Arquitetura em 5 minutos
+
+1. `main.py` inicializa o aplicativo e configura captura de falhas precoces.
+2. `ui.py` constrói a interface gráfica utilizando `qt_compat`, que abstrai
+   PyQt5 e PySide6.
+3. `printing.py` monta comandos TSPL e envia dados para a impressora.
+4. `persistence.py` gerencia arquivos de configuração, contadores e histórico.
+5. `utils.py` fornece funções auxiliares como normalização de texto e backups.
+6. `log.py` centraliza o registro de mensagens com rotação de arquivos.
+
+---
+
 ## Contribuição
 
 Contribuições são bem-vindas! Para sugerir melhorias ou reportar problemas:

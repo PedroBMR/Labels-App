@@ -1,4 +1,18 @@
-"""Funções utilitárias utilizadas pelo aplicativo."""
+"""Funções utilitárias utilizadas pelo aplicativo.
+
+Responsabilidade:
+    Fornecer helpers para caminhos, normalização de texto e backups.
+
+Dependências:
+    - os
+    - shutil
+    - PIL.Image
+
+Exemplo:
+    >>> from utils import normalize_text
+    >>> normalize_text("  abc  ", max_len=5)
+    ('abc', None)
+"""
 
 import os
 import shutil

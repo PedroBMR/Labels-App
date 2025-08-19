@@ -1,3 +1,15 @@
+"""Testes para rotinas de impressão.
+
+Responsabilidade:
+    Assegurar que comandos TSPL e envio à impressora funcionem.
+
+Dependências:
+    - printing
+
+Exemplo:
+    $ pytest tests/test_printing.py
+"""
+
 import logging
 import os
 import sys

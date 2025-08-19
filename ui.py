@@ -1,4 +1,22 @@
-"""Elementos da interface gráfica do gerador de etiquetas."""
+"""Elementos da interface gráfica do gerador de etiquetas.
+
+Responsabilidade:
+    Definir widgets e coordenar a interação do usuário com a impressão.
+
+Dependências:
+    - log
+    - persistence
+    - printing
+    - qt_compat
+    - utils
+
+Exemplo:
+    >>> from qt_compat import QApplication
+    >>> from ui import EtiquetaApp
+    >>> app = QApplication([])
+    >>> janela = EtiquetaApp()
+    >>> janela.show()
+"""
 
 import os
 import threading

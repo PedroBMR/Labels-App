@@ -1,4 +1,18 @@
-"""Funções de persistência de dados do aplicativo."""
+"""Funções de persistência de dados do aplicativo.
+
+Responsabilidade:
+    Ler e escrever configurações, contadores e histórico de impressões.
+
+Dependências:
+    - csv
+    - json
+    - utils.recurso_caminho
+
+Exemplo:
+    >>> from persistence import carregar_config
+    >>> carregar_config()["template"]
+    'Padrão'
+"""
 
 import csv
 import json

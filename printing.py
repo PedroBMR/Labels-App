@@ -1,4 +1,19 @@
-"""Rotinas relacionadas à impressão das etiquetas."""
+"""Rotinas relacionadas à impressão das etiquetas.
+
+Responsabilidade:
+    Montar comandos TSPL e enviar dados para impressoras térmicas.
+
+Dependências:
+    - win32print
+    - log
+    - persistence
+    - utils
+
+Exemplo:
+    >>> from printing import LAYOUT_ATUAL, montar_tspl, imprimir_etiqueta
+    >>> tspl = montar_tspl(LAYOUT_ATUAL, {})
+    >>> imprimir_etiqueta(tspl)
+"""
 
 import json
 import time
