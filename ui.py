@@ -345,14 +345,14 @@ class EtiquetaApp(QWidget):
         self.volumes_input.setMinimum(1)
         self.template_input = QComboBox()
         self.template_input.addItems(listar_templates())
-        self.template_input.currentTextChanged.connect(aplicar_template)
+        self.template_input.currentTextChanged.connect(self._aplicar_template)
         self.template_input.currentTextChanged.connect(self._salvar_template_config)
         self.template_input.currentTextChanged.connect(self._update_print_button_state)
 
         idx_tpl = self.template_input.findText(self.config.get("template", "Padrão"))
         if idx_tpl >= 0:
             self.template_input.setCurrentIndex(idx_tpl)
-        aplicar_template(self.template_input.currentText())
+        self._aplicar_template(self.template_input.currentText())
         self._carregar_listas()
 
         # Estilo base para inputs (reaplicado nas validações)
@@ -609,6 +609,12 @@ class EtiquetaApp(QWidget):
             combo.setCurrentIndex(0)
         self.volumes_input.setValue(1)
         self._update_print_button_state()
+
+    def _aplicar_template(self, nome: str) -> None:
+        try:
+            aplicar_template(nome)
+        except ValueError as e:
+            QMessageBox.critical(self, "Erro", str(e))
 
     # =========================
     # Persistência e ações

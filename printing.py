@@ -241,6 +241,12 @@ def aplicar_template(nome: str) -> None:
         )
         layout_escolhido = LAYOUTS[next(iter(LAYOUTS))]
 
+    # Campos obrigatórios no layout
+    if "fracao" not in layout_escolhido or "fragil" not in layout_escolhido:
+        raise ValueError(
+            f"Layout '{nome}' deve conter campos 'fracao' e 'fragil'"
+        )
+
     # 3) Aplica dimensões e layout
     global LARGURA_ETIQUETA_MM, ALTURA_ETIQUETA_MM, GAP_MM, LAYOUT_ATUAL
     LARGURA_ETIQUETA_MM = int(modelo.get("largura_mm", 60))

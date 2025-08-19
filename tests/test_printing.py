@@ -304,6 +304,16 @@ def test_panoramico_pagina_teste(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
+def test_100x30_fracao_antes_de_fragil():
+    import printing
+
+    printing.aplicar_template("100x30")
+    fracao_x = printing.LAYOUT_ATUAL["fracao"]["x"]
+    fragil_x = printing.LAYOUT_ATUAL["fragil"]["x"]
+    assert fracao_x < fragil_x
+    printing.aplicar_template("Padrão")
+
+
 def test_retry_exponencial_logging(monkeypatch, caplog):
     import logging
 
