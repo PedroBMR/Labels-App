@@ -212,7 +212,7 @@ class EtiquetaInfo(TypedDict):
 
 
 class PrintingWorker(QObject):
-    finished = pyqtSignal(bool, object)
+    finished = pyqtSignal(bool, object)  # (ok, erro dict | None)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__()
@@ -773,7 +773,7 @@ class EtiquetaApp(QWidget):
                 logger.error("Erro na impressão: %s", erro)
                 if erro is not None:
                     QMessageBox.critical(
-                        self, "Erro", f"{erro.get('code')}: {erro.get('message')}"
+                        self, "Erro", f"{erro['code']}: {erro['message']}"
                     )
                 else:
                     QMessageBox.critical(
