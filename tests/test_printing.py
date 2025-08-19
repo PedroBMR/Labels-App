@@ -49,7 +49,7 @@ def test_descobrir_impressora_padrao():
 def test_reimpressao_faltantes(monkeypatch):
     import printing
 
-    fake = printing.win32print
+    printing.win32print.written.clear()
     monkeypatch.setattr(
         printing,
         "melhorar_logo",
@@ -61,24 +61,24 @@ def test_reimpressao_faltantes(monkeypatch):
     faltantes = 3
     inicio = total - faltantes + 1
 
-    printing.imprimir_etiqueta(
-        "S1",
-        "Cat",
-        "Emissor",
-        "Mun",
-        faltantes,
-        "2024-01-01",
-        0,
-        0,
-        inicio_indice=inicio,
-        total_exibicao=total,
-    )
+    dados = {
+        "saida": "S1",
+        "categoria": "Cat",
+        "emissor": "Emissor",
+        "municipio": "Mun",
+        "volumes": faltantes,
+        "data_hora": "2024-01-01",
+        "inicio_indice": inicio,
+        "total_exibicao": total,
+    }
+    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    printing.imprimir_etiqueta(tspl)
 
-    assert len(fake.written) == faltantes
-    textos = [data.decode("latin1") for data in fake.written]
-    assert any("8 DE 10" in t for t in textos)
-    assert any("9 DE 10" in t for t in textos)
-    assert any("10 DE 10" in t for t in textos)
+    assert len(printing.win32print.written) == 1
+    texto = printing.win32print.written[0].decode("latin1")
+    assert "8 DE 10" in texto
+    assert "9 DE 10" in texto
+    assert "10 DE 10" in texto
 
 
 def test_reimpressao_intervalo(monkeypatch):
@@ -96,25 +96,25 @@ def test_reimpressao_intervalo(monkeypatch):
     inicio, fim = 5, 8
     volumes = fim - inicio + 1
 
-    printing.imprimir_etiqueta(
-        "S1",
-        "Cat",
-        "Emissor",
-        "Mun",
-        volumes,
-        "2024-01-01",
-        0,
-        0,
-        inicio_indice=inicio,
-        total_exibicao=total,
-    )
+    dados = {
+        "saida": "S1",
+        "categoria": "Cat",
+        "emissor": "Emissor",
+        "municipio": "Mun",
+        "volumes": volumes,
+        "data_hora": "2024-01-01",
+        "inicio_indice": inicio,
+        "total_exibicao": total,
+    }
+    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    printing.imprimir_etiqueta(tspl)
 
-    assert len(fake_win32.written) == volumes
-    textos = [data.decode("latin1") for data in fake_win32.written]
-    assert any("5 DE 10" in t for t in textos)
-    assert any("8 DE 10" in t for t in textos)
-    assert all("4 DE 10" not in t for t in textos)
-    assert all("9 DE 10" not in t for t in textos)
+    assert len(fake_win32.written) == 1
+    texto = fake_win32.written[0].decode("latin1")
+    assert "5 DE 10" in texto
+    assert "8 DE 10" in texto
+    assert "4 DE 10" not in texto
+    assert "9 DE 10" not in texto
 
 
 def test_imprimir_pagina_teste(monkeypatch):
@@ -170,7 +170,16 @@ def test_templates_chave_invalida(monkeypatch):
     )
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
-    printing.imprimir_etiqueta("S", "C", "E", "M", 1, "2024-01-01")
+    dados = {
+        "saida": "S",
+        "categoria": "C",
+        "emissor": "E",
+        "municipio": "M",
+        "volumes": 1,
+        "data_hora": "2024-01-01",
+    }
+    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    printing.imprimir_etiqueta(tspl)
     texto = fake_win32.written[-1].decode("latin1")
     assert "SIZE 60 mm,80 mm" in texto
 
@@ -184,7 +193,16 @@ def test_templates_alteram_layout(monkeypatch):
     )
     printing.aplicar_template("Compacto")
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
-    printing.imprimir_etiqueta("S", "C", "E", "M", 1, "2024-01-01")
+    dados = {
+        "saida": "S",
+        "categoria": "C",
+        "emissor": "E",
+        "municipio": "M",
+        "volumes": 1,
+        "data_hora": "2024-01-01",
+    }
+    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    printing.imprimir_etiqueta(tspl)
     texto = fake_win32.written[-1].decode("latin1")
     assert "SIZE 50 mm,60 mm" in texto
     printing.aplicar_template("Padrão")
@@ -200,7 +218,16 @@ def test_panoramico_layout(monkeypatch):
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
     printing.aplicar_template("Panoramico")
-    printing.imprimir_etiqueta("S", "C", "E", "M", 1, "2024-01-01")
+    dados = {
+        "saida": "S",
+        "categoria": "C",
+        "emissor": "E",
+        "municipio": "M",
+        "volumes": 1,
+        "data_hora": "2024-01-01",
+    }
+    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    printing.imprimir_etiqueta(tspl)
     texto = fake_win32.written[-1].decode("latin1")
     assert "SIZE 100 mm,30 mm" in texto
     spec = printing.LAYOUTS["Panoramico"]["numeracao"]
@@ -220,7 +247,16 @@ def test_panoramico_coordenadas(monkeypatch):
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
     printing.aplicar_template("Panoramico")
-    printing.imprimir_etiqueta("S", "C", "E", "M", 1, "2024-01-01")
+    dados = {
+        "saida": "S",
+        "categoria": "C",
+        "emissor": "E",
+        "municipio": "M",
+        "volumes": 1,
+        "data_hora": "2024-01-01",
+    }
+    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    printing.imprimir_etiqueta(tspl)
     texto = fake_win32.written[-1].decode("latin1")
     assert "SIZE 100 mm,30 mm" in texto
     max_x = printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM
@@ -310,10 +346,18 @@ def test_retry_exponencial_logging(monkeypatch, caplog):
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
     monkeypatch.setattr(printing.time, "sleep", lambda s: None)
 
+    dados = {
+        "saida": "S",
+        "categoria": "C",
+        "emissor": "E",
+        "municipio": "M",
+        "volumes": 1,
+        "data_hora": "2024-01-01",
+    }
+    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+
     with caplog.at_level(logging.INFO):
-        ok, erro = printing.imprimir_etiqueta(
-            "S", "C", "E", "M", 1, "2024-01-01", 0, 0, repetir_em_falha=True
-        )
+        ok, erro = printing.imprimir_etiqueta(tspl, repetir_em_falha=True)
 
     assert not ok
     assert fake.calls == 3

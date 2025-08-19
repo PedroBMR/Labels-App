@@ -1,7 +1,6 @@
 """Rotinas relacionadas à impressão das etiquetas."""
 
 import json
-import threading
 import time
 import unicodedata
 from typing import TypedDict
@@ -299,39 +298,26 @@ def _calc_logo_x(layout: Layout, dots_x: int, largura_bytes: int) -> int:
     return max(0, min(x_logo, max(0, dots_x - (largura_bytes * 8))))
 
 
-def imprimir_etiqueta(
-    saida: str,
-    categoria: str,
-    emissor: str,
-    municipio: str,
-    volumes: int,
-    data_hora: str,
-    contagem_total: int = 0,
-    contagem_mensal: int = 0,
-    inicio_indice: int = 1,
-    total_exibicao: int | None = None,
-    repetir_em_falha: bool = False,
-    cancel_event: threading.Event | None = None,
-) -> tuple[bool, ErroImpressora | None]:
-    """Monta e envia comandos TSPL para a impressora padrão.
+def montar_tspl(template: Layout, dados: dict) -> str:
+    """Monta o conteúdo TSPL para impressão de etiquetas.
 
-    Retorna ``(True, None)`` em caso de sucesso ou ``(False, erro)`` quando
-    ocorrer algum problema, contendo código e mensagem da falha.
+    ``template`` corresponde ao layout utilizado e ``dados`` deve conter as
+    informações necessárias para preencher a etiqueta, como ``saida``,
+    ``categoria``, ``emissor``, ``municipio`` e ``data_hora``. Os campos
+    ``volumes`` (quantidade de etiquetas), ``inicio_indice`` e
+    ``total_exibicao`` controlam a numeração impressa.
     """
 
-    layout = LAYOUT_ATUAL
+    layout = template
 
-    # -------- prepara logo --------
     logo_path = recurso_caminho("logo.png")
     bitmap, largura_bytes, altura_px = melhorar_logo(
         logo_path, largura_desejada=layout.get("logo_largura", 240)
     )
 
     dots_x = LARGURA_ETIQUETA_MM * DOTS_MM
-    # dots_y = ALTURA_ETIQUETA_MM * DOTS_MM  # (não usado aqui)
     x_logo = _calc_logo_x(layout, dots_x, largura_bytes)
 
-    # valida posições do layout
     for chave in (
         "titulo",
         "saida",
@@ -344,10 +330,78 @@ def imprimir_etiqueta(
         "numeracao",
     ):
         if chave not in layout:
-            return False, {
-                "code": 0,
-                "message": f"Layout incorreto: campo '{chave}' ausente.",
-            }
+            raise ValueError(f"Layout incorreto: campo '{chave}' ausente.")
+
+    def t(ch: str, txt: str) -> str:
+        return _texto_layout(ch, txt, layout)
+
+    volumes = int(dados.get("volumes", 1))
+    inicio_indice = int(dados.get("inicio_indice", 1))
+    total_exibicao = dados.get("total_exibicao")
+    total_display = total_exibicao if total_exibicao is not None else volumes
+
+    saida = dados.get("saida", "")
+    categoria = dados.get("categoria", "")
+    emissor = dados.get("emissor", "")
+    municipio = dados.get("municipio", "")
+    data_hora = dados.get("data_hora", "")
+
+    partes: list[str] = []
+    for offset in range(volumes):
+        numero_atual = inicio_indice + offset
+        cmd = (
+            f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\n"
+            f"GAP {GAP_MM} mm,0\n"
+            "DENSITY 8\n"
+            "SPEED 4\n"
+            "DIRECTION 1\n"
+            "CLS\n"
+        )
+        cmd += t("titulo", "CONIMS")
+        cmd += t("saida", f"Saida: {saida}")
+        cmd += t("categoria", f"Categoria: {categoria}")
+        cmd += t("emissor", f"Emissor: {emissor}")
+        cmd += t("municipio", f"Municipio: {municipio}")
+        cmd += t("data", f"Impresso em: {data_hora}")
+        cmd += t("fracao", "[ ] Fracao")
+        cmd += t("fragil", "[ ] Fragil")
+
+        if "numeracao_total" in layout:
+            cmd += t("numeracao", f"{numero_atual}")
+            p_num = layout["numeracao"]
+            p_tot = layout["numeracao_total"]  # type: ignore[index]
+            follow = bool(p_tot.get("follow", True))  # type: ignore[call-arg]
+            gap_mm = float(p_tot.get("gap_mm", 2.0))  # type: ignore[call-arg]
+            if follow:
+                largura_num = _text_width_dots(
+                    str(numero_atual), p_num["font"], p_num["xm"]
+                )
+                x_de = int(p_num["x"] + largura_num + gap_mm * DOTS_MM)
+            else:
+                x_de = int(p_tot.get("x", p_num["x"]))  # type: ignore[arg-type]
+            y_de = int(p_tot.get("y", p_num["y"]))  # type: ignore[arg-type]
+            cmd += (
+                f'TEXT {x_de},{y_de},"{p_tot["font"]}",0,{p_tot["xm"]},'
+                f'{p_tot["ym"]},"DE {total_display}"\n'
+            )
+        else:
+            cmd += t("numeracao", f"{numero_atual} DE {total_display}")
+
+        cmd += (
+            f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},"
+            f"{altura_px},0,"
+        )
+        cmd += bitmap.decode("latin1")
+        cmd += "\nPRINT 1\n"
+        partes.append(cmd)
+
+    return "".join(partes)
+
+
+def imprimir_etiqueta(
+    tspl: str, repetir_em_falha: bool = False
+) -> tuple[bool, ErroImpressora | None]:
+    """Envia uma string TSPL já montada para a impressora padrão."""
 
     nome_imp = descobrir_impressora_padrao()
     if nome_imp is None:
@@ -360,79 +414,10 @@ def imprimir_etiqueta(
             h_prn = win32print.OpenPrinter(nome_imp)
             win32print.StartDocPrinter(h_prn, 1, ("Etiqueta CONIMS", None, "RAW"))
             win32print.StartPagePrinter(h_prn)
-
-            def t(ch: str, txt: str) -> str:
-                return _texto_layout(ch, txt, layout)
-
-            # -------- monta e imprime etiquetas ----------
-            total_display = total_exibicao if total_exibicao is not None else volumes
-            cancelado = False
-
-            for offset in range(volumes):
-                if cancel_event and cancel_event.is_set():
-                    win32print.WritePrinter(h_prn, b"CLS\n")
-                    cancelado = True
-                    break
-
-                numero_atual = inicio_indice + offset  # ex.: 7,8,9,10
-                cmd = (
-                    f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\n"
-                    f"GAP {GAP_MM} mm,0\n"
-                    "DENSITY 8\n"
-                    "SPEED 4\n"
-                    "DIRECTION 1\n"
-                    "CLS\n"
-                )
-                cmd += t("titulo", "CONIMS")
-                cmd += t("saida", f"Saida: {saida}")
-                cmd += t("categoria", f"Categoria: {categoria}")
-                cmd += t("emissor", f"Emissor: {emissor}")
-                cmd += t("municipio", f"Municipio: {municipio}")
-                cmd += t("data", f"Impresso em: {data_hora}")
-                cmd += t("fracao", "[ ] Fracao")
-                cmd += t("fragil", "[ ] Fragil")
-
-                # --- numeração ---
-                if "numeracao_total" in layout:  # caminho com "DE N" separado
-                    cmd += t("numeracao", f"{numero_atual}")
-
-                    p_num = layout["numeracao"]
-                    p_tot = layout["numeracao_total"]  # type: ignore[index]
-                    follow = bool(p_tot.get("follow", True))  # type: ignore[call-arg]
-                    gap_mm = float(p_tot.get("gap_mm", 2.0))  # type: ignore[call-arg]
-
-                    if follow:
-                        largura_num = _text_width_dots(
-                            str(numero_atual), p_num["font"], p_num["xm"]
-                        )
-                        x_de = int(p_num["x"] + largura_num + gap_mm * DOTS_MM)
-                    else:
-                        x_de = int(p_tot.get("x", p_num["x"]))  # type: ignore[arg-type]
-
-                    y_de = int(p_tot.get("y", p_num["y"]))  # type: ignore[arg-type]
-                    cmd += (
-                        f'TEXT {x_de},{y_de},"{p_tot["font"]}",0,{p_tot["xm"]},'
-                        f'{p_tot["ym"]},"DE {total_display}"\n'
-                    )
-                else:
-                    cmd += t("numeracao", f"{numero_atual} DE {total_display}")
-
-                # --- logo ---
-                cmd += (
-                    f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},"
-                    f"{altura_px},0,"
-                )
-
-                logger.debug("tspl_first_200=%r", cmd[:200])
-                corpo = cmd.encode(ENCODING, errors="replace") + bitmap + b"\nPRINT 1\n"
-                win32print.WritePrinter(h_prn, corpo)
-
+            win32print.WritePrinter(h_prn, tspl.encode("latin1", errors="replace"))
             win32print.EndPagePrinter(h_prn)
             win32print.EndDocPrinter(h_prn)
             win32print.ClosePrinter(h_prn)
-            if cancelado:
-                logger.info("Impressão cancelada na tentativa %s", tentativa)
-                return False, {"code": 0, "message": "Impressão cancelada"}
             logger.info("Impressão concluída na tentativa %s", tentativa)
             return True, None
         except Exception as e:  # captura erros do win32print
