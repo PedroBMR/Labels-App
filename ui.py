@@ -212,7 +212,7 @@ class EtiquetaInfo(TypedDict):
 
 
 class PrintingWorker(QObject):
-    finished = pyqtSignal(bool, dict)
+    finished = pyqtSignal(bool, object)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__()
@@ -754,7 +754,7 @@ class EtiquetaApp(QWidget):
             self._thread.quit()
         self._atualizar_status("❌ Impressão cancelada", "orange")
 
-    def _impressao_finalizada(self, ok: bool, erro: dict) -> None:
+    def _impressao_finalizada(self, ok: bool, erro: dict | None) -> None:
         if self._impressao_context is None:
             return
         (
@@ -771,7 +771,14 @@ class EtiquetaApp(QWidget):
             else:
                 self._atualizar_status("⚠️ Erro na impressão", "orange")
                 logger.error("Erro na impressão: %s", erro)
-                QMessageBox.critical(self, "Erro", f"{erro['code']}: {erro['message']}")
+                if erro is not None:
+                    QMessageBox.critical(
+                        self, "Erro", f"{erro.get('code')}: {erro.get('message')}"
+                    )
+                else:
+                    QMessageBox.critical(
+                        self, "Erro", "Erro desconhecido"
+                    )
         else:
             try:
                 self.contagem_total += volumes
