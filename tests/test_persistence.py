@@ -3,6 +3,8 @@ import json
 import os
 import sys
 
+import pytest
+
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 
@@ -20,7 +22,19 @@ def _patch_paths(monkeypatch, tmp_path):
 def test_salvar_e_carregar_contagem(monkeypatch, tmp_path):
     persistence = _patch_paths(monkeypatch, tmp_path)
     persistence.salvar_contagem(5, 2)
-    assert json.loads((tmp_path / "contagem.json").read_text())["total_geral"] == 5
+    conteudo = (tmp_path / "contagem.json").read_text()
+    assert json.loads(conteudo)["total_geral"] == 5
+
+    def falha(*_):
+        raise OSError
+
+    monkeypatch.setattr(persistence.os, "replace", falha)
+    with pytest.raises(OSError):
+        persistence.salvar_contagem(7, 3)
+
+    assert (tmp_path / "contagem.json").read_text() == conteudo
+    assert json.loads((tmp_path / "contagem.json.bak").read_text())["total_geral"] == 5
+
     total, mensal = persistence.carregar_contagem()
     assert (total, mensal) == (5, 2)
 
@@ -37,6 +51,14 @@ def test_carregar_contagem_reseta_mes(monkeypatch, tmp_path):
 def test_salvar_historico_e_registrar(monkeypatch, tmp_path):
     persistence = _patch_paths(monkeypatch, tmp_path)
     persistence.salvar_historico("s", "c", "e", "m", 3, "data")
+
+    def falha(*_):
+        raise OSError
+
+    monkeypatch.setattr(persistence.os, "replace", falha)
+    with pytest.raises(OSError):
+        persistence.salvar_historico("s2", "c2", "e2", "m2", 4, "data2")
+
     with open(
         tmp_path / "historico_impressoes.csv",
         newline="",
@@ -52,6 +74,8 @@ def test_salvar_historico_e_registrar(monkeypatch, tmp_path):
         "Volumes",
     ]
     assert rows[1] == ["data", "s", "c", "e", "m", "3"]
+    assert len(rows) == 2
+    assert (tmp_path / "historico_impressoes.csv.bak").exists()
 
     persistence.registrar_contagem_mensal("05-2024", 3)
     assert persistence.carregar_historico_mensal() == {"05-2024": 3}
