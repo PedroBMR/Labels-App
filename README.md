@@ -46,6 +46,20 @@ pip install -r requirements.txt
 
 ---
 
+## Ambiente Python 3.13
+
+Para testar o projeto com o **Python 3.13**, utilize o arquivo de dependências
+específico e um ambiente virtual apontando para a versão:
+
+```bash
+python3.13 -m venv .venv
+source .venv/bin/activate  # Linux/macOS
+venv\Scripts\activate     # Windows
+pip install -r requirements-py313.txt
+```
+
+---
+
 ## Instalação
 
 ### Ambiente de desenvolvimento
@@ -66,7 +80,7 @@ pip install -r requirements.txt
 
 ---
 
-## Build no Windows via .spec
+## Build com PyInstaller
 
 ### Pré-requisitos
 
@@ -86,10 +100,22 @@ scripts\build_onedir.ps1
 ```
 
 Os scripts ativam o ambiente virtual (se existir), instalam dependências
-ausentes, rodam os arquivos `.spec` e copiam o executável final para
-`dist\GeradorEtiquetas_v{versão}.exe`. É possível alterar o nome do
+ausentes, rodam os arquivos `.spec` com o **PyInstaller** e copiam o executável
+final para `dist\GeradorEtiquetas_v{versão}.exe`. É possível alterar o nome do
 executável e o ícone definindo as variáveis de ambiente `APP_NAME` e
 `APP_ICON` antes da execução.
+
+---
+
+## Testes e Lint
+
+Antes de enviar contribuições, execute a suíte de testes e a verificação de
+estilo:
+
+```bash
+ruff .
+pytest
+```
 
 ---
 
@@ -120,6 +146,18 @@ Updater.bat      :: aplica a atualização
 
 O script valida o hash SHA256, cria backups e migra arquivos de histórico para a
 pasta `assets/`. Mantenha sempre um backup do diretório antes de atualizar.
+
+---
+
+## Estrutura de templates
+
+Os modelos de etiqueta são definidos em `assets/templates.json`. Cada entrada
+contém `largura_mm`, `altura_mm` e `gap_mm` em milímetros. Edite esse arquivo
+para ajustar layouts existentes ou adicionar novos modelos. Reinicie o
+aplicativo para aplicar as mudanças.
+
+Backups automáticos do histórico são gravados em `_backup/` e os registros de
+log ficam em `logs/app.log` com rotação automática de arquivos.
 
 ---
 
