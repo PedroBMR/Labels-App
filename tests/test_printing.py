@@ -1,5 +1,8 @@
+import logging
 import os
 import sys
+
+import pytest
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
@@ -141,6 +144,37 @@ def test_imprimir_pagina_teste(monkeypatch):
     assert expected in texto
 
 
+def test_templates_arquivo_inexistente(monkeypatch, tmp_path, caplog):
+    import printing
+
+    monkeypatch.setattr(printing, "TEMPLATES", None)
+    monkeypatch.setattr(
+        printing, "recurso_caminho", lambda p: tmp_path / "inexistente.json"
+    )
+
+    with caplog.at_level(logging.ERROR):
+        templates = printing.listar_templates()
+
+    assert templates == ["60x80"]
+    assert "templates.json" in caplog.text
+
+
+def test_templates_chave_invalida(monkeypatch):
+    import printing
+
+    fake_win32.written.clear()
+    monkeypatch.setattr(printing, "TEMPLATES", None)
+    printing.aplicar_template("inexistente")
+    monkeypatch.setattr(
+        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
+    )
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+
+    printing.imprimir_etiqueta("S", "C", "E", "M", 1, "2024-01-01")
+    texto = fake_win32.written[-1].decode("latin1")
+    assert "SIZE 60 mm,80 mm" in texto
+
+
 def test_templates_alteram_layout(monkeypatch):
     import printing
 
@@ -148,9 +182,8 @@ def test_templates_alteram_layout(monkeypatch):
     monkeypatch.setattr(
         printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
     )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
-
     printing.aplicar_template("Compacto")
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
     printing.imprimir_etiqueta("S", "C", "E", "M", 1, "2024-01-01")
     texto = fake_win32.written[-1].decode("latin1")
     assert "SIZE 50 mm,60 mm" in texto

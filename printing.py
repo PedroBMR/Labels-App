@@ -33,14 +33,29 @@ def _text_width_dots(texto: str, font: str, xm: int) -> int:
 
 
 # -------------------- templates --------------------
-try:
-    with open(recurso_caminho("templates.json"), "r", encoding="utf-8") as f:
-        TEMPLATES: dict[str, dict[str, int]] = json.load(f)
-except Exception:
-    # Fallback para garantir funcionamento mesmo sem arquivo
-    TEMPLATES = {
-        "60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2}
-    }
+_DEFAULT_TEMPLATE = {
+    "60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2}
+}
+
+TEMPLATES: dict[str, dict[str, int]] | None = None
+
+
+def _get_templates() -> dict[str, dict[str, int]]:
+    """Carrega ``templates.json`` sob demanda, com fallback seguro."""
+
+    global TEMPLATES
+    if TEMPLATES is not None:
+        return TEMPLATES
+
+    try:
+        with open(recurso_caminho("templates.json"), "r", encoding="utf-8") as f:
+            TEMPLATES = json.load(f)
+    except Exception:
+        logger.exception(
+            "Falha ao carregar templates.json; usando template padrão."
+        )
+        TEMPLATES = _DEFAULT_TEMPLATE.copy()
+    return TEMPLATES
 
 
 class TextoLayout(TypedDict):
@@ -170,18 +185,19 @@ def _sanitize_text(s: str) -> str:
 
 def listar_templates() -> list[str]:
     """Retorna a lista de nomes de templates disponíveis."""
-    return list(TEMPLATES.keys())
+    return list(_get_templates().keys())
 
 
 def aplicar_template(nome: str) -> None:
     """Define qual template será utilizado nas impressões."""
 
     # 1) Resolve o modelo (TEMPLATES)
-    modelo = TEMPLATES.get(nome)
+    templates = _get_templates()
+    modelo = templates.get(nome)
     if not modelo:
         n_alvo = _norm_key(nome)
         # tenta normalizado
-        for k, v in TEMPLATES.items():
+        for k, v in templates.items():
             if _norm_key(k) == n_alvo:
                 modelo = v
                 nome = k
@@ -189,17 +205,17 @@ def aplicar_template(nome: str) -> None:
         # se ainda não encontrou, aplica alias
         if not modelo and n_alvo in ALIASES:
             nome = ALIASES[n_alvo]
-            modelo = TEMPLATES.get(nome)
+            modelo = templates.get(nome)
             if not modelo:
-                for k, v in TEMPLATES.items():
+                for k, v in templates.items():
                     if _norm_key(k) == _norm_key(nome):
                         modelo = v
                         nome = k
                         break
     if not modelo:
         # fallback: primeiro template disponível
-        nome = next(iter(TEMPLATES))
-        modelo = TEMPLATES[nome]
+        nome = next(iter(templates))
+        modelo = templates[nome]
 
     # 2) Resolve o layout (LAYOUTS) com o mesmo nome (ou alias se preciso)
     layout_escolhido = LAYOUTS.get(nome)
@@ -236,17 +252,6 @@ def aplicar_template(nome: str) -> None:
         "Template aplicado: nome=%s largura_mm=%s altura_mm=%s gap_mm=%s",
         nome, LARGURA_ETIQUETA_MM, ALTURA_ETIQUETA_MM, GAP_MM
     )
-
-
-# aplica template padrão ao importar módulo, de forma segura
-try:
-    _DEFAULT_TEMPLATE_NAME = (
-        "Padrão" if "Padrão" in TEMPLATES else next(iter(TEMPLATES))
-    )
-except StopIteration:
-    # fallback extremo se TEMPLATES estiver vazio
-    _DEFAULT_TEMPLATE_NAME = next(iter(LAYOUTS))
-aplicar_template(_DEFAULT_TEMPLATE_NAME)
 
 
 class ErroImpressora(TypedDict):
