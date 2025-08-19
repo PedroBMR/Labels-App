@@ -81,6 +81,22 @@ def test_salvar_historico_e_registrar(monkeypatch, tmp_path):
     assert persistence.carregar_historico_mensal() == {"05-2024": 3}
 
 
+def test_salvar_config_escrita_atomica(monkeypatch, tmp_path):
+    persistence = _patch_paths(monkeypatch, tmp_path)
+    persistence.salvar_config({"a": 1})
+    conteudo = (tmp_path / "settings.json").read_text()
+
+    def falha(*_):
+        raise OSError
+
+    monkeypatch.setattr(persistence.os, "replace", falha)
+    with pytest.raises(OSError):
+        persistence.salvar_config({"a": 2})
+
+    assert (tmp_path / "settings.json").read_text() == conteudo
+    assert json.loads((tmp_path / "settings.json.bak").read_text())["a"] == 1
+
+
 def test_gerar_relatorio_mensal(monkeypatch, tmp_path):
     persistence = _patch_paths(monkeypatch, tmp_path)
     with open(

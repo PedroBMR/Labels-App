@@ -40,8 +40,13 @@ def salvar_config(dados: dict[str, Any]) -> None:
 
     caminho = recurso_caminho("settings.json")
     os.makedirs(os.path.dirname(caminho), exist_ok=True)
-    with open(caminho, "w", encoding="utf-8") as arquivo:
+    tmp_path = f"{caminho}.tmp"
+    bak_path = f"{caminho}.bak"
+    with open(tmp_path, "w", encoding="utf-8") as arquivo:
         json.dump(dados, arquivo, ensure_ascii=False, indent=4)
+    if os.path.exists(caminho):
+        shutil.copy2(caminho, bak_path)
+    os.replace(tmp_path, caminho)
 
 
 def carregar_contagem() -> tuple[int, int]:

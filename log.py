@@ -2,7 +2,7 @@ import logging
 import os
 import threading
 from logging.handlers import RotatingFileHandler
-from typing import Callable
+from typing import Callable, cast
 
 from utils import _base_dir
 
@@ -40,7 +40,11 @@ if _DEBUG:
 def _thread_excepthook(args: threading.ExceptHookArgs) -> None:
     logger.exception(
         "Exceção não tratada em thread",
-        exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+        exc_info=(
+            args.exc_type,
+            cast(BaseException, args.exc_value),
+            args.exc_traceback,
+        ),
     )
 
 

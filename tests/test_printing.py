@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import sys
@@ -38,9 +39,11 @@ fake_win32 = FakeWin32()
 sys.modules["win32print"] = fake_win32  # type: ignore[assignment]
 
 
-def test_descobrir_impressora_padrao():
+def test_descobrir_impressora_padrao(monkeypatch, tmp_path):
     import printing
 
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: tmp_path / p)
+    (tmp_path / "settings.json").write_text("{}")
     assert printing.descobrir_impressora_padrao() == "dummy"
 
 
@@ -157,16 +160,34 @@ def test_templates_arquivo_inexistente(monkeypatch, tmp_path, caplog):
     assert "templates.json" in caplog.text
 
 
+def test_aplicar_template_arquivo_inexistente(monkeypatch, tmp_path, caplog):
+    import printing
+
+    monkeypatch.setattr(printing, "TEMPLATES", None)
+    monkeypatch.setattr(
+        printing, "recurso_caminho", lambda p: tmp_path / "inexistente.json"
+    )
+
+    with caplog.at_level(logging.ERROR):
+        printing.aplicar_template("Qualquer")
+
+    assert printing.LARGURA_ETIQUETA_MM == 60
+    assert printing.ALTURA_ETIQUETA_MM == 80
+    assert "templates.json" in caplog.text
+
+    printing.aplicar_template("Padrão")
+
+
 def test_templates_chave_invalida(monkeypatch):
     import printing
 
     fake_win32.written.clear()
     monkeypatch.setattr(printing, "TEMPLATES", None)
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
     printing.aplicar_template("inexistente")
     monkeypatch.setattr(
         printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
     )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
     dados = {
         "saida": "S",
@@ -182,15 +203,24 @@ def test_templates_chave_invalida(monkeypatch):
     assert "SIZE 60 mm,80 mm" in texto
 
 
-def test_templates_alteram_layout(monkeypatch):
+def test_templates_alteram_layout(monkeypatch, tmp_path):
     import printing
 
     fake_win32.written.clear()
     monkeypatch.setattr(
         printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
     )
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: tmp_path / p)
+    (tmp_path / "templates.json").write_text(
+        json.dumps(
+            {
+                "60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2},
+                "Compacto": {"largura_mm": 50, "altura_mm": 60, "gap_mm": 2},
+                "100x30": {"largura_mm": 100, "altura_mm": 30, "gap_mm": 2},
+            }
+        )
+    )
     printing.aplicar_template("Compacto")
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
     dados = {
         "saida": "S",
         "categoria": "C",
@@ -206,14 +236,23 @@ def test_templates_alteram_layout(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
-def test_panoramico_layout(monkeypatch):
+def test_panoramico_layout(monkeypatch, tmp_path):
     import printing
 
     fake_win32.written.clear()
     monkeypatch.setattr(
         printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
     )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: tmp_path / p)
+    (tmp_path / "templates.json").write_text(
+        json.dumps(
+            {
+                "60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2},
+                "Compacto": {"largura_mm": 50, "altura_mm": 60, "gap_mm": 2},
+                "100x30": {"largura_mm": 100, "altura_mm": 30, "gap_mm": 2},
+            }
+        )
+    )
 
     printing.aplicar_template("Panoramico")
     dados = {
@@ -233,7 +272,7 @@ def test_panoramico_layout(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
-def test_panoramico_coordenadas(monkeypatch):
+def test_panoramico_coordenadas(monkeypatch, tmp_path):
     import re
 
     import printing
@@ -242,7 +281,16 @@ def test_panoramico_coordenadas(monkeypatch):
     monkeypatch.setattr(
         printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
     )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: tmp_path / p)
+    (tmp_path / "templates.json").write_text(
+        json.dumps(
+            {
+                "60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2},
+                "Compacto": {"largura_mm": 50, "altura_mm": 60, "gap_mm": 2},
+                "100x30": {"largura_mm": 100, "altura_mm": 30, "gap_mm": 2},
+            }
+        )
+    )
 
     printing.aplicar_template("Panoramico")
     dados = {
@@ -268,7 +316,7 @@ def test_panoramico_coordenadas(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
-def test_panoramico_pagina_teste(monkeypatch):
+def test_panoramico_pagina_teste(monkeypatch, tmp_path):
     import printing
 
     fake_win32.written.clear()
@@ -281,7 +329,16 @@ def test_panoramico_pagina_teste(monkeypatch):
             largura_desejada,
         ),
     )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: tmp_path / p)
+    (tmp_path / "templates.json").write_text(
+        json.dumps(
+            {
+                "60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2},
+                "Compacto": {"largura_mm": 50, "altura_mm": 60, "gap_mm": 2},
+                "100x30": {"largura_mm": 100, "altura_mm": 30, "gap_mm": 2},
+            }
+        )
+    )
 
     printing.aplicar_template("Panoramico")
     ok, erro = printing.imprimir_pagina_teste()
@@ -302,9 +359,19 @@ def test_panoramico_pagina_teste(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
-def test_100x30_fracao_antes_de_fragil():
+def test_100x30_fracao_antes_de_fragil(monkeypatch, tmp_path):
     import printing
 
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: tmp_path / p)
+    (tmp_path / "templates.json").write_text(
+        json.dumps(
+            {
+                "60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2},
+                "Compacto": {"largura_mm": 50, "altura_mm": 60, "gap_mm": 2},
+                "100x30": {"largura_mm": 100, "altura_mm": 30, "gap_mm": 2},
+            }
+        )
+    )
     printing.aplicar_template("100x30")
     fracao_x = printing.LAYOUT_ATUAL["fracao"]["x"]
     fragil_x = printing.LAYOUT_ATUAL["fragil"]["x"]
