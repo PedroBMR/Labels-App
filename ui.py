@@ -44,7 +44,7 @@ from qt_compat import (
     pyqtSignal,
 )
 
-from log import LOG_FILE, logger
+from log import LOG_FILE, logger, register_status_callback
 from persistence import (
     atualizar_recentes,
     carregar_config,
@@ -201,7 +201,11 @@ class PrintingWorker(QObject):
         self.kwargs = kwargs
 
     def run(self) -> None:
-        ok, erro = imprimir_etiqueta(*self.args, **self.kwargs)
+        try:
+            ok, erro = imprimir_etiqueta(*self.args, **self.kwargs)
+        except Exception as e:  # pragma: no cover - segurança
+            logger.exception("Erro no worker de impressão")
+            ok, erro = False, {"code": -1, "message": str(e)}
         self.finished.emit(ok, erro)
 
 
@@ -237,6 +241,7 @@ class EtiquetaApp(QWidget):
 
         self._setup_ui()
         self._aplicar_tema_escuro()
+        self._registrar_logger_ui()
 
         # Validação dinâmica
         self._wire_validation_signals()
@@ -657,6 +662,12 @@ class EtiquetaApp(QWidget):
     ) -> None:
         self.status_label.setText(mensagem)
         self.status_label.setStyleSheet(f"color:{cor};padding:5px")
+
+    def _registrar_logger_ui(self) -> None:
+        def _cb(msg: str) -> None:
+            QTimer.singleShot(0, lambda: self._atualizar_status(f"⚠️ {msg}", "orange"))
+
+        register_status_callback(_cb)
 
     # =========================
     # Ações de impressão e utilitários
