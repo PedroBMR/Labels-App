@@ -1,8 +1,8 @@
 import logging
 import os
+import threading
 from logging.handlers import RotatingFileHandler
 from typing import Callable
-import threading
 
 from utils import _base_dir
 

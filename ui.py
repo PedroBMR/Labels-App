@@ -5,6 +5,26 @@ import threading
 from datetime import datetime
 from typing import Any, TypedDict
 
+from log import LOG_FILE, logger, register_status_callback
+from persistence import (
+    atualizar_recentes,
+    carregar_config,
+    carregar_contagem,
+    carregar_historico_mensal,
+    carregar_recentes_listas,
+    gerar_relatorio_mensal,
+    registrar_contagem_mensal,
+    salvar_config,
+    salvar_contagem,
+    salvar_historico,
+)
+from printing import (
+    aplicar_template,
+    descobrir_impressora_padrao,
+    imprimir_etiqueta,
+    imprimir_pagina_teste,
+    listar_templates,
+)
 from qt_compat import (
     QCheckBox,
     QCloseEvent,
@@ -32,6 +52,7 @@ from qt_compat import (
     QSizePolicy,
     QSpacerItem,
     QSpinBox,
+    Qt,
     QThread,
     QTime,
     QTimeEdit,
@@ -40,29 +61,7 @@ from qt_compat import (
     QUrl,
     QVBoxLayout,
     QWidget,
-    Qt,
     pyqtSignal,
-)
-
-from log import LOG_FILE, logger, register_status_callback
-from persistence import (
-    atualizar_recentes,
-    carregar_config,
-    carregar_contagem,
-    carregar_historico_mensal,
-    carregar_recentes_listas,
-    gerar_relatorio_mensal,
-    registrar_contagem_mensal,
-    salvar_config,
-    salvar_contagem,
-    salvar_historico,
-)
-from printing import (
-    aplicar_template,
-    descobrir_impressora_padrao,
-    imprimir_etiqueta,
-    imprimir_pagina_teste,
-    listar_templates,
 )
 from utils import backup_automatico, normalize_text, recurso_caminho
 
