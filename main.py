@@ -1,5 +1,18 @@
-"""Ponto de entrada do aplicativo de geração de etiquetas
-(com captura de crash ultra-cedo)."""
+"""Ponto de entrada do aplicativo de geração de etiquetas.
+
+Responsabilidade:
+    Inicializar a aplicação e capturar falhas desde o início.
+
+Dependências:
+    - _version
+    - log
+    - qt_compat
+    - ui
+    - utils.migrate_legacy_data
+
+Exemplo:
+    $ python main.py
+"""
 
 # =========================
 # PREÂMBULO: captura de crash ANTES de qualquer import pesado

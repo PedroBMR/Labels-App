@@ -1,3 +1,17 @@
+"""Ferramentas de logging da aplicação.
+
+Responsabilidade:
+    Configurar logging rotativo e integração com a interface.
+
+Dependências:
+    - logging
+    - utils._base_dir
+
+Exemplo:
+    >>> from log import logger
+    >>> logger.info("Iniciado")
+"""
+
 import logging
 import os
 import threading

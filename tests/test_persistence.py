@@ -1,3 +1,15 @@
+"""Testes para funções de persistência de dados.
+
+Responsabilidade:
+    Verificar salvamento e carregamento de configurações e contagens.
+
+Dependências:
+    - persistence
+
+Exemplo:
+    $ pytest tests/test_persistence.py
+"""
+
 import csv
 import json
 import os

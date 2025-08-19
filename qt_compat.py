@@ -1,7 +1,15 @@
-"""Compat layer for Qt bindings.
+"""Camada de compatibilidade entre bindings Qt.
 
-Tries to import PyQt5 and falls back to PySide6, exposing the same names so
-that the rest of the code can simply ``from qt_compat import ...``.
+Responsabilidade:
+    Disponibilizar classes Qt usando PyQt5 ou PySide6 de forma uniforme.
+
+Dependências:
+    - PyQt5
+    - PySide6
+
+Exemplo:
+    >>> from qt_compat import QApplication
+    >>> app = QApplication([])
 """
 from __future__ import annotations
 

@@ -1,3 +1,15 @@
+"""Testes para utilitários do aplicativo.
+
+Responsabilidade:
+    Validar funções auxiliares como melhoria de logo e backup automático.
+
+Dependências:
+    - utils
+
+Exemplo:
+    $ pytest tests/test_utils.py
+"""
+
 import logging
 import os
 import sys

@@ -1,3 +1,15 @@
+"""Testes para a função ``normalize_text``.
+
+Responsabilidade:
+    Garantir que a normalização de texto funcione corretamente.
+
+Dependências:
+    - utils.normalize_text
+
+Exemplo:
+    $ pytest tests/test_normalize.py
+"""
+
 import os
 import sys
 
