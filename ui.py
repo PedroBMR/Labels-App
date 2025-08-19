@@ -37,11 +37,13 @@ from persistence import (
     salvar_historico,
 )
 from printing import (
+    LAYOUT_ATUAL,
     aplicar_template,
     descobrir_impressora_padrao,
     imprimir_etiqueta,
     imprimir_pagina_teste,
     listar_templates,
+    montar_tspl,
 )
 from qt_compat import (
     QCheckBox,
@@ -725,17 +727,18 @@ class EtiquetaApp(QWidget):
             volumes,
             data_hora,
         )
+        dados = {
+            "saida": saida,
+            "categoria": categoria,
+            "emissor": emissor,
+            "municipio": municipio,
+            "volumes": volumes,
+            "data_hora": data_hora,
+        }
+        tspl = montar_tspl(LAYOUT_ATUAL, dados)
         self._worker = PrintingWorker(
-            saida,
-            categoria,
-            emissor,
-            municipio,
-            volumes,
-            data_hora,
-            self.contagem_total,
-            self.contagem_mensal,
+            tspl,
             repetir_em_falha=self.retry_checkbox.isChecked(),
-            cancel_event=self.cancel_event,
         )
         self._thread = QThread()
         self._worker.moveToThread(self._thread)
@@ -830,17 +833,10 @@ class EtiquetaApp(QWidget):
             return
         dados = self.ultima_etiqueta
         self.cancel_event.clear()
+        tspl = montar_tspl(LAYOUT_ATUAL, dados)
         ok, erro = imprimir_etiqueta(
-            dados["saida"],
-            dados["categoria"],
-            dados["emissor"],
-            dados["municipio"],
-            dados["volumes"],
-            dados["data_hora"],
-            self.contagem_total,
-            self.contagem_mensal,
+            tspl,
             repetir_em_falha=self.retry_checkbox.isChecked(),
-            cancel_event=self.cancel_event,
         )
         if ok:
             self._atualizar_status("♻️ Reimpressão concluída", "lightblue")
@@ -875,19 +871,20 @@ class EtiquetaApp(QWidget):
 
         try:
             self.cancel_event.clear()
+            dados_tspl = {
+                "saida": dados["saida"],
+                "categoria": dados["categoria"],
+                "emissor": dados["emissor"],
+                "municipio": dados["municipio"],
+                "volumes": faltantes,
+                "data_hora": dados["data_hora"],
+                "inicio_indice": inicio,
+                "total_exibicao": total,
+            }
+            tspl = montar_tspl(LAYOUT_ATUAL, dados_tspl)
             ok, erro = imprimir_etiqueta(
-                dados["saida"],
-                dados["categoria"],
-                dados["emissor"],
-                dados["municipio"],
-                faltantes,
-                dados["data_hora"],
-                self.contagem_total,
-                self.contagem_mensal,
-                inicio_indice=inicio,
-                total_exibicao=total,
+                tspl,
                 repetir_em_falha=self.retry_checkbox.isChecked(),
-                cancel_event=self.cancel_event,
             )
 
             if not ok:
@@ -958,19 +955,20 @@ class EtiquetaApp(QWidget):
 
         try:
             self.cancel_event.clear()
+            dados_tspl = {
+                "saida": dados["saida"],
+                "categoria": dados["categoria"],
+                "emissor": dados["emissor"],
+                "municipio": dados["municipio"],
+                "volumes": volumes,
+                "data_hora": dados["data_hora"],
+                "inicio_indice": inicio,
+                "total_exibicao": total,
+            }
+            tspl = montar_tspl(LAYOUT_ATUAL, dados_tspl)
             ok, erro = imprimir_etiqueta(
-                dados["saida"],
-                dados["categoria"],
-                dados["emissor"],
-                dados["municipio"],
-                volumes,
-                dados["data_hora"],
-                self.contagem_total,
-                self.contagem_mensal,
-                inicio_indice=inicio,
-                total_exibicao=total,
+                tspl,
                 repetir_em_falha=self.retry_checkbox.isChecked(),
-                cancel_event=self.cancel_event,
             )
             if ok:
                 self._atualizar_status("♻️ Intervalo reimposto", "lightblue")
