@@ -304,7 +304,9 @@ def _texto_layout(chave: str, texto: str, layout: Layout) -> str:
     """Gera comando ``TEXT`` baseado nas coordenadas do layout informado."""
     p = layout[chave]
     v = _sanitize_text(texto)
-    return (f'TEXT {p["x"]},{p["y"]},"{p["font"]}",0,{p["xm"]},{p["ym"]},"{v}"\n')
+    return (
+        f'TEXT {p["x"]},{p["y"]},"{p["font"]}",0,{p["xm"]},{p["ym"]},"{v}"\r\n'
+    )
 
 
 def _calc_logo_x(layout: Layout, dots_x: int, largura_bytes: int) -> int:
@@ -371,12 +373,12 @@ def montar_tspl(template: Layout, dados: dict) -> str:
     for offset in range(volumes):
         numero_atual = inicio_indice + offset
         cmd = (
-            f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\n"
-            f"GAP {GAP_MM} mm,0\n"
-            "DENSITY 8\n"
-            "SPEED 4\n"
-            "DIRECTION 1\n"
-            "CLS\n"
+            f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\r\n"
+            f"GAP {GAP_MM} mm,0\r\n"
+            "DENSITY 8\r\n"
+            "SPEED 4\r\n"
+            "DIRECTION 1\r\n"
+            "CLS\r\n"
         )
         cmd += t("titulo", "CONIMS")
         cmd += t("saida", f"Saida: {saida}")
@@ -403,7 +405,7 @@ def montar_tspl(template: Layout, dados: dict) -> str:
             y_de = int(p_tot.get("y", p_num["y"]))  # type: ignore[arg-type]
             cmd += (
                 f'TEXT {x_de},{y_de},"{p_tot["font"]}",0,{p_tot["xm"]},'
-                f'{p_tot["ym"]},"DE {total_display}"\n'
+                f'{p_tot["ym"]},"DE {total_display}"\r\n'
             )
         else:
             cmd += t("numeracao", f"{numero_atual} DE {total_display}")
@@ -413,7 +415,7 @@ def montar_tspl(template: Layout, dados: dict) -> str:
             f"{altura_px},0,"
         )
         cmd += bitmap.decode("latin1")
-        cmd += "\nPRINT 1\n"
+        cmd += "\r\nPRINT 1\r\n"
         partes.append(cmd)
 
     return "".join(partes)
@@ -519,12 +521,12 @@ def imprimir_pagina_teste(
 
             # --- monta pagina de teste ---
             cmd = (
-                f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\n"
-                f"GAP {GAP_MM} mm,0\n"
-                "DENSITY 8\n"
-                "SPEED 4\n"
-                "DIRECTION 1\n"
-                "CLS\n"
+                f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\r\n"
+                f"GAP {GAP_MM} mm,0\r\n"
+                "DENSITY 8\r\n"
+                "SPEED 4\r\n"
+                "DIRECTION 1\r\n"
+                "CLS\r\n"
             )
             cmd += t("titulo", "CONIMS")
             cmd += t("saida", "Saida: 000")
@@ -553,7 +555,7 @@ def imprimir_pagina_teste(
                 y_de = int(p_tot.get("y", p_num["y"]))  # type: ignore[arg-type]
                 cmd += (
                     f'TEXT {x_de},{y_de},"{p_tot["font"]}",0,{p_tot["xm"]},'
-                    f'{p_tot["ym"]},"DE 1"\n'
+                    f'{p_tot["ym"]},"DE 1"\r\n'
                 )
             else:
                 cmd += t("numeracao", "1 DE 1")
@@ -565,19 +567,19 @@ def imprimir_pagina_teste(
             )
 
             # Régua (marcas a cada 10 mm)
-            barras = f"BAR {ruler_start},{ruler_y},{ruler_len},4\n"
+            barras = f"BAR {ruler_start},{ruler_y},{ruler_len},4\r\n"
             marcas = ruler_len // (10 * DOTS_MM)
             for i in range(marcas + 1):
                 altura = 20 if i in (0, marcas) else 12
                 x = ruler_start + i * 10 * DOTS_MM
                 y = ruler_y - altura
-                barras += f"BAR {x},{y},2,{altura}\n"
+                barras += f"BAR {x},{y},2,{altura}\r\n"
 
             logger.debug("tspl_first_200=%r", cmd[:200])
             corpo = (
                 cmd.encode(ENCODING, errors="replace")
                 + bitmap
-                + f"\n{barras}PRINT 1\n".encode(ENCODING)
+                + f"\r\n{barras}PRINT 1\r\n".encode(ENCODING)
             )
             win32print.WritePrinter(h_prn, corpo)
 
