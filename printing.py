@@ -414,7 +414,7 @@ def montar_tspl(template: Layout, dados: dict) -> str:
             f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},"
             f"{altura_px},0,"
         )
-        cmd += bitmap.decode("latin1")
+        cmd += bitmap.decode(ENCODING, errors="replace")
         cmd += "\r\nPRINT 1\r\n"
         partes.append(cmd)
 
@@ -437,7 +437,7 @@ def imprimir_etiqueta(
             h_prn = win32print.OpenPrinter(nome_imp)
             win32print.StartDocPrinter(h_prn, 1, ("Etiqueta CONIMS", None, "RAW"))
             win32print.StartPagePrinter(h_prn)
-            win32print.WritePrinter(h_prn, tspl.encode("latin1", errors="replace"))
+            win32print.WritePrinter(h_prn, tspl.encode(ENCODING, errors="replace"))
             win32print.EndPagePrinter(h_prn)
             win32print.EndDocPrinter(h_prn)
             win32print.ClosePrinter(h_prn)
@@ -575,13 +575,12 @@ def imprimir_pagina_teste(
                 y = ruler_y - altura
                 barras += f"BAR {x},{y},2,{altura}\r\n"
 
+            cmd += bitmap.decode(ENCODING, errors="replace")
+            cmd += f"\r\n{barras}PRINT 1\r\n"
             logger.debug("tspl_first_200=%r", cmd[:200])
-            corpo = (
-                cmd.encode(ENCODING, errors="replace")
-                + bitmap
-                + f"\r\n{barras}PRINT 1\r\n".encode(ENCODING)
+            win32print.WritePrinter(
+                h_prn, cmd.encode(ENCODING, errors="replace")
             )
-            win32print.WritePrinter(h_prn, corpo)
 
             win32print.EndPagePrinter(h_prn)
             win32print.EndDocPrinter(h_prn)
