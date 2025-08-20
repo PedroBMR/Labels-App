@@ -24,6 +24,7 @@ from datetime import datetime
 from typing import Any, TypedDict
 
 from log import LOG_FILE, logger, register_status_callback
+from _version import __version__
 from persistence import (
     atualizar_recentes,
     carregar_config,
@@ -498,6 +499,15 @@ class EtiquetaApp(QWidget):
         layout_base.addSpacerItem(
             QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
         )
+
+        self._footer_label = QLabel(
+            f"Feito por Pedro Luiz Bortot Monteiro do Rosário 2025 — Versão {__version__}"
+        )
+        self._footer_label.setAlignment(Qt.AlignCenter)
+        self._footer_label.setStyleSheet(
+            "color: #555; font-size: 12px; border: none; background: none; padding: 10px;"
+        )
+        layout_base.addWidget(self._footer_label)
 
     def _aplicar_tema_escuro(self) -> None:
         p = QPalette()
