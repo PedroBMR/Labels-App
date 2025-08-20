@@ -1,5 +1,5 @@
 {
-    "ultima_impressora": "Concordia",
+    "ultima_impressora": "dummy",
     "template": "100x30",
     "retry_automatico": false,
     "backup_horario": "17:10",
