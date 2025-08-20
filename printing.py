@@ -470,6 +470,11 @@ def montar_tspl(template: Layout, dados: dict) -> str:
                 x_de = int(p_num["x"] + largura_num + gap_mm * DOTS_MM)
             else:
                 x_de = int(p_tot.get("x", p_num["x"]))  # type: ignore[arg-type]
+            max_x = LARGURA_ETIQUETA_MM * DOTS_MM
+            largura_de = _text_width_dots(
+                f"DE {total_display}", p_tot["font"], p_tot["xm"]
+            )
+            x_de = min(x_de, max_x - largura_de)
             y_de = int(p_tot.get("y", p_num["y"]))  # type: ignore[arg-type]
             cmd += (
                 f'TEXT {x_de},{y_de},"{p_tot["font"]}",0,{p_tot["xm"]},'
@@ -621,7 +626,9 @@ def imprimir_pagina_teste(
                     x_de = int(p_num["x"] + largura_num + gap_mm * DOTS_MM)
                 else:
                     x_de = int(p_tot.get("x", p_num["x"]))  # type: ignore[arg-type]
-
+                max_x = LARGURA_ETIQUETA_MM * DOTS_MM
+                largura_de = _text_width_dots("DE 1", p_tot["font"], p_tot["xm"])
+                x_de = min(x_de, max_x - largura_de)
                 y_de = int(p_tot.get("y", p_num["y"]))  # type: ignore[arg-type]
                 cmd += (
                     f'TEXT {x_de},{y_de},"{p_tot["font"]}",0,{p_tot["xm"]},'
