@@ -36,14 +36,16 @@ from persistence import (
     salvar_contagem,
     salvar_historico,
 )
-from printing import (
+from layout_builder import (
     LAYOUT_ATUAL,
     aplicar_template,
+    listar_templates,
+    montar_tspl,
+)
+from printing import (
     descobrir_impressora_padrao,
     imprimir_etiqueta,
     imprimir_pagina_teste,
-    listar_templates,
-    montar_tspl,
 )
 from qt_compat import (
     QCheckBox,
