@@ -202,6 +202,42 @@ def listar_templates() -> list[str]:
     return list(_get_templates().keys())
 
 
+def _text_height_dots(font: str, ym: int) -> int:
+    """Altura aproximada do texto em dots."""
+    base = FONT_BASE_W.get(str(font), 12)
+    ym = int(ym) if int(ym) > 0 else 1
+    return base * ym
+
+
+def _ajustar_altura_layout(layout: Layout) -> None:
+    """Garante que campos de texto não ultrapassem a altura da etiqueta."""
+    limite = ALTURA_ETIQUETA_MM * DOTS_MM
+    for chave, espec in layout.items():
+        if not isinstance(espec, dict) or "y" not in espec:
+            continue
+        base = FONT_BASE_W.get(str(espec.get("font", "2")), 12)
+        ym = max(int(espec.get("ym", 1)), 1)
+        altura = base * ym
+        if espec["y"] + altura <= limite:
+            continue
+        if chave in {"fracao", "fragil"}:
+            novo_y = limite - altura
+            if novo_y < 0:
+                max_ym = max(1, limite // base)
+                espec["ym"] = max_ym
+                altura = base * max_ym
+                novo_y = max(0, limite - altura)
+            espec["y"] = novo_y
+            outro = "fragil" if chave == "fracao" else "fracao"
+            if outro in layout and isinstance(layout[outro], dict):
+                layout[outro]["y"] = novo_y
+        else:
+            max_ym = max(1, (limite - espec["y"]) // base)
+            espec["ym"] = max_ym
+            altura = base * max_ym
+            if espec["y"] + altura > limite:
+                espec["y"] = max(0, limite - altura)
+
 def aplicar_template(nome: str) -> None:
     """Define qual template será utilizado nas impressões."""
 
@@ -268,6 +304,7 @@ def aplicar_template(nome: str) -> None:
     ALTURA_ETIQUETA_MM = int(modelo.get("altura_mm", 80))
     GAP_MM = int(modelo.get("gap_mm", 2))
     LAYOUT_ATUAL = layout_escolhido
+    _ajustar_altura_layout(LAYOUT_ATUAL)
     logger.info(
         "Template aplicado: nome=%s largura_mm=%s altura_mm=%s gap_mm=%s",
         nome, LARGURA_ETIQUETA_MM, ALTURA_ETIQUETA_MM, GAP_MM
