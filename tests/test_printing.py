@@ -329,6 +329,42 @@ def test_100x30_coordenadas(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
+def test_60x80_coordenadas(monkeypatch):
+    import re
+
+    import printing
+
+    fake_win32.written.clear()
+    monkeypatch.setattr(
+        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
+    )
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+
+    printing.aplicar_template("60x80")
+    dados = {
+        "saida": "S",
+        "categoria": "C",
+        "emissor": "E",
+        "municipio": "M",
+        "volumes": 1,
+        "data_hora": "2024-01-01",
+    }
+    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    printing.imprimir_etiqueta(tspl)
+    texto = fake_win32.written[-1].decode("latin1")
+    assert "SIZE 80 mm,60 mm" in texto
+    assert "DIRECTION 0" in texto
+    max_x = printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM
+    max_y = printing.ALTURA_ETIQUETA_MM * printing.DOTS_MM
+    for line in texto.splitlines():
+        m = re.match(r"TEXT (\d+),(\d+)", line)
+        if m:
+            x, y = map(int, m.groups())
+            assert 0 <= x <= max_x
+            assert 0 <= y <= max_y
+    printing.aplicar_template("Padrão")
+
+
 def test_100x30_pagina_teste(monkeypatch):
     import printing
 

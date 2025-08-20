@@ -96,16 +96,16 @@ class Layout(TypedDict):
 
 LAYOUTS: dict[str, Layout] = {
     "60x80": {
-        "titulo": {"x": 30, "y": 20, "font": "3", "xm": 2, "ym": 2},
-        "saida": {"x": 30, "y": 70, "font": "2", "xm": 1, "ym": 1},
-        "categoria": {"x": 30, "y": 90, "font": "2", "xm": 1, "ym": 1},
-        "emissor": {"x": 30, "y": 120, "font": "2", "xm": 1, "ym": 1},
-        "municipio": {"x": 30, "y": 150, "font": "2", "xm": 1, "ym": 1},
-        "data": {"x": 30, "y": 180, "font": "2", "xm": 1, "ym": 1},
-        "fracao": {"x": 30, "y": 220, "font": "2", "xm": 1, "ym": 1},
-        "fragil": {"x": 30, "y": 270, "font": "2", "xm": 1, "ym": 1},
-        "numeracao": {"x": 30, "y": 330, "font": "4", "xm": 2, "ym": 2},
-        "logo_y": 400,
+        "titulo": {"x": 30, "y": 15, "font": "3", "xm": 2, "ym": 2},
+        "saida": {"x": 30, "y": 60, "font": "2", "xm": 1, "ym": 1},
+        "categoria": {"x": 30, "y": 80, "font": "2", "xm": 1, "ym": 1},
+        "emissor": {"x": 30, "y": 110, "font": "2", "xm": 1, "ym": 1},
+        "municipio": {"x": 30, "y": 140, "font": "2", "xm": 1, "ym": 1},
+        "data": {"x": 30, "y": 170, "font": "2", "xm": 1, "ym": 1},
+        "fracao": {"x": 30, "y": 210, "font": "2", "xm": 1, "ym": 1},
+        "fragil": {"x": 30, "y": 250, "font": "2", "xm": 1, "ym": 1},
+        "numeracao": {"x": 30, "y": 300, "font": "4", "xm": 2, "ym": 2},
+        "logo_y": 350,
         "logo_largura": 240,
     },
     "100x30": {
