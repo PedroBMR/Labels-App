@@ -48,7 +48,8 @@ def _text_width_dots(texto: str, font: str, xm: int) -> int:
 
 # -------------------- templates --------------------
 _DEFAULT_TEMPLATE = {
-    "100x30": {"largura_mm": 100, "altura_mm": 30, "gap_mm": 2, "direction": 1}
+    "100x30": {"largura_mm": 100, "altura_mm": 30, "gap_mm": 2, "direction": 1},
+    "60x80": {"largura_mm": 80, "altura_mm": 60, "gap_mm": 2, "direction": 0},
 }
 
 TEMPLATES: dict[str, dict[str, int]] | None = None

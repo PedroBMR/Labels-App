@@ -214,8 +214,27 @@ def test_templates_arquivo_inexistente(monkeypatch, tmp_path, caplog):
     with caplog.at_level(logging.ERROR):
         templates = printing.listar_templates()
 
-    assert templates == ["100x30"]
+    assert templates == ["100x30", "60x80"]
     assert "templates.json" in caplog.text
+
+
+def test_template_fallback_60x80(monkeypatch):
+    import printing
+
+    monkeypatch.setattr(printing, "TEMPLATES", None)
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "inexistente.json")
+
+    printing.aplicar_template("60x80")
+
+    assert printing.LARGURA_ETIQUETA_MM == 80
+    assert printing.ALTURA_ETIQUETA_MM == 60
+    assert printing.GAP_MM == 2
+    assert printing.DIRECTION == 0
+
+    templates = printing._get_templates()
+    assert set(templates) == {"100x30", "60x80"}
+
+    printing.aplicar_template("Padrão")
 
 
 def test_templates_chave_invalida(monkeypatch):
