@@ -236,12 +236,12 @@ def _ajustar_altura_layout(layout: Layout) -> None:
                 novo_y = max(0, limite - altura)
             if novo_y != orig_y:
                 logger.debug("Ajuste '%s.y': %s -> %s", chave, orig_y, novo_y)
-            espec["y"] = novo_y
-            outro = "fragil" if chave == "fracao" else "fracao"
-            if outro in layout and isinstance(layout[outro], dict):
-                outro_y = layout[outro].get("y")
-                if outro_y != novo_y:
-                    logger.debug("Ajuste '%s.y': %s -> %s", outro, outro_y, novo_y)
+                espec["y"] = novo_y
+                outro = "fragil" if chave == "fracao" else "fracao"
+                if outro in layout and isinstance(layout[outro], dict):
+                    outro_y = layout[outro].get("y")
+                    if outro_y != novo_y:
+                        logger.debug("Ajuste '%s.y': %s -> %s", outro, outro_y, novo_y)
                 layout[outro]["y"] = novo_y
         else:
             max_ym = max(1, (limite - espec["y"]) // base)
@@ -256,6 +256,77 @@ def _ajustar_altura_layout(layout: Layout) -> None:
                         "Ajuste '%s.y': %s -> %s", chave, orig_y, novo_y
                     )
                 espec["y"] = novo_y
+
+
+def _ajustar_largura_layout(layout: Layout) -> None:
+    """Garante que campos de texto e logo não ultrapassem a largura da etiqueta."""
+
+    limite = LARGURA_ETIQUETA_MM * DOTS_MM
+
+    textos_padrao = {
+        "titulo": "CONIMS",
+        "saida": "Saida: 000",
+        "categoria": "Categoria: X",
+        "emissor": "Emissor: X",
+        "municipio": "Municipio: X",
+        "data": "Impresso em: 00/00/0000 00:00",
+        "fracao": "[ ] Fracao",
+        "fragil": "[ ] Fragil",
+        "numeracao": "9999 DE 9999",
+        "numeracao_total": "DE 9999",
+    }
+
+    for chave, espec in layout.items():
+        if not isinstance(espec, dict) or "x" not in espec:
+            continue
+
+        texto = textos_padrao.get(chave, "X")
+        font = str(espec.get("font", "2"))
+        xm = max(int(espec.get("xm", 1)), 1)
+        largura = _text_width_dots(texto, font, xm)
+        if espec["x"] + largura <= limite:
+            continue
+
+        orig_x = espec["x"]
+        orig_xm = xm
+
+        largura_unit = _text_width_dots(texto, font, 1)
+        max_xm = max(1, (limite - orig_x) // max(largura_unit, 1))
+        if max_xm < orig_xm:
+            logger.debug("Ajuste '%s.xm': %s -> %s", chave, orig_xm, max_xm)
+            espec["xm"] = max_xm
+            xm = max_xm
+            largura = _text_width_dots(texto, font, xm)
+
+        if espec["x"] + largura > limite:
+            novo_x = max(0, limite - largura)
+            if novo_x != orig_x:
+                logger.debug("Ajuste '%s.x': %s -> %s", chave, orig_x, novo_x)
+            espec["x"] = novo_x
+
+    # Ajuste do logo
+    logo_largura = layout.get("logo_largura")
+    if isinstance(logo_largura, int):
+        if logo_largura > limite:
+            logger.debug(
+                "Ajuste 'logo_largura': %s -> %s", logo_largura, limite
+            )
+            layout["logo_largura"] = limite
+            logo_largura = limite
+
+    if "logo_x_mm" in layout:  # type: ignore[operator]
+        logo_x_mm = float(layout.get("logo_x_mm", 0))  # type: ignore[index]
+        largura_mm = (logo_largura or 0) / DOTS_MM
+        max_x_mm = max(0, LARGURA_ETIQUETA_MM - largura_mm)
+        if logo_x_mm > max_x_mm:
+            logger.debug("Ajuste 'logo_x_mm': %s -> %s", logo_x_mm, max_x_mm)
+            layout["logo_x_mm"] = max_x_mm
+    elif "logo_x" in layout:  # type: ignore[operator]
+        logo_x = int(layout.get("logo_x", 0))  # type: ignore[index]
+        max_x = max(0, limite - int(logo_largura or 0))
+        if logo_x > max_x:
+            logger.debug("Ajuste 'logo_x': %s -> %s", logo_x, max_x)
+            layout["logo_x"] = max_x
 
 def aplicar_template(nome: str) -> None:
     """Define qual template será utilizado nas impressões."""
@@ -325,6 +396,7 @@ def aplicar_template(nome: str) -> None:
     DIRECTION = int(modelo.get("direction", 1))
     LAYOUT_ATUAL = layout_escolhido
     _ajustar_altura_layout(LAYOUT_ATUAL)
+    _ajustar_largura_layout(LAYOUT_ATUAL)
     logger.debug(
         "Template ajustado: largura_mm=%s altura_mm=%s gap_mm=%s direction=%s",
         LARGURA_ETIQUETA_MM,
