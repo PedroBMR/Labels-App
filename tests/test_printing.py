@@ -214,7 +214,7 @@ def test_templates_arquivo_inexistente(monkeypatch, tmp_path, caplog):
     with caplog.at_level(logging.ERROR):
         templates = printing.listar_templates()
 
-    assert templates == ["60x80"]
+    assert templates == ["100x30"]
     assert "templates.json" in caplog.text
 
 
@@ -240,7 +240,7 @@ def test_templates_chave_invalida(monkeypatch):
     tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
     printing.imprimir_etiqueta(tspl)
     texto = fake_win32.written[-1].decode("latin1")
-    assert "SIZE 60 mm,80 mm" in texto
+    assert "SIZE 100 mm,30 mm" in texto
 
 
 def test_templates_alteram_layout(monkeypatch):
