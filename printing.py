@@ -503,8 +503,8 @@ def montar_tspl(template: Layout, dados: dict) -> str:
             f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},"
             f"{altura_px},0,"
         )
-        cmd += bitmap.decode(ENCODING, errors="replace")
-        cmd += "\r\nPRINT 1\r\n"
+        cmd += bitmap.decode(ENCODING, errors="replace") + "\r\n"
+        cmd += "PRINT 1\r\n"
         partes.append(cmd)
     tspl = "".join(partes)
     logger.debug("tspl_first_200=%r", tspl[:200])
