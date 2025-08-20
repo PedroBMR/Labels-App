@@ -82,6 +82,7 @@ from qt_compat import (
     QVBoxLayout,
     QWidget,
     pyqtSignal,
+    pyqtSlot,
 )
 from utils import backup_automatico, normalize_text, recurso_caminho
 
@@ -219,6 +220,7 @@ class PrintingWorker(QObject):
         self.args = args
         self.kwargs = kwargs
 
+    @pyqtSlot()
     def run(self) -> None:
         try:
             ok, erro = imprimir_etiqueta(*self.args, **self.kwargs)
