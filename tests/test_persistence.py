@@ -31,6 +31,13 @@ def _patch_paths(monkeypatch, tmp_path):
     return persistence
 
 
+def test_carregar_config_template(monkeypatch, tmp_path):
+    persistence = _patch_paths(monkeypatch, tmp_path)
+    (tmp_path / "settings.json").write_text(json.dumps({"template": "60x80"}))
+    config = persistence.carregar_config()
+    assert config["template"] == "60x80"
+
+
 def test_salvar_e_carregar_contagem(monkeypatch, tmp_path):
     persistence = _patch_paths(monkeypatch, tmp_path)
     persistence.salvar_contagem(5, 2)
