@@ -408,7 +408,11 @@ def descobrir_impressora_padrao() -> str | None:
         return None
 
 
-def _texto_layout(chave: str, texto: str, layout: Layout) -> str:
+def _texto_layout(
+    chave: str,
+    texto: str,
+    layout: Layout,
+) -> str:
     """Gera comando ``TEXT`` baseado nas coordenadas do layout informado."""
     p = layout[chave]
     v = _sanitize_text(texto)
@@ -417,7 +421,11 @@ def _texto_layout(chave: str, texto: str, layout: Layout) -> str:
     )
 
 
-def _calc_logo_x(layout: Layout, dots_x: int, largura_bytes: int) -> int:
+def _calc_logo_x(
+    layout: Layout,
+    dots_x: int,
+    largura_bytes: int,
+) -> int:
     """Calcula a posição X do logo com override por layout (logo_x ou logo_x_mm)."""
     if "logo_x_mm" in layout:  # type: ignore[operator]
         x_logo = int(layout["logo_x_mm"] * DOTS_MM)  # type: ignore[index]
@@ -429,7 +437,10 @@ def _calc_logo_x(layout: Layout, dots_x: int, largura_bytes: int) -> int:
     return max(0, min(x_logo, max(0, dots_x - (largura_bytes * 8))))
 
 
-def montar_tspl(template: Layout, dados: dict) -> str:
+def montar_tspl(
+    template: Layout,
+    dados: dict,
+) -> str:
     """Monta o conteúdo TSPL para impressão de etiquetas.
 
     ``template`` corresponde ao layout utilizado e ``dados`` deve conter as
@@ -512,7 +523,8 @@ def montar_tspl(template: Layout, dados: dict) -> str:
 
 
 def imprimir_etiqueta(
-    tspl: str, repetir_em_falha: bool = False
+    tspl: str,
+    repetir_em_falha: bool = False,
 ) -> tuple[bool, ErroImpressora | None]:
     """Envia uma string TSPL já montada para a impressora padrão."""
 
