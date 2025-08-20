@@ -373,6 +373,46 @@ def test_100x30_fracao_antes_de_fragil():
     printing.aplicar_template("Padrão")
 
 
+def test_100x30_text_bitmap_dentro_largura(monkeypatch):
+    import re
+
+    import printing
+
+    monkeypatch.setattr(
+        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 15, 1)
+    )
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+
+    printing.aplicar_template("100x30")
+    dados = {
+        "saida": "S",
+        "categoria": "C",
+        "emissor": "E",
+        "municipio": "M",
+        "volumes": 1,
+        "data_hora": "2024-01-01",
+    }
+    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+
+    max_x = printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM
+    for line in tspl.splitlines():
+        if line.startswith("TEXT "):
+            m = re.match(
+                r'TEXT (\d+),(\d+),"(\d+)",0,(\d+),(\d+),"(.*)"', line
+            )
+            assert m, f"Linha inesperada: {line}"
+            x, _, font, xm, _, texto = m.groups()
+            x, xm = int(x), int(xm)
+            largura = printing._text_width_dots(texto, font, xm)
+            assert x + largura <= max_x
+        elif line.startswith("BITMAP "):
+            m = re.match(r'BITMAP (\d+),(\d+),(\d+),(\d+),0,', line)
+            assert m, f"Linha inesperada: {line}"
+            x, _, largura_b, _ = map(int, m.groups())
+            assert x + largura_b * 8 <= max_x
+    printing.aplicar_template("Padrão")
+
+
 def test_panoramico_text_bitmap_dentro_limites(monkeypatch):
     import re
 
