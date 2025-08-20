@@ -92,8 +92,6 @@ class Layout(TypedDict):
     numeracao: TextoLayout
     logo_y: int
     logo_largura: int
-    # opcional: numeracao_total -> quando presente, imprime "DE N" separado
-    # numeracao_total: TextoLayout  # deixamos não tipado para evitar dependências
 
 
 LAYOUTS: dict[str, Layout] = {
@@ -110,19 +108,6 @@ LAYOUTS: dict[str, Layout] = {
         "logo_y": 400,
         "logo_largura": 240,
     },
-    "Compacto": {
-        "titulo": {"x": 30, "y": 15, "font": "3", "xm": 2, "ym": 2},
-        "saida": {"x": 30, "y": 52, "font": "2", "xm": 1, "ym": 1},
-        "categoria": {"x": 30, "y": 68, "font": "2", "xm": 1, "ym": 1},
-        "emissor": {"x": 30, "y": 90, "font": "2", "xm": 1, "ym": 1},
-        "municipio": {"x": 30, "y": 112, "font": "2", "xm": 1, "ym": 1},
-        "data": {"x": 30, "y": 135, "font": "2", "xm": 1, "ym": 1},
-        "fracao": {"x": 30, "y": 165, "font": "2", "xm": 1, "ym": 1},
-        "fragil": {"x": 30, "y": 202, "font": "2", "xm": 1, "ym": 1},
-        "numeracao": {"x": 30, "y": 248, "font": "4", "xm": 2, "ym": 2},
-        "logo_y": 338,
-        "logo_largura": 240,
-    },
     "100x30": {
         "titulo": {"x": 20, "y": 20, "font": "3", "xm": 1, "ym": 1},
         "saida": {"x": 20, "y": 60, "font": "2", "xm": 1, "ym": 1},
@@ -135,8 +120,8 @@ LAYOUTS: dict[str, Layout] = {
         "fracao": {"x": 20,  "y": 220, "font": "2", "xm": 1, "ym": 1},
         "fragil": {"x": 200, "y": 220, "font": "2", "xm": 1, "ym": 1},
 
-        # Numeração (número e "DE N" na mesma linha; "DE N" segue a largura do número)
-        "numeracao": {"x": 500, "y": 36, "font": "2", "xm": 2, "ym": 2},
+        # Numeração (número e "DE N" na mesma linha)
+        "numeracao": {"x": 450, "y": 36, "font": "2", "xm": 2, "ym": 2},
 
         # Logo
         "logo_y": 75,
@@ -146,26 +131,10 @@ LAYOUTS: dict[str, Layout] = {
 
 }
 
-# Campo opcional: imprime "DE N" separado (seguir X dinamicamente)
-LAYOUTS["100x30"]["numeracao_total"] = {  # type: ignore[index]
-    "x": 550,
-    "y": 36,
-    "font": "2",
-    "xm": 2,
-    "ym": 2,
-    # parâmetros extras (não TSPL): seguem o número automaticamente
-    "follow": True,   # True = calcula X com base na largura do número
-    "gap_mm": 2.0,    # folga entre número e "DE", em milímetros
-}
-
-# Alias de layout para acesso direto
-LAYOUTS["Panoramico"] = LAYOUTS["100x30"]
 
 # -------------------- Aliases de nomes (compatibilidade) --------------------
 # Só usamos se o nome solicitado NÃO existir em TEMPLATES/LAYOUTS.
 ALIASES = {
-    "panoramico": "100x30",
-    "panorâmico": "100x30",
     "padrao": "60x80",
     "padrão": "60x80",
 }
@@ -273,7 +242,6 @@ def _ajustar_largura_layout(layout: Layout) -> None:
         "fracao": "[ ] Fracao",
         "fragil": "[ ] Fragil",
         "numeracao": "9999 DE 9999",
-        "numeracao_total": "DE 9999",
     }
 
     for chave, espec in layout.items():
@@ -529,31 +497,7 @@ def montar_tspl(template: Layout, dados: dict) -> str:
         cmd += t("fracao", "[ ] Fracao")
         cmd += t("fragil", "[ ] Fragil")
 
-        if "numeracao_total" in layout:
-            cmd += t("numeracao", f"{numero_atual}")
-            p_num = layout["numeracao"]
-            p_tot = layout["numeracao_total"]  # type: ignore[index]
-            follow = bool(p_tot.get("follow", True))  # type: ignore[call-arg]
-            gap_mm = float(p_tot.get("gap_mm", 2.0))  # type: ignore[call-arg]
-            if follow:
-                largura_num = _text_width_dots(
-                    str(numero_atual), p_num["font"], p_num["xm"]
-                )
-                x_de = int(p_num["x"] + largura_num + gap_mm * DOTS_MM)
-            else:
-                x_de = int(p_tot.get("x", p_num["x"]))  # type: ignore[arg-type]
-            max_x = LARGURA_ETIQUETA_MM * DOTS_MM
-            largura_de = _text_width_dots(
-                f"DE {total_display}", p_tot["font"], p_tot["xm"]
-            )
-            x_de = min(x_de, max_x - largura_de)
-            y_de = int(p_tot.get("y", p_num["y"]))  # type: ignore[arg-type]
-            cmd += (
-                f'TEXT {x_de},{y_de},"{p_tot["font"]}",0,{p_tot["xm"]},'
-                f'{p_tot["ym"]},"DE {total_display}"\r\n'
-            )
-        else:
-            cmd += t("numeracao", f"{numero_atual} DE {total_display}")
+        cmd += t("numeracao", f"{numero_atual} DE {total_display}")
 
         cmd += (
             f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},"
@@ -685,29 +629,7 @@ def imprimir_pagina_teste(
             cmd += t("fragil", "[ ] Fragil")
 
             # --- numeração teste ---
-            if "numeracao_total" in layout:
-                cmd += t("numeracao", "1")
-
-                p_num = layout["numeracao"]
-                p_tot = layout["numeracao_total"]  # type: ignore[index]
-                follow = bool(p_tot.get("follow", True))  # type: ignore[call-arg]
-                gap_mm = float(p_tot.get("gap_mm", 2.0))  # type: ignore[call-arg]
-
-                if follow:
-                    largura_num = _text_width_dots("1", p_num["font"], p_num["xm"])
-                    x_de = int(p_num["x"] + largura_num + gap_mm * DOTS_MM)
-                else:
-                    x_de = int(p_tot.get("x", p_num["x"]))  # type: ignore[arg-type]
-                max_x = LARGURA_ETIQUETA_MM * DOTS_MM
-                largura_de = _text_width_dots("DE 1", p_tot["font"], p_tot["xm"])
-                x_de = min(x_de, max_x - largura_de)
-                y_de = int(p_tot.get("y", p_num["y"]))  # type: ignore[arg-type]
-                cmd += (
-                    f'TEXT {x_de},{y_de},"{p_tot["font"]}",0,{p_tot["xm"]},'
-                    f'{p_tot["ym"]},"DE 1"\r\n'
-                )
-            else:
-                cmd += t("numeracao", "1 DE 1")
+            cmd += t("numeracao", "1 DE 1")
 
             # --- logo ---
             cmd += (

@@ -1,5 +1,4 @@
 {
   "60x80":   { "largura_mm": 60,  "altura_mm": 80,  "gap_mm": 2, "direction": 1 },
-  "Compacto": { "largura_mm": 50,  "altura_mm": 60,  "gap_mm": 2, "direction": 1 },
   "100x30": { "largura_mm": 100, "altura_mm": 30, "gap_mm": 2, "direction": 1 }
 }
