@@ -324,6 +324,50 @@ def test_100x30_fracao_antes_de_fragil():
     printing.aplicar_template("Padrão")
 
 
+def test_panoramico_text_bitmap_dentro_limites(monkeypatch):
+    import re
+
+    import printing
+
+    monkeypatch.setattr(
+        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 2, 16)
+    )
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+
+    printing.aplicar_template("Panoramico")
+    dados = {
+        "saida": "S",
+        "categoria": "C",
+        "emissor": "E",
+        "municipio": "M",
+        "volumes": 1,
+        "data_hora": "2024-01-01",
+    }
+    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+
+    max_x = printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM
+    max_y = printing.ALTURA_ETIQUETA_MM * printing.DOTS_MM
+    for linha in tspl.splitlines():
+        if linha.startswith("TEXT "):
+            m = re.match(
+                r'TEXT (\d+),(\d+),"(\d+)",0,(\d+),(\d+),"(.*)"', linha
+            )
+            assert m, f"Linha inesperada: {linha}"
+            x, y, font, xm, ym, texto = m.groups()
+            x, y, xm, ym = map(int, (x, y, xm, ym))
+            largura = printing._text_width_dots(texto, font, xm)
+            altura = printing.FONT_BASE_W.get(font, 12) * max(1, ym)
+            assert x + largura <= max_x
+            assert y + altura <= max_y
+        elif linha.startswith("BITMAP "):
+            m = re.match(r'BITMAP (\d+),(\d+),(\d+),(\d+),0,', linha)
+            assert m, f"Linha inesperada: {linha}"
+            x, y, largura_b, altura = map(int, m.groups())
+            assert x + largura_b * 8 <= max_x
+            assert y + altura <= max_y
+    printing.aplicar_template("Padrão")
+
+
 def test_retry_exponencial_logging(monkeypatch, caplog):
     import logging
 
