@@ -271,8 +271,8 @@ def test_panoramico_coordenadas(monkeypatch):
     assert "SIZE 100 mm,30 mm" in texto
     max_x = printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM
     max_y = printing.ALTURA_ETIQUETA_MM * printing.DOTS_MM
-    for linha in texto.splitlines():
-        m = re.match(r"TEXT (\d+),(\d+)", linha)
+    for line in texto.splitlines():
+        m = re.match(r"TEXT (\d+),(\d+)", line)
         if m:
             x, y = map(int, m.groups())
             assert 0 <= x <= max_x
@@ -347,21 +347,21 @@ def test_panoramico_text_bitmap_dentro_limites(monkeypatch):
 
     max_x = printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM
     max_y = printing.ALTURA_ETIQUETA_MM * printing.DOTS_MM
-    for linha in tspl.splitlines():
-        if linha.startswith("TEXT "):
+    for line in tspl.splitlines():
+        if line.startswith("TEXT "):
             m = re.match(
-                r'TEXT (\d+),(\d+),"(\d+)",0,(\d+),(\d+),"(.*)"', linha
+                r'TEXT (\d+),(\d+),"(\d+)",0,(\d+),(\d+),"(.*)"', line
             )
-            assert m, f"Linha inesperada: {linha}"
+            assert m, f"Linha inesperada: {line}"
             x, y, font, xm, ym, texto = m.groups()
             x, y, xm, ym = map(int, (x, y, xm, ym))
             largura = printing._text_width_dots(texto, font, xm)
             altura = printing.FONT_BASE_W.get(font, 12) * max(1, ym)
             assert x + largura <= max_x
             assert y + altura <= max_y
-        elif linha.startswith("BITMAP "):
-            m = re.match(r'BITMAP (\d+),(\d+),(\d+),(\d+),0,', linha)
-            assert m, f"Linha inesperada: {linha}"
+        elif line.startswith("BITMAP "):
+            m = re.match(r'BITMAP (\d+),(\d+),(\d+),(\d+),0,', line)
+            assert m, f"Linha inesperada: {line}"
             x, y, largura_b, altura = map(int, m.groups())
             assert x + largura_b * 8 <= max_x
             assert y + altura <= max_y
