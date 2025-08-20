@@ -24,6 +24,7 @@ LOG_DIR = os.path.join(_base_dir(), "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 LOG_FILE = os.path.join(LOG_DIR, "app.log")
+TSPL_LOG_FILE = os.path.join(LOG_DIR, "tspl.log")
 
 
 # --- configuração base ----------------------------------------------------
@@ -38,12 +39,30 @@ def _create_file_handler(formatter: logging.Formatter) -> logging.Handler:
     return handler
 
 
+class _TsplFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:  # pragma: no cover - simples
+        return record.module == "printing"
+
+
+def _create_tspl_handler(formatter: logging.Formatter) -> logging.Handler:
+    handler = RotatingFileHandler(
+        TSPL_LOG_FILE,
+        maxBytes=1_000_000,
+        backupCount=5,
+        encoding="utf-8",
+    )
+    handler.setFormatter(formatter)
+    handler.addFilter(_TsplFilter())
+    return handler
+
+
 logger = logging.getLogger("app")
 _DEBUG = os.getenv("DEBUG", "").lower() in {"1", "true", "yes"}
 logger.setLevel(logging.DEBUG if _DEBUG else logging.INFO)
 
 _formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 logger.addHandler(_create_file_handler(_formatter))
+logger.addHandler(_create_tspl_handler(_formatter))
 
 if _DEBUG:
     console = logging.StreamHandler()
