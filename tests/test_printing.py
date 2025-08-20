@@ -142,6 +142,7 @@ def test_imprimir_pagina_teste(monkeypatch):
     assert erro is None
     assert len(fake_win32.written) == 1
     texto = fake_win32.written[0].decode("latin1")
+    assert f"DIRECTION {printing.DIRECTION}" in texto
     assert "1 DE 1" in texto
     dots_y = printing.ALTURA_ETIQUETA_MM * printing.DOTS_MM
     ruler_start = printing.LAYOUT_ATUAL["titulo"]["x"]
@@ -152,6 +153,54 @@ def test_imprimir_pagina_teste(monkeypatch):
     ruler_len -= ruler_len % (10 * printing.DOTS_MM)
     expected = f"BAR {ruler_start},{dots_y - 40},{ruler_len},4"
     assert expected in texto
+
+
+def test_direction_personalizado(monkeypatch):
+    import printing
+
+    original_templates = printing.TEMPLATES
+    fake_win32.written.clear()
+    monkeypatch.setattr(
+        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
+    )
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+
+    monkeypatch.setattr(
+        printing,
+        "TEMPLATES",
+        {
+            "60x80": {
+                "largura_mm": 60,
+                "altura_mm": 80,
+                "gap_mm": 2,
+                "direction": 0,
+            }
+        },
+    )
+
+    printing.aplicar_template("60x80")
+
+    dados = {
+        "saida": "S",
+        "categoria": "C",
+        "emissor": "E",
+        "municipio": "M",
+        "volumes": 1,
+        "data_hora": "2024-01-01",
+    }
+
+    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    assert "DIRECTION 0" in tspl
+
+    ok, erro = printing.imprimir_pagina_teste()
+    assert ok
+    assert erro is None
+    assert len(fake_win32.written) == 1
+    texto = fake_win32.written[0].decode("latin1")
+    assert "DIRECTION 0" in texto
+
+    printing.TEMPLATES = original_templates
+    printing.aplicar_template("Padrão")
 
 
 def test_templates_arquivo_inexistente(monkeypatch, tmp_path, caplog):

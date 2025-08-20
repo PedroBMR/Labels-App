@@ -48,7 +48,7 @@ def _text_width_dots(texto: str, font: str, xm: int) -> int:
 
 # -------------------- templates --------------------
 _DEFAULT_TEMPLATE = {
-    "60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2}
+    "60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2, "direction": 1}
 }
 
 TEMPLATES: dict[str, dict[str, int]] | None = None
@@ -175,6 +175,7 @@ ALIASES = {
 LARGURA_ETIQUETA_MM: int = 60
 ALTURA_ETIQUETA_MM: int = 80
 GAP_MM: int = 2
+DIRECTION: int = 1
 
 # Layout default: usa o primeiro disponível se "Padrão" não existir
 _DEFAULT_LAYOUT_KEY = next(iter(LAYOUTS))
@@ -299,15 +300,20 @@ def aplicar_template(nome: str) -> None:
         )
 
     # 3) Aplica dimensões e layout
-    global LARGURA_ETIQUETA_MM, ALTURA_ETIQUETA_MM, GAP_MM, LAYOUT_ATUAL
+    global LARGURA_ETIQUETA_MM, ALTURA_ETIQUETA_MM, GAP_MM, DIRECTION, LAYOUT_ATUAL
     LARGURA_ETIQUETA_MM = int(modelo.get("largura_mm", 60))
     ALTURA_ETIQUETA_MM = int(modelo.get("altura_mm", 80))
     GAP_MM = int(modelo.get("gap_mm", 2))
+    DIRECTION = int(modelo.get("direction", 1))
     LAYOUT_ATUAL = layout_escolhido
     _ajustar_altura_layout(LAYOUT_ATUAL)
     logger.info(
-        "Template aplicado: nome=%s largura_mm=%s altura_mm=%s gap_mm=%s",
-        nome, LARGURA_ETIQUETA_MM, ALTURA_ETIQUETA_MM, GAP_MM
+        "Template aplicado: nome=%s largura_mm=%s altura_mm=%s gap_mm=%s direction=%s",
+        nome,
+        LARGURA_ETIQUETA_MM,
+        ALTURA_ETIQUETA_MM,
+        GAP_MM,
+        DIRECTION,
     )
 
 
@@ -414,7 +420,7 @@ def montar_tspl(template: Layout, dados: dict) -> str:
             f"GAP {GAP_MM} mm,0\r\n"
             "DENSITY 8\r\n"
             "SPEED 4\r\n"
-            "DIRECTION 1\r\n"
+            f"DIRECTION {DIRECTION}\r\n"
             "CLS\r\n"
         )
         cmd += t("titulo", "CONIMS")
@@ -562,7 +568,7 @@ def imprimir_pagina_teste(
                 f"GAP {GAP_MM} mm,0\r\n"
                 "DENSITY 8\r\n"
                 "SPEED 4\r\n"
-                "DIRECTION 1\r\n"
+                f"DIRECTION {DIRECTION}\r\n"
                 "CLS\r\n"
             )
             cmd += t("titulo", "CONIMS")
