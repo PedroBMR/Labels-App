@@ -250,33 +250,8 @@ def test_templates_alteram_layout(monkeypatch):
     monkeypatch.setattr(
         printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
     )
-    printing.aplicar_template("Compacto")
+    printing.aplicar_template("100x30")
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
-    dados = {
-        "saida": "S",
-        "categoria": "C",
-        "emissor": "E",
-        "municipio": "M",
-        "volumes": 1,
-        "data_hora": "2024-01-01",
-    }
-    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
-    printing.imprimir_etiqueta(tspl)
-    texto = fake_win32.written[-1].decode("latin1")
-    assert "SIZE 50 mm,60 mm" in texto
-    printing.aplicar_template("Padrão")
-
-
-def test_panoramico_layout(monkeypatch):
-    import printing
-
-    fake_win32.written.clear()
-    monkeypatch.setattr(
-        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
-    )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
-
-    printing.aplicar_template("Panoramico")
     dados = {
         "saida": "S",
         "categoria": "C",
@@ -289,12 +264,37 @@ def test_panoramico_layout(monkeypatch):
     printing.imprimir_etiqueta(tspl)
     texto = fake_win32.written[-1].decode("latin1")
     assert "SIZE 100 mm,30 mm" in texto
-    spec = printing.LAYOUTS["Panoramico"]["numeracao"]
+    printing.aplicar_template("Padrão")
+
+
+def test_100x30_layout(monkeypatch):
+    import printing
+
+    fake_win32.written.clear()
+    monkeypatch.setattr(
+        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
+    )
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+
+    printing.aplicar_template("100x30")
+    dados = {
+        "saida": "S",
+        "categoria": "C",
+        "emissor": "E",
+        "municipio": "M",
+        "volumes": 1,
+        "data_hora": "2024-01-01",
+    }
+    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    printing.imprimir_etiqueta(tspl)
+    texto = fake_win32.written[-1].decode("latin1")
+    assert "SIZE 100 mm,30 mm" in texto
+    spec = printing.LAYOUTS["100x30"]["numeracao"]
     assert f'TEXT {spec["x"]},{spec["y"]}' in texto
     printing.aplicar_template("Padrão")
 
 
-def test_panoramico_coordenadas(monkeypatch):
+def test_100x30_coordenadas(monkeypatch):
     import re
 
     import printing
@@ -305,7 +305,7 @@ def test_panoramico_coordenadas(monkeypatch):
     )
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
-    printing.aplicar_template("Panoramico")
+    printing.aplicar_template("100x30")
     dados = {
         "saida": "S",
         "categoria": "C",
@@ -329,7 +329,7 @@ def test_panoramico_coordenadas(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
-def test_panoramico_pagina_teste(monkeypatch):
+def test_100x30_pagina_teste(monkeypatch):
     import printing
 
     fake_win32.written.clear()
@@ -344,7 +344,7 @@ def test_panoramico_pagina_teste(monkeypatch):
     )
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
-    printing.aplicar_template("Panoramico")
+    printing.aplicar_template("100x30")
     ok, erro = printing.imprimir_pagina_teste()
     assert ok and erro is None
     assert len(fake_win32.written) == 1
@@ -413,7 +413,7 @@ def test_100x30_text_bitmap_dentro_largura(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
-def test_panoramico_text_bitmap_dentro_limites(monkeypatch):
+def test_100x30_text_bitmap_dentro_limites(monkeypatch):
     import re
 
     import printing
@@ -423,7 +423,7 @@ def test_panoramico_text_bitmap_dentro_limites(monkeypatch):
     )
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
-    printing.aplicar_template("Panoramico")
+    printing.aplicar_template("100x30")
     dados = {
         "saida": "S",
         "categoria": "C",
@@ -467,7 +467,7 @@ def test_total_exibicao_cinco_digitos(monkeypatch):
     )
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
-    printing.aplicar_template("Panoramico")
+    printing.aplicar_template("100x30")
     total = 12345
     dados = {
         "saida": "S",
@@ -480,14 +480,14 @@ def test_total_exibicao_cinco_digitos(monkeypatch):
         "total_exibicao": total,
     }
     tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
-    m = re.search(r'TEXT (\d+),(\d+),"(\d+)",0,(\d+),(\d+),"DE 12345"', tspl)
+    m = re.search(r'TEXT (\d+),(\d+),"(\d+)",0,(\d+),(\d+),"12345 DE 12345"', tspl)
     assert m, tspl
     x, _, font, xm, _ = m.groups()
     x = int(x)
     xm = int(xm)
-    largura_de = printing._text_width_dots("DE 12345", font, xm)
+    largura_txt = printing._text_width_dots("12345 DE 12345", font, xm)
     max_x = printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM
-    assert x + largura_de <= max_x
+    assert x + largura_txt <= max_x
     printing.aplicar_template("Padrão")
 
 
