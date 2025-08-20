@@ -49,7 +49,7 @@ def _text_width_dots(texto: str, font: str, xm: int) -> int:
 # -------------------- templates --------------------
 _DEFAULT_TEMPLATE = {
     "100x30": {"largura_mm": 100, "altura_mm": 30, "gap_mm": 2, "direction": 1},
-    "60x80": {"largura_mm": 80, "altura_mm": 60, "gap_mm": 2, "direction": 0},
+    "60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2, "direction": 0},
 }
 
 TEMPLATES: dict[str, dict[str, int]] | None = None
@@ -97,17 +97,17 @@ class Layout(TypedDict):
 
 LAYOUTS: dict[str, Layout] = {
     "60x80": {
-        "titulo": {"x": 40, "y": 40, "font": "3", "xm": 2, "ym": 2},
-        "saida": {"x": 40, "y": 100, "font": "2", "xm": 1, "ym": 1},
-        "categoria": {"x": 40, "y": 140, "font": "2", "xm": 1, "ym": 1},
-        "emissor": {"x": 40, "y": 180, "font": "2", "xm": 1, "ym": 1},
-        "municipio": {"x": 40, "y": 220, "font": "2", "xm": 1, "ym": 1},
-        "data": {"x": 40, "y": 260, "font": "2", "xm": 1, "ym": 1},
-        "fracao": {"x": 40, "y": 300, "font": "2", "xm": 1, "ym": 1},
-        "fragil": {"x": 280, "y": 300, "font": "2", "xm": 1, "ym": 1},
-        "numeracao": {"x": 420, "y": 40, "font": "4", "xm": 2, "ym": 2},
-        "logo_y": 360,
-        "logo_largura": 240,
+        "titulo": {"x": 30, "y": 53, "font": "3", "xm": 2, "ym": 2},
+        "saida": {"x": 30, "y": 133, "font": "2", "xm": 1, "ym": 1},
+        "categoria": {"x": 30, "y": 187, "font": "2", "xm": 1, "ym": 1},
+        "emissor": {"x": 30, "y": 240, "font": "2", "xm": 1, "ym": 1},
+        "municipio": {"x": 30, "y": 293, "font": "2", "xm": 1, "ym": 1},
+        "data": {"x": 30, "y": 347, "font": "2", "xm": 1, "ym": 1},
+        "fracao": {"x": 30, "y": 400, "font": "2", "xm": 1, "ym": 1},
+        "fragil": {"x": 210, "y": 400, "font": "2", "xm": 1, "ym": 1},
+        "numeracao": {"x": 260, "y": 53, "font": "4", "xm": 2, "ym": 2},
+        "logo_y": 480,
+        "logo_largura": 180,
     },
     "100x30": {
         "titulo": {"x": 20, "y": 20, "font": "3", "xm": 1, "ym": 1},

@@ -226,8 +226,8 @@ def test_template_fallback_60x80(monkeypatch):
 
     printing.aplicar_template("60x80")
 
-    assert printing.LARGURA_ETIQUETA_MM == 80
-    assert printing.ALTURA_ETIQUETA_MM == 60
+    assert printing.LARGURA_ETIQUETA_MM == 60
+    assert printing.ALTURA_ETIQUETA_MM == 80
     assert printing.GAP_MM == 2
     assert printing.DIRECTION == 0
 
@@ -371,7 +371,7 @@ def test_60x80_coordenadas(monkeypatch):
     tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
     printing.imprimir_etiqueta(tspl)
     texto = fake_win32.written[-1].decode("latin1")
-    assert "SIZE 80 mm,60 mm" in texto
+    assert "SIZE 60 mm,80 mm" in texto
     assert "DIRECTION 0" in texto
     max_x = printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM
     max_y = printing.ALTURA_ETIQUETA_MM * printing.DOTS_MM
