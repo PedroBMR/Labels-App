@@ -47,9 +47,7 @@ def _text_width_dots(texto: str, font: str, xm: int) -> int:
 
 
 # -------------------- templates --------------------
-_DEFAULT_TEMPLATE = {
-    "60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2}
-}
+_DEFAULT_TEMPLATE = {"60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2}}
 
 TEMPLATES: dict[str, dict[str, int]] | None = None
 
@@ -65,9 +63,7 @@ def _get_templates() -> dict[str, dict[str, int]]:
         with open(recurso_caminho("templates.json"), "r", encoding="utf-8") as f:
             TEMPLATES = json.load(f)
     except Exception:
-        logger.exception(
-            "Falha ao carregar templates.json; usando template padrão."
-        )
+        logger.exception("Falha ao carregar templates.json; usando template padrão.")
         TEMPLATES = _DEFAULT_TEMPLATE.copy()
     return TEMPLATES
 
@@ -130,20 +126,16 @@ LAYOUTS: dict[str, Layout] = {
         "emissor": {"x": 20, "y": 120, "font": "2", "xm": 1, "ym": 1},
         "municipio": {"x": 20, "y": 150, "font": "2", "xm": 1, "ym": 1},
         "data": {"x": 20, "y": 180, "font": "2", "xm": 1, "ym": 1},
-
         # [ ] Fração e [ ] Frágil lado a lado (mesma linha)
-        "fracao": {"x": 20,  "y": 220, "font": "2", "xm": 1, "ym": 1},
+        "fracao": {"x": 20, "y": 220, "font": "2", "xm": 1, "ym": 1},
         "fragil": {"x": 200, "y": 220, "font": "2", "xm": 1, "ym": 1},
-
         # Numeração (número e "DE N" na mesma linha; "DE N" segue a largura do número)
         "numeracao": {"x": 500, "y": 36, "font": "2", "xm": 2, "ym": 2},
-
         # Logo
         "logo_y": 75,
         "logo_largura": 120,
-        "logo_x": 550
-    }
-
+        "logo_x": 550,
+    },
 }
 
 # Campo opcional: imprime "DE N" separado (seguir X dinamicamente)
@@ -154,8 +146,8 @@ LAYOUTS["100x30"]["numeracao_total"] = {  # type: ignore[index]
     "xm": 2,
     "ym": 2,
     # parâmetros extras (não TSPL): seguem o número automaticamente
-    "follow": True,   # True = calcula X com base na largura do número
-    "gap_mm": 2.0,    # folga entre número e "DE", em milímetros
+    "follow": True,  # True = calcula X com base na largura do número
+    "gap_mm": 2.0,  # folga entre número e "DE", em milímetros
 }
 
 # Alias de layout para acesso direto
@@ -238,6 +230,7 @@ def _ajustar_altura_layout(layout: Layout) -> None:
             if espec["y"] + altura > limite:
                 espec["y"] = max(0, limite - altura)
 
+
 def aplicar_template(nome: str) -> None:
     """Define qual template será utilizado nas impressões."""
 
@@ -294,9 +287,7 @@ def aplicar_template(nome: str) -> None:
 
     # Campos obrigatórios no layout
     if "fracao" not in layout_escolhido or "fragil" not in layout_escolhido:
-        raise ValueError(
-            f"Layout '{nome}' deve conter campos 'fracao' e 'fragil'"
-        )
+        raise ValueError(f"Layout '{nome}' deve conter campos 'fracao' e 'fragil'")
 
     # 3) Aplica dimensões e layout
     global LARGURA_ETIQUETA_MM, ALTURA_ETIQUETA_MM, GAP_MM, LAYOUT_ATUAL
@@ -307,7 +298,10 @@ def aplicar_template(nome: str) -> None:
     _ajustar_altura_layout(LAYOUT_ATUAL)
     logger.info(
         "Template aplicado: nome=%s largura_mm=%s altura_mm=%s gap_mm=%s",
-        nome, LARGURA_ETIQUETA_MM, ALTURA_ETIQUETA_MM, GAP_MM
+        nome,
+        LARGURA_ETIQUETA_MM,
+        ALTURA_ETIQUETA_MM,
+        GAP_MM,
     )
 
 
@@ -341,9 +335,7 @@ def _texto_layout(chave: str, texto: str, layout: Layout) -> str:
     """Gera comando ``TEXT`` baseado nas coordenadas do layout informado."""
     p = layout[chave]
     v = _sanitize_text(texto)
-    return (
-        f'TEXT {p["x"]},{p["y"]},"{p["font"]}",0,{p["xm"]},{p["ym"]},"{v}"\r\n'
-    )
+    return f'TEXT {p["x"]},{p["y"]},"{p["font"]}",0,{p["xm"]},{p["ym"]},"{v}"\r\n'
 
 
 def _calc_logo_x(layout: Layout, dots_x: int, largura_bytes: int) -> int:
@@ -439,6 +431,11 @@ def montar_tspl(template: Layout, dados: dict) -> str:
                 x_de = int(p_num["x"] + largura_num + gap_mm * DOTS_MM)
             else:
                 x_de = int(p_tot.get("x", p_num["x"]))  # type: ignore[arg-type]
+            largura_texto_de = _text_width_dots(
+                f"DE {total_display}", p_tot["font"], p_tot["xm"]
+            )
+            max_x = dots_x
+            x_de = min(x_de, max_x - largura_texto_de)
             y_de = int(p_tot.get("y", p_num["y"]))  # type: ignore[arg-type]
             cmd += (
                 f'TEXT {x_de},{y_de},"{p_tot["font"]}",0,{p_tot["xm"]},'
@@ -447,10 +444,7 @@ def montar_tspl(template: Layout, dados: dict) -> str:
         else:
             cmd += t("numeracao", f"{numero_atual} DE {total_display}")
 
-        cmd += (
-            f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},"
-            f"{altura_px},0,"
-        )
+        cmd += f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes}," f"{altura_px},0,"
         cmd += bitmap.decode(ENCODING, errors="replace")
         cmd += "\r\nPRINT 1\r\n"
         partes.append(cmd)
@@ -599,8 +593,7 @@ def imprimir_pagina_teste(
 
             # --- logo ---
             cmd += (
-                f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},"
-                f"{altura_px},0,"
+                f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes}," f"{altura_px},0,"
             )
 
             # Régua (marcas a cada 10 mm)
@@ -615,9 +608,7 @@ def imprimir_pagina_teste(
             cmd += bitmap.decode(ENCODING, errors="replace")
             cmd += f"\r\n{barras}PRINT 1\r\n"
             logger.debug("tspl_first_200=%r", cmd[:200])
-            win32print.WritePrinter(
-                h_prn, cmd.encode(ENCODING, errors="replace")
-            )
+            win32print.WritePrinter(h_prn, cmd.encode(ENCODING, errors="replace"))
 
             win32print.EndPagePrinter(h_prn)
             win32print.EndDocPrinter(h_prn)
