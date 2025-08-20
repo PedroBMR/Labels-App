@@ -221,23 +221,41 @@ def _ajustar_altura_layout(layout: Layout) -> None:
         altura = base * ym
         if espec["y"] + altura <= limite:
             continue
+
+        orig_y = espec["y"]
+        orig_ym = ym
+
         if chave in {"fracao", "fragil"}:
             novo_y = limite - altura
             if novo_y < 0:
                 max_ym = max(1, limite // base)
+                if max_ym != orig_ym:
+                    logger.debug("Ajuste '%s.ym': %s -> %s", chave, orig_ym, max_ym)
                 espec["ym"] = max_ym
                 altura = base * max_ym
                 novo_y = max(0, limite - altura)
+            if novo_y != orig_y:
+                logger.debug("Ajuste '%s.y': %s -> %s", chave, orig_y, novo_y)
             espec["y"] = novo_y
             outro = "fragil" if chave == "fracao" else "fracao"
             if outro in layout and isinstance(layout[outro], dict):
+                outro_y = layout[outro].get("y")
+                if outro_y != novo_y:
+                    logger.debug("Ajuste '%s.y': %s -> %s", outro, outro_y, novo_y)
                 layout[outro]["y"] = novo_y
         else:
             max_ym = max(1, (limite - espec["y"]) // base)
+            if max_ym != orig_ym:
+                logger.debug("Ajuste '%s.ym': %s -> %s", chave, orig_ym, max_ym)
             espec["ym"] = max_ym
             altura = base * max_ym
             if espec["y"] + altura > limite:
-                espec["y"] = max(0, limite - altura)
+                novo_y = max(0, limite - altura)
+                if novo_y != orig_y:
+                    logger.debug(
+                        "Ajuste '%s.y': %s -> %s", chave, orig_y, novo_y
+                    )
+                espec["y"] = novo_y
 
 def aplicar_template(nome: str) -> None:
     """Define qual template será utilizado nas impressões."""
@@ -307,6 +325,13 @@ def aplicar_template(nome: str) -> None:
     DIRECTION = int(modelo.get("direction", 1))
     LAYOUT_ATUAL = layout_escolhido
     _ajustar_altura_layout(LAYOUT_ATUAL)
+    logger.debug(
+        "Template ajustado: largura_mm=%s altura_mm=%s gap_mm=%s direction=%s",
+        LARGURA_ETIQUETA_MM,
+        ALTURA_ETIQUETA_MM,
+        GAP_MM,
+        DIRECTION,
+    )
     logger.info(
         "Template aplicado: nome=%s largura_mm=%s altura_mm=%s gap_mm=%s direction=%s",
         nome,
@@ -460,8 +485,9 @@ def montar_tspl(template: Layout, dados: dict) -> str:
         cmd += bitmap.decode(ENCODING, errors="replace")
         cmd += "\r\nPRINT 1\r\n"
         partes.append(cmd)
-
-    return "".join(partes)
+    tspl = "".join(partes)
+    logger.debug("tspl_first_200=%r", tspl[:200])
+    return tspl
 
 
 def imprimir_etiqueta(
@@ -472,6 +498,7 @@ def imprimir_etiqueta(
     nome_imp = descobrir_impressora_padrao()
     if nome_imp is None:
         return False, {"code": 0, "message": "Nenhuma impressora padrão encontrada"}
+    logger.debug("impressora=%s tspl_len=%d", nome_imp, len(tspl))
 
     max_tentativas = 3 if repetir_em_falha else 1
     for tentativa in range(1, max_tentativas + 1):
@@ -620,6 +647,7 @@ def imprimir_pagina_teste(
 
             cmd += bitmap.decode(ENCODING, errors="replace")
             cmd += f"\r\n{barras}PRINT 1\r\n"
+            logger.debug("impressora=%s tspl_len=%d", nome_imp, len(cmd))
             logger.debug("tspl_first_200=%r", cmd[:200])
             win32print.WritePrinter(
                 h_prn, cmd.encode(ENCODING, errors="replace")
