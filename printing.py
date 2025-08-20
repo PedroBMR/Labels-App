@@ -48,7 +48,7 @@ def _text_width_dots(texto: str, font: str, xm: int) -> int:
 
 # -------------------- templates --------------------
 _DEFAULT_TEMPLATE = {
-    "60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2, "direction": 1}
+    "100x30": {"largura_mm": 100, "altura_mm": 30, "gap_mm": 2, "direction": 1}
 }
 
 TEMPLATES: dict[str, dict[str, int]] | None = None
@@ -135,19 +135,19 @@ LAYOUTS: dict[str, Layout] = {
 # -------------------- Aliases de nomes (compatibilidade) --------------------
 # Só usamos se o nome solicitado NÃO existir em TEMPLATES/LAYOUTS.
 ALIASES = {
-    "padrao": "60x80",
-    "padrão": "60x80",
+    "padrao": "100x30",
+    "padrão": "100x30",
 }
 
 # -------------------- Defaults seguros (sem depender de "Padrão") --------------------
 # Dimensões default até aplicar um template real
-LARGURA_ETIQUETA_MM: int = 60
-ALTURA_ETIQUETA_MM: int = 80
+LARGURA_ETIQUETA_MM: int = 100
+ALTURA_ETIQUETA_MM: int = 30
 GAP_MM: int = 2
 DIRECTION: int = 1
 
-# Layout default: usa o primeiro disponível se "Padrão" não existir
-_DEFAULT_LAYOUT_KEY = next(iter(LAYOUTS))
+# Layout default: usa o modelo 100x30 se "Padrão" não existir
+_DEFAULT_LAYOUT_KEY = "100x30"
 LAYOUT_ATUAL: Layout = LAYOUTS.get("Padrão", LAYOUTS[_DEFAULT_LAYOUT_KEY])
 
 
@@ -321,8 +321,8 @@ def aplicar_template(nome: str) -> None:
                         nome = k
                         break
     if not modelo:
-        # fallback: primeiro template disponível
-        nome = next(iter(templates))
+        # fallback: usa o template padrão definido
+        nome = _DEFAULT_LAYOUT_KEY if _DEFAULT_LAYOUT_KEY in templates else next(iter(templates))
         modelo = templates[nome]
 
     # 2) Resolve o layout (LAYOUTS) com o mesmo nome (ou alias se preciso)
