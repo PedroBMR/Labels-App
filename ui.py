@@ -436,8 +436,8 @@ class EtiquetaApp(QWidget):
 
         self.menu_btn = QToolButton()
         self.menu_btn.setIcon(QIcon(recurso_caminho("menu-aberto.png")))
-        self.menu_btn.setAutoRaise(True)                # remove relevo
-        self.menu_btn.setStyleSheet("border: none;")    # evita moldura/ fundo
+        self.menu_btn.setAutoRaise(True)  # remove relevo
+        self.menu_btn.setStyleSheet("border: none;")  # evita moldura/ fundo
         self.menu_btn.setPopupMode(QToolButton.InstantPopup)
         menu = QMenu(self.menu_btn)
         self.menu_btn.setMenu(menu)
@@ -695,6 +695,7 @@ class EtiquetaApp(QWidget):
     # =========================
     def _abrir_historico(self) -> None:
         import subprocess
+
         caminho = recurso_caminho("historico_impressoes.csv")
         if os.path.exists(caminho):
             subprocess.Popen(["start", "", caminho], shell=True)
@@ -738,6 +739,7 @@ class EtiquetaApp(QWidget):
             "data_hora": data_hora,
         }
         tspl = montar_tspl(LAYOUT_ATUAL, dados)
+        logger.debug("TSPL gerado:\n%s", tspl)
         self._worker = PrintingWorker(
             tspl,
             repetir_em_falha=self.retry_checkbox.isChecked(),
@@ -771,16 +773,13 @@ class EtiquetaApp(QWidget):
             if self.cancel_event.is_set():
                 self._atualizar_status("❌ Impressão cancelada", "orange")
             else:
-                self._atualizar_status("⚠️ Erro na impressão", "orange")
-                logger.error("Erro na impressão: %s", erro)
                 if erro is not None:
-                    QMessageBox.critical(
-                        self, "Erro", f"{erro['code']}: {erro['message']}"
-                    )
+                    msg = f"{erro['code']}: {erro['message']}"
                 else:
-                    QMessageBox.critical(
-                        self, "Erro", "Erro desconhecido"
-                    )
+                    msg = "Erro desconhecido"
+                self._atualizar_status(f"⚠️ Erro na impressão ({msg})", "orange")
+                logger.error("Erro na impressão: %s", erro)
+                QMessageBox.critical(self, "Erro", msg)
         else:
             try:
                 self.contagem_total += volumes
