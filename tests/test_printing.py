@@ -417,6 +417,40 @@ def test_panoramico_text_bitmap_dentro_limites(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
+def test_total_exibicao_cinco_digitos(monkeypatch):
+    import re
+
+    import printing
+
+    monkeypatch.setattr(
+        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
+    )
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+
+    printing.aplicar_template("Panoramico")
+    total = 12345
+    dados = {
+        "saida": "S",
+        "categoria": "C",
+        "emissor": "E",
+        "municipio": "M",
+        "volumes": 1,
+        "data_hora": "2024-01-01",
+        "inicio_indice": total,
+        "total_exibicao": total,
+    }
+    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    m = re.search(r'TEXT (\d+),(\d+),"(\d+)",0,(\d+),(\d+),"DE 12345"', tspl)
+    assert m, tspl
+    x, _, font, xm, _ = m.groups()
+    x = int(x)
+    xm = int(xm)
+    largura_de = printing._text_width_dots("DE 12345", font, xm)
+    max_x = printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM
+    assert x + largura_de <= max_x
+    printing.aplicar_template("Padrão")
+
+
 def test_retry_exponencial_logging(monkeypatch, caplog):
     import logging
 
