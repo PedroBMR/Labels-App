@@ -38,7 +38,7 @@ from persistence import (
     salvar_historico,
 )
 from printing import (
-    LAYOUT_ATUAL,
+    Template,
     aplicar_template,
     descobrir_impressora_padrao,
     imprimir_etiqueta,
@@ -251,6 +251,7 @@ class EtiquetaApp(QWidget):
         self._impressao_context: tuple[str, str, str, str, int, str] | None = None
 
         self._impressao_template: str | None = None  # <- lembra o modelo usado
+        self._template: Template | None = None
 
         # Estilo base precisa existir antes de sinais dispararem
         self._input_style_base = (
@@ -666,7 +667,7 @@ class EtiquetaApp(QWidget):
 
     def _aplicar_template(self, nome: str) -> None:
         try:
-            aplicar_template(nome)
+            self._template = aplicar_template(nome)
             self._impressao_template = nome  # lembra o modelo atual
         except ValueError as e:
             QMessageBox.critical(self, "Erro", str(e))
@@ -775,7 +776,10 @@ class EtiquetaApp(QWidget):
             "volumes": volumes,
             "data_hora": data_hora,
         }
-        tspl = montar_tspl(LAYOUT_ATUAL, dados)
+        if self._template is None:
+            QMessageBox.warning(self, "Modelo", "Selecione um modelo de etiqueta.")
+            return
+        tspl = montar_tspl(self._template, dados)
         logger.debug("TSPL gerado:\n%s", tspl)
 
         # guarda o contexto desta impressão (inclui template para salvar depois)
@@ -872,8 +876,11 @@ class EtiquetaApp(QWidget):
 
     def _imprimir_teste(self) -> None:
         self._atualizar_status("🖨️ Imprimindo teste…")
+        if self._template is None:
+            QMessageBox.warning(self, "Modelo", "Selecione um modelo de etiqueta.")
+            return
         ok, erro = imprimir_pagina_teste(
-            repetir_em_falha=self.retry_checkbox.isChecked()
+            self._template, repetir_em_falha=self.retry_checkbox.isChecked()
         )
         if ok:
             self._atualizar_status("✅ Página de teste impressa", "lightgreen")
@@ -891,15 +898,18 @@ class EtiquetaApp(QWidget):
         dados = self.ultima_etiqueta
 
         # aplica o mesmo template da impressão original
-        tpl = dados.get("template", "") or self.template_input.currentText().strip()
-        if tpl:
+        tpl_name = dados.get("template", "") or self.template_input.currentText().strip()
+        if tpl_name:
             try:
-                aplicar_template(tpl)
+                self._template = aplicar_template(tpl_name)
             except Exception:
                 pass
 
         self.cancel_event.clear()
-        tspl = montar_tspl(LAYOUT_ATUAL, dados)
+        if self._template is None:
+            QMessageBox.warning(self, "Modelo", "Selecione um modelo de etiqueta.")
+            return
+        tspl = montar_tspl(self._template, dados)
         ok, erro = imprimir_etiqueta(
             tspl,
             repetir_em_falha=self.retry_checkbox.isChecked(),
@@ -937,10 +947,10 @@ class EtiquetaApp(QWidget):
 
         try:
             # aplica o mesmo template da impressão original
-            tpl = self.ultima_etiqueta.get("template", "")
-            if tpl:
+            tpl_name = self.ultima_etiqueta.get("template", "")
+            if tpl_name:
                 try:
-                    aplicar_template(tpl)
+                    self._template = aplicar_template(tpl_name)
                 except Exception:
                     pass
 
@@ -955,7 +965,10 @@ class EtiquetaApp(QWidget):
                 "inicio_indice": inicio,
                 "total_exibicao": total,
             }
-            tspl = montar_tspl(LAYOUT_ATUAL, dados_tspl)
+            if self._template is None:
+                QMessageBox.warning(self, "Modelo", "Selecione um modelo de etiqueta.")
+                return
+            tspl = montar_tspl(self._template, dados_tspl)
             ok, erro = imprimir_etiqueta(
                 tspl,
                 repetir_em_falha=self.retry_checkbox.isChecked(),
@@ -1029,10 +1042,10 @@ class EtiquetaApp(QWidget):
 
         try:
             # aplica o mesmo template da impressão original
-            tpl = self.ultima_etiqueta.get("template", "")
-            if tpl:
+            tpl_name = self.ultima_etiqueta.get("template", "")
+            if tpl_name:
                 try:
-                    aplicar_template(tpl)
+                    self._template = aplicar_template(tpl_name)
                 except Exception:
                     pass
 
@@ -1047,7 +1060,10 @@ class EtiquetaApp(QWidget):
                 "inicio_indice": inicio,
                 "total_exibicao": total,
             }
-            tspl = montar_tspl(LAYOUT_ATUAL, dados_tspl)
+            if self._template is None:
+                QMessageBox.warning(self, "Modelo", "Selecione um modelo de etiqueta.")
+                return
+            tspl = montar_tspl(self._template, dados_tspl)
             ok, erro = imprimir_etiqueta(
                 tspl,
                 repetir_em_falha=self.retry_checkbox.isChecked(),
