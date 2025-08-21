@@ -16,8 +16,8 @@ foreach ($pkg in $packages) {
     }
 }
 
-# Build directory-based package
-pyinstaller --noconfirm .\GeradorEtiquetas_onedir.spec
+# Build executable
+pyinstaller --noconfirm .\GeradorEtiquetas.spec
 
 # Retrieve version from _version.py
 $version = (
@@ -27,6 +27,6 @@ PY
 ).Trim()
 
 $exeName = if ($env:APP_NAME) { $env:APP_NAME } else { 'GeradorEtiquetas' }
-$src = Join-Path 'dist' (Join-Path $exeName "$exeName.exe")
+$src = Join-Path 'dist' "$exeName.exe"
 $dest = Join-Path 'dist' "${exeName}_v$version.exe"
 Copy-Item -Force -Path $src -Destination $dest

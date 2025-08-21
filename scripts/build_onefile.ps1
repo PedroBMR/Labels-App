@@ -17,7 +17,7 @@ foreach ($pkg in $packages) {
 }
 
 # Build executable
-pyinstaller --noconfirm .\GeradorEtiquetas_onefile.spec
+pyinstaller --noconfirm .\GeradorEtiquetas.spec
 
 # Retrieve version from _version.py
 $version = (
