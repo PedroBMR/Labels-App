@@ -37,24 +37,15 @@ import win32print
 from log import logger
 from persistence import carregar_config, salvar_config
 from utils import melhorar_logo, recurso_caminho
+from printing_utils import (
+    FONT_BASE_W,
+    adjust_logo_position,
+    sanitize_text,
+    text_width_dots,
+)
 
 DOTS_MM: int = 8   # ~203 dpi
 ENCODING: str = "cp1252"  # TSPL espera 8-bit (latin-1/cp1252)
-
-# Largura base aproximada (em dots) das fontes internas TSPL (ajuste fino se precisar)
-FONT_BASE_W = {
-    "1": 8,
-    "2": 12,
-    "3": 16,
-    "4": 24,
-    "5": 32,
-    "6": 40,
-}
-
-def _text_width_dots(texto: str, font: str, xm: int) -> int:
-    base = FONT_BASE_W.get(str(font), 12)
-    xm = int(xm) if int(xm) > 0 else 1
-    return len(str(texto)) * base * xm
 
 # -------------------- templates (tamanho/direction) --------------------
 _DEFAULT_TEMPLATE_DIM = {
@@ -299,12 +290,6 @@ def _norm_key(s: str) -> str:
     s = "".join(c for c in s if not unicodedata.combining(c))
     return s.strip().lower()
 
-def _sanitize_text(s: str) -> str:
-    if s is None:
-        return ""
-    s = s.replace("\r", " ").replace("\n", " ")
-    s = s.replace('"', "'")
-    return s
 
 def listar_templates() -> list[str]:
     """Lista (união) dos nomes presentes no templates.json e nos fallbacks."""
@@ -316,10 +301,6 @@ def listar_templates() -> list[str]:
         pass
     return sorted(nomes)
 
-def _text_height_dots(font: str, ym: int) -> int:
-    base = FONT_BASE_W.get(str(font), 12)
-    ym = int(ym) if int(ym) > 0 else 1
-    return base * ym
 
 def _ajustar_altura_layout(layout: Layout, altura_mm: int) -> None:
     limite = altura_mm * DOTS_MM
@@ -387,20 +368,20 @@ def _ajustar_largura_layout(layout: Layout, largura_mm: int) -> None:
         texto = textos_padrao.get(chave, "X")
         font = str(espec.get("font", "2"))
         xm = max(int(espec.get("xm", 1)), 1)
-        largura = _text_width_dots(texto, font, xm)
+        largura = text_width_dots(texto, font, xm)
         if espec["x"] + largura <= limite:
             continue
 
         orig_x = espec["x"]
         orig_xm = xm
 
-        largura_unit = _text_width_dots(texto, font, 1)
+        largura_unit = text_width_dots(texto, font, 1)
         max_xm = max(1, (limite - orig_x) // max(largura_unit, 1))
         if max_xm < orig_xm:
             logger.debug("Ajuste '%s.xm': %s -> %s", chave, orig_xm, max_xm)
             espec["xm"] = max_xm
             xm = max_xm
-            largura = _text_width_dots(texto, font, xm)
+            largura = text_width_dots(texto, font, xm)
 
         if espec["x"] + largura > limite:
             novo_x = max(0, limite - largura)
@@ -409,26 +390,7 @@ def _ajustar_largura_layout(layout: Layout, largura_mm: int) -> None:
             espec["x"] = novo_x
 
     # Ajuste do logo
-    logo_largura = layout.get("logo_largura")
-    if isinstance(logo_largura, int):
-        if logo_largura > limite:
-            logger.debug("Ajuste 'logo_largura': %s -> %s", logo_largura, limite)
-            layout["logo_largura"] = limite
-            logo_largura = limite
-
-    if "logo_x_mm" in layout:
-        logo_x_mm = float(layout.get("logo_x_mm", 0))
-        largura_logo_mm = (logo_largura or 0) / DOTS_MM
-        max_x_mm = max(0, largura_mm - largura_logo_mm)
-        if logo_x_mm > max_x_mm:
-            logger.debug("Ajuste 'logo_x_mm': %s -> %s", logo_x_mm, max_x_mm)
-            layout["logo_x_mm"] = max_x_mm
-    elif "logo_x" in layout:
-        logo_x = int(layout.get("logo_x", 0))
-        max_x = max(0, limite - int(logo_largura or 0))
-        if logo_x > max_x:
-            logger.debug("Ajuste 'logo_x': %s -> %s", logo_x, max_x)
-            layout["logo_x"] = max_x
+    adjust_logo_position(layout, largura_mm, DOTS_MM)
 
 def aplicar_template(nome: str) -> Template:
     """Carrega e ajusta o template solicitado."""
@@ -469,7 +431,7 @@ def descobrir_impressora_padrao() -> str | None:
 
 def _texto_layout(chave: str, texto: str, layout: Layout) -> str:
     p = layout[chave]
-    v = _sanitize_text(texto)
+    v = sanitize_text(texto)
     return f'TEXT {p["x"]},{p["y"]},"{p["font"]}",0,{p["xm"]},{p["ym"]},"{v}"\r\n'
 
 def _calc_logo_x(layout: Layout, dots_x: int, largura_bytes: int) -> int:
