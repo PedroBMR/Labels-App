@@ -380,6 +380,9 @@ class EtiquetaApp(QWidget):
         self.template_input.currentTextChanged.connect(self._salvar_template_config)
         self.template_input.currentTextChanged.connect(self._update_print_button_state)
 
+        self.toggle_template_btn = QPushButton("Alternar modelo")
+        self.toggle_template_btn.clicked.connect(self._toggle_template)
+
         # Seleciona modelo preferido (sem usar "Padrão")
         preferido = self.config.get("template", "")
         idx_tpl = self.template_input.findText(preferido)
@@ -429,6 +432,7 @@ class EtiquetaApp(QWidget):
         grid.addWidget(self.volumes_input, 4, 1)
         grid.addWidget(_lbl("Modelo:"), 5, 0)
         grid.addWidget(self.template_input, 5, 1)
+        grid.addWidget(self.toggle_template_btn, 5, 2)
 
         self.retry_checkbox = QCheckBox("Repetir automaticamente em falha (3x)")
         self.retry_checkbox.setStyleSheet(
@@ -666,6 +670,13 @@ class EtiquetaApp(QWidget):
             self._impressao_template = nome  # lembra o modelo atual
         except ValueError as e:
             QMessageBox.critical(self, "Erro", str(e))
+
+    def _toggle_template(self) -> None:
+        atual = self.template_input.currentText()
+        novo = "60x80" if atual == "100x30" else "100x30"
+        idx = self.template_input.findText(novo)
+        if idx >= 0:
+            self.template_input.setCurrentIndex(idx)
 
     # =========================
     # Persistência e ações
