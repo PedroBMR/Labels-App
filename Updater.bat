@@ -92,42 +92,7 @@ if "%DRYRUN%"=="1" (
     )
 )
 
-rem Migracao _internal -> assets
-set "OLD_DIR=_internal"
-set "NEW_DIR=assets"
-for %%f in (historico_impressoes.csv contagem.json contagem_mensal.json logo.png color.png color.ico) do (
-    if exist "%OLD_DIR%\%%f" (
-        if exist "%NEW_DIR%\%%f" (
-            echo Arquivo %%f ja existe em %NEW_DIR%.
-        ) else (
-            if "%DRYRUN%"=="1" (
-                echo [DRY-RUN] copy "%OLD_DIR%\%%f" "%NEW_DIR%\%%f"
-            ) else (
-                echo Copiando %%f para %NEW_DIR%.
-                copy "%OLD_DIR%\%%f" "%NEW_DIR%\%%f" >nul
-                if errorlevel 1 (
-                    echo Erro ao copiar %%f para %NEW_DIR%.
-                    exit /b 1
-                )
-            )
-        )
-    )
-)
-
-if exist "%OLD_DIR%" (
-    set "BAK_DIR=_internal.bak-%STAMP%"
-    if "%DRYRUN%"=="1" (
-        echo [DRY-RUN] ren "%OLD_DIR%" "%BAK_DIR%"
-    ) else (
-        echo Renomeando %OLD_DIR% para %BAK_DIR%.
-        ren "%OLD_DIR%" "%BAK_DIR%"
-        if errorlevel 1 (
-            echo Erro ao renomear %OLD_DIR%.
-            popd >nul
-            exit /b 1
-        )
-    )
-)
+rem Migracao de dados legados é realizada automaticamente pelo aplicativo
 
 if "%DRYRUN%"=="1" (
     echo Simulacao concluida.
