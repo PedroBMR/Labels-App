@@ -16,6 +16,8 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
+from printing_utils import FONT_BASE_W, text_width_dots
+
 
 class FakeWin32:
     def __init__(self):
@@ -485,7 +487,7 @@ def test_100x30_text_bitmap_dentro_largura(monkeypatch):
             assert m, f"Linha inesperada: {line}"
             x, _, font, xm, _, texto = m.groups()
             x, xm = int(x), int(xm)
-            largura = printing._text_width_dots(texto, font, xm)
+            largura = text_width_dots(texto, font, xm)
             assert x + largura <= max_x
         elif line.startswith("BITMAP "):
             m = re.match(r'BITMAP (\d+),(\d+),(\d+),(\d+),0,', line)
@@ -526,8 +528,8 @@ def test_100x30_text_bitmap_dentro_limites(monkeypatch):
             assert m, f"Linha inesperada: {line}"
             x, y, font, xm, ym, texto = m.groups()
             x, y, xm, ym = map(int, (x, y, xm, ym))
-            largura = printing._text_width_dots(texto, font, xm)
-            altura = printing.FONT_BASE_W.get(font, 12) * max(1, ym)
+            largura = text_width_dots(texto, font, xm)
+            altura = FONT_BASE_W.get(font, 12) * max(1, ym)
             assert x + largura <= max_x
             assert y + altura <= max_y
         elif line.startswith("BITMAP "):
@@ -567,7 +569,7 @@ def test_total_exibicao_cinco_digitos(monkeypatch):
     x, _, font, xm, _ = m.groups()
     x = int(x)
     xm = int(xm)
-    largura_txt = printing._text_width_dots("12345 DE 12345", font, xm)
+    largura_txt = text_width_dots("12345 DE 12345", font, xm)
     max_x = tpl.largura_mm * printing.DOTS_MM
     assert x + largura_txt <= max_x
     printing.aplicar_template("Padrão")
