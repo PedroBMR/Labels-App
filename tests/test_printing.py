@@ -186,17 +186,14 @@ def test_imprimir_pagina_teste(monkeypatch):
 
 def test_direction_personalizado(monkeypatch):
     import printing
-
-    original_templates = printing.TEMPLATES
     fake_win32.written.clear()
     monkeypatch.setattr(
         printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
     )
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
-
     monkeypatch.setattr(
-        printing,
-        "TEMPLATES",
+        printing.template_manager,
+        "_templates_dim",
         {
             "60x80": {
                 "largura_mm": 60,
@@ -206,6 +203,7 @@ def test_direction_personalizado(monkeypatch):
             }
         },
     )
+    monkeypatch.setattr(printing.template_manager, "_templates_dim_mtime", None)
 
     tpl = printing.aplicar_template("60x80")
 
@@ -228,14 +226,13 @@ def test_direction_personalizado(monkeypatch):
     texto = fake_win32.written[0].decode("latin1")
     assert "DIRECTION 0" in texto
 
-    printing.TEMPLATES = original_templates
     printing.template_manager.recarregar_templates()
 
 
 def test_templates_arquivo_inexistente(monkeypatch, tmp_path, caplog):
     import printing
-
-    monkeypatch.setattr(printing, "TEMPLATES", None)
+    monkeypatch.setattr(printing.template_manager, "_templates_dim", None)
+    monkeypatch.setattr(printing.template_manager, "_templates_dim_mtime", None)
     monkeypatch.setattr(
         printing, "recurso_caminho", lambda p: tmp_path / "inexistente.json"
     )
@@ -245,12 +242,13 @@ def test_templates_arquivo_inexistente(monkeypatch, tmp_path, caplog):
 
     assert templates == ["100x30", "60x80"]
     assert "templates.json" in caplog.text
+    printing.template_manager.recarregar_templates()
 
 
 def test_template_fallback_60x80(monkeypatch):
     import printing
-
-    monkeypatch.setattr(printing, "TEMPLATES", None)
+    monkeypatch.setattr(printing.template_manager, "_templates_dim", None)
+    monkeypatch.setattr(printing.template_manager, "_templates_dim_mtime", None)
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "inexistente.json")
 
     tpl = printing.aplicar_template("60x80")
@@ -264,13 +262,14 @@ def test_template_fallback_60x80(monkeypatch):
     assert set(templates) == {"100x30", "60x80"}
 
     printing.aplicar_template("Padrão")
+    printing.template_manager.recarregar_templates()
 
 
 def test_templates_chave_invalida(monkeypatch):
     import printing
-
     fake_win32.written.clear()
-    monkeypatch.setattr(printing, "TEMPLATES", None)
+    monkeypatch.setattr(printing.template_manager, "_templates_dim", None)
+    monkeypatch.setattr(printing.template_manager, "_templates_dim_mtime", None)
     tpl = printing.aplicar_template("inexistente")
     monkeypatch.setattr(
         printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
@@ -290,7 +289,7 @@ def test_templates_chave_invalida(monkeypatch):
     texto = fake_win32.written[-1].decode("latin1")
     assert "SIZE 100 mm,30 mm" in texto
 
-
+    printing.template_manager.recarregar_templates()
 def test_templates_alteram_layout(monkeypatch):
     import printing
 
