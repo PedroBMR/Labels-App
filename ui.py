@@ -384,7 +384,9 @@ class EtiquetaApp(QWidget):
         preferido = self.config.get("template", "")
         idx_tpl = self.template_input.findText(preferido)
         if idx_tpl < 0:
-            idx_tpl = self.template_input.findText("60x80")
+            idx_tpl = self.template_input.findText("100x30")
+            if idx_tpl < 0:
+                idx_tpl = self.template_input.findText("60x80")
             if idx_tpl < 0 and self.template_input.count() > 0:
                 idx_tpl = 0
         if idx_tpl >= 0:
