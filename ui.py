@@ -23,8 +23,8 @@ import threading
 from datetime import datetime
 from typing import Any, TypedDict
 
-from log import LOG_FILE, logger, register_status_callback
 from _version import __version__
+from log import LOG_FILE, logger, register_status_callback
 from persistence import (
     atualizar_recentes,
     carregar_config,
@@ -520,11 +520,13 @@ class EtiquetaApp(QWidget):
         )
 
         self._footer_label = QLabel(
-            f"Feito por Pedro Luiz Bortot Monteiro do Rosário 2025 — Versão {__version__}"
+            "Feito por Pedro Luiz Bortot Monteiro do Rosário 2025 — "
+            f"Versão {__version__}"
         )
         self._footer_label.setAlignment(Qt.AlignCenter)
         self._footer_label.setStyleSheet(
-            "color: #555; font-size: 12px; border: none; background: none; padding: 10px;"
+            "color: #555; font-size: 12px; border: none; "
+            "background: none; padding: 10px;"
         )
         layout_base.addWidget(self._footer_label)
 
@@ -762,7 +764,10 @@ class EtiquetaApp(QWidget):
         ) = self._coletar_campos()
 
         # pega o modelo exibido no combo (o mesmo que foi aplicado)
-        tpl = self.template_input.currentText().strip() or (self._impressao_template or "")
+        tpl = (
+            self.template_input.currentText().strip()
+            or (self._impressao_template or "")
+        )
         if not tpl:
             QMessageBox.warning(self, "Modelo", "Selecione um modelo de etiqueta.")
             return
@@ -848,7 +853,11 @@ class EtiquetaApp(QWidget):
                     municipio=municipio,
                     volumes=volumes,
                     data_hora=data_hora,
-                    template=(self._impressao_template or self.template_input.currentText().strip() or ""),
+                    template=(
+                        self._impressao_template
+                        or self.template_input.currentText().strip()
+                        or ""
+                    ),
                 )
 
                 self._atualizar_listas_recentes(categoria, emissor, municipio)
@@ -898,7 +907,10 @@ class EtiquetaApp(QWidget):
         dados = self.ultima_etiqueta
 
         # aplica o mesmo template da impressão original
-        tpl_name = dados.get("template", "") or self.template_input.currentText().strip()
+        tpl_name = (
+            dados.get("template", "")
+            or self.template_input.currentText().strip()
+        )
         if tpl_name:
             try:
                 self._template = aplicar_template(tpl_name)
