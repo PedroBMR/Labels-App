@@ -55,9 +55,6 @@ _DEFAULT_TEMPLATE_DIM = {
 }
 
 
-TEMPLATES: dict[str, dict] | None = None
-
-
 @dataclass
 class Template:
     largura_mm: int
@@ -76,15 +73,9 @@ class TemplateManager:
         """Carrega templates.json. Aceita tanto dimensões quanto posições.
         Se houver falha, retorna fallback somente com dimensões.
         """
-        global TEMPLATES
         try:
-            if TEMPLATES is not None:
-                self._templates_dim = TEMPLATES
-                return self._templates_dim
-
-            self._templates_dim = None
             path = recurso_caminho("templates.json")
-            mtime = None
+            mtime: float | None = None
             try:
                 import os
                 mtime = os.path.getmtime(path)
@@ -104,13 +95,14 @@ class TemplateManager:
                 with open(path, "r", encoding="utf-8") as f:
                     self._templates_dim = json.load(f)
                 self._templates_dim_mtime = mtime
-                TEMPLATES = self._templates_dim
                 logger.info(
                     "Templates carregados de %s: %s",
                     path,
                     ", ".join(self._templates_dim.keys()),
                 )
-            return self._templates_dim  # type: ignore[return-value]
+            if self._templates_dim is None:
+                return _DEFAULT_TEMPLATE_DIM.copy()
+            return self._templates_dim
         except Exception:
             logger.exception(
                 "Falha ao carregar templates.json; usando dimensões padrão."
@@ -119,10 +111,8 @@ class TemplateManager:
 
     def recarregar_templates(self) -> None:
         """Força recarga do templates.json (dimensões e, se existir, posições)."""
-        global TEMPLATES
         self._templates_dim = None
         self._templates_dim_mtime = None
-        TEMPLATES = None
         self._load_templates_dim(force=True)
 
     def _resolver_nome_template(
