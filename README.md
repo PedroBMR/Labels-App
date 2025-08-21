@@ -48,14 +48,13 @@ pip install -r requirements.txt
 
 ## Ambiente Python 3.13
 
-Para testar o projeto com o **Python 3.13**, utilize o arquivo de dependências
-específico e um ambiente virtual apontando para a versão:
-
+Para testar o projeto com o **Python 3.13**, utilize um ambiente virtual
+apontando para a versão e instale as dependências a partir de `requirements.txt`:
 ```bash
 python3.13 -m venv .venv
 source .venv/bin/activate  # Linux/macOS
 venv\Scripts\activate     # Windows
-pip install -r requirements-py313.txt
+pip install -r requirements.txt
 ```
 
 ---
