@@ -29,6 +29,7 @@ import json
 import logging
 import time
 import unicodedata
+import copy
 from dataclasses import dataclass
 from typing import TypedDict
 
@@ -187,6 +188,8 @@ class TemplateManager:
         else:
             _, layout_escolhido = self._resolver_nome_template(nome_dim, LAYOUTS)
 
+        layout_escolhido = copy.deepcopy(layout_escolhido)
+
         for req in (
             "titulo",
             "saida",
@@ -203,6 +206,9 @@ class TemplateManager:
                     f"Layout '{nome_dim}' incorreto: campo '{req}' ausente."
                 )
 
+        _ajustar_altura_layout(layout_escolhido, altura_mm)
+        _ajustar_largura_layout(layout_escolhido, largura_mm)
+
         tpl = Template(
             largura_mm=largura_mm,
             altura_mm=altura_mm,
@@ -210,8 +216,6 @@ class TemplateManager:
             direction=direction,
             layout=layout_escolhido,
         )
-        _ajustar_altura_layout(tpl.layout, tpl.altura_mm)
-        _ajustar_largura_layout(tpl.layout, tpl.largura_mm)
         return tpl
 
 
