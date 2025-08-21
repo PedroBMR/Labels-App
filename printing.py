@@ -245,15 +245,15 @@ class Layout(TypedDict, total=False):
 # Fallback embutido para posições
 LAYOUTS: dict[str, Layout] = {
     "60x80": {
-        "titulo":    {"x": 20,  "y": 20,  "font": "5", "xm": 2, "ym": 2},
-        "saida":     {"x": 20,  "y": 120, "font": "4", "xm": 2, "ym": 2},
-        "categoria": {"x": 20,  "y": 200, "font": "4", "xm": 2, "ym": 2},
-        "emissor":   {"x": 20,  "y": 280, "font": "4", "xm": 2, "ym": 2},
-        "municipio": {"x": 20,  "y": 360, "font": "4", "xm": 2, "ym": 2},
-        "data":      {"x": 20,  "y": 440, "font": "4", "xm": 2, "ym": 2},
-        "fracao":    {"x": 20,  "y": 520, "font": "4", "xm": 2, "ym": 2},
-        "fragil":    {"x": 300, "y": 520,  "font": "4", "xm": 2, "ym": 2},
-        "numeracao": {"x": 430, "y": 20,  "font": "6", "xm": 2, "ym": 2},
+        "titulo":    {"x": 20,  "y": 20,  "font": "3", "xm": 1, "ym": 1},
+        "saida":     {"x": 20,  "y": 120, "font": "2", "xm": 1, "ym": 1},
+        "categoria": {"x": 20,  "y": 200, "font": "2", "xm": 1, "ym": 1},
+        "emissor":   {"x": 20,  "y": 280, "font": "2", "xm": 1, "ym": 1},
+        "municipio": {"x": 20,  "y": 360, "font": "2", "xm": 1, "ym": 1},
+        "data":      {"x": 20,  "y": 440, "font": "2", "xm": 1, "ym": 1},
+        "fracao":    {"x": 20,  "y": 520, "font": "2", "xm": 1, "ym": 1},
+        "fragil":    {"x": 300, "y": 520,  "font": "2", "xm": 1, "ym": 1},
+        "numeracao": {"x": 430, "y": 20,  "font": "4", "xm": 1, "ym": 1},
         "logo_y": 360,
         "logo_largura": 280
     },
