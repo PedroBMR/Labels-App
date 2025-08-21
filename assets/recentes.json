@@ -1,25 +1,29 @@
 {
     "categoria": {
-        "1": 19,
+        "1": 31,
         "MEDICAMENTO": 3,
         "EXPEDIENTE": 2,
         "LIMPEZA, COPA, COZINHA": 2,
         "132": 1,
-        "12": 1
+        "12": 1,
+        "21": 1
     },
     "emissor": {
-        "1": 20,
+        "1": 31,
         "RUDINEY": 4,
         "DANIELA, RUDINEY E ELIZANGELA": 2,
         "FERNANDO": 1,
-        "132": 1
+        "132": 1,
+        "12": 1,
+        "11": 1
     },
     "municipio": {
-        "1": 20,
+        "1": 32,
         "BOM SUCESSO DO SUL": 2,
         "SAO LOURENCO DO OESTE": 2,
         "ABELARDO LUZ": 2,
         "FORMOSA DO SUL": 1,
-        "132": 1
+        "132": 1,
+        "21": 1
     }
 }

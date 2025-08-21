@@ -170,7 +170,8 @@ class ConfigDialog(QDialog):
 
         self.template_combo = QComboBox()
         self.template_combo.addItems(listar_templates())
-        idx = self.template_combo.findText(settings.get("template", "Padrão"))
+        # evita cair em "Padrão" (que não existe no JSON)
+        idx = self.template_combo.findText(settings.get("template", ""))
         if idx >= 0:
             self.template_combo.setCurrentIndex(idx)
         form.addRow("Modelo:", self.template_combo)
@@ -211,6 +212,7 @@ class EtiquetaInfo(TypedDict):
     municipio: str
     volumes: int
     data_hora: str
+    template: str  # <- modelo usado na impressão
 
 
 class PrintingWorker(QObject):
@@ -247,6 +249,8 @@ class EtiquetaApp(QWidget):
         self._worker: PrintingWorker | None = None
         self._thread: QThread | None = None
         self._impressao_context: tuple[str, str, str, str, int, str] | None = None
+
+        self._impressao_template: str | None = None  # <- lembra o modelo usado
 
         # Estilo base precisa existir antes de sinais dispararem
         self._input_style_base = (
@@ -376,9 +380,17 @@ class EtiquetaApp(QWidget):
         self.template_input.currentTextChanged.connect(self._salvar_template_config)
         self.template_input.currentTextChanged.connect(self._update_print_button_state)
 
-        idx_tpl = self.template_input.findText(self.config.get("template", "Padrão"))
+        # Seleciona modelo preferido (sem usar "Padrão")
+        preferido = self.config.get("template", "")
+        idx_tpl = self.template_input.findText(preferido)
+        if idx_tpl < 0:
+            idx_tpl = self.template_input.findText("60x80")
+            if idx_tpl < 0 and self.template_input.count() > 0:
+                idx_tpl = 0
         if idx_tpl >= 0:
             self.template_input.setCurrentIndex(idx_tpl)
+
+        # aplica o modelo efetivamente selecionado
         self._aplicar_template(self.template_input.currentText())
         self._carregar_listas()
 
@@ -649,6 +661,7 @@ class EtiquetaApp(QWidget):
     def _aplicar_template(self, nome: str) -> None:
         try:
             aplicar_template(nome)
+            self._impressao_template = nome  # lembra o modelo atual
         except ValueError as e:
             QMessageBox.critical(self, "Erro", str(e))
 
@@ -668,7 +681,8 @@ class EtiquetaApp(QWidget):
         if dlg.exec_():
             self.config.update(dlg.obter_config())
             salvar_config(self.config)
-            idx = self.template_input.findText(self.config.get("template", "Padrão"))
+            # tenta posicionar no combo o mesmo template salvo
+            idx = self.template_input.findText(self.config.get("template", ""))
             if idx >= 0:
                 self.template_input.setCurrentIndex(idx)
             self.retry_checkbox.setChecked(bool(self.config.get("retry_automatico")))
@@ -732,14 +746,14 @@ class EtiquetaApp(QWidget):
             volumes,
             data_hora,
         ) = self._coletar_campos()
-        self._impressao_context = (
-            saida,
-            categoria,
-            emissor,
-            municipio,
-            volumes,
-            data_hora,
-        )
+
+        # pega o modelo exibido no combo (o mesmo que foi aplicado)
+        tpl = self.template_input.currentText().strip() or (self._impressao_template or "")
+        if not tpl:
+            QMessageBox.warning(self, "Modelo", "Selecione um modelo de etiqueta.")
+            return
+        self._impressao_template = tpl  # reforça
+
         dados = {
             "saida": saida,
             "categoria": categoria,
@@ -750,6 +764,17 @@ class EtiquetaApp(QWidget):
         }
         tspl = montar_tspl(LAYOUT_ATUAL, dados)
         logger.debug("TSPL gerado:\n%s", tspl)
+
+        # guarda o contexto desta impressão (inclui template para salvar depois)
+        self._impressao_context = (
+            saida,
+            categoria,
+            emissor,
+            municipio,
+            volumes,
+            data_hora,
+        )
+
         self._worker = PrintingWorker(
             tspl,
             repetir_em_falha=self.retry_checkbox.isChecked(),
@@ -806,6 +831,7 @@ class EtiquetaApp(QWidget):
                     municipio=municipio,
                     volumes=volumes,
                     data_hora=data_hora,
+                    template=(self._impressao_template or self.template_input.currentText().strip() or ""),
                 )
 
                 self._atualizar_listas_recentes(categoria, emissor, municipio)
@@ -850,6 +876,15 @@ class EtiquetaApp(QWidget):
             )
             return
         dados = self.ultima_etiqueta
+
+        # aplica o mesmo template da impressão original
+        tpl = dados.get("template", "") or self.template_input.currentText().strip()
+        if tpl:
+            try:
+                aplicar_template(tpl)
+            except Exception:
+                pass
+
         self.cancel_event.clear()
         tspl = montar_tspl(LAYOUT_ATUAL, dados)
         ok, erro = imprimir_etiqueta(
@@ -888,6 +923,14 @@ class EtiquetaApp(QWidget):
         inicio = total - faltantes + 1
 
         try:
+            # aplica o mesmo template da impressão original
+            tpl = self.ultima_etiqueta.get("template", "")
+            if tpl:
+                try:
+                    aplicar_template(tpl)
+                except Exception:
+                    pass
+
             self.cancel_event.clear()
             dados_tspl = {
                 "saida": dados["saida"],
@@ -972,6 +1015,14 @@ class EtiquetaApp(QWidget):
         volumes = fim - inicio + 1
 
         try:
+            # aplica o mesmo template da impressão original
+            tpl = self.ultima_etiqueta.get("template", "")
+            if tpl:
+                try:
+                    aplicar_template(tpl)
+                except Exception:
+                    pass
+
             self.cancel_event.clear()
             dados_tspl = {
                 "saida": dados["saida"],
