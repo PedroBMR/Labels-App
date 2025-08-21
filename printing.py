@@ -25,11 +25,11 @@ Se as posições não estiverem no JSON, o código usa LAYOUTS abaixo.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import time
 import unicodedata
-import copy
 from dataclasses import dataclass
 from typing import TypedDict
 
@@ -37,13 +37,13 @@ import win32print
 
 from log import logger
 from persistence import carregar_config, salvar_config
-from utils import melhorar_logo, recurso_caminho
 from printing_utils import (
     FONT_BASE_W,
     adjust_logo_position,
     sanitize_text,
     text_width_dots,
 )
+from utils import melhorar_logo, recurso_caminho
 
 DOTS_MM: int = 8   # ~203 dpi
 ENCODING: str = "cp1252"  # TSPL espera 8-bit (latin-1/cp1252)
