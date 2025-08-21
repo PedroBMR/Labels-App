@@ -16,7 +16,7 @@ Estrutura esperada em assets/templates.json (exemplo):
     "largura_mm": 60, "altura_mm": 80, "gap_mm": 2, "direction": 1,
     "titulo": {"x":20,"y":20,"font":"5","xm":3,"ym":3},
     ...
-    "logo_y": 560, "logo_largura": 280
+    "logo_y": 360, "logo_largura": 280
   },
   "100x30": { ... }
 }
@@ -449,12 +449,38 @@ class TsplBuilder:
         self.layout = template.layout
 
         logo_path = recurso_caminho("logo.png")
+        largura_desejada = int(self.layout.get("logo_largura", 240))
         self.bitmap, self.largura_bytes, self.altura_px = melhorar_logo(
-            logo_path, largura_desejada=self.layout.get("logo_largura", 240)
+            logo_path, largura_desejada=largura_desejada
         )
 
         self.dots_x = template.largura_mm * DOTS_MM
         self.dots_y = template.altura_mm * DOTS_MM
+
+        logo_y = int(self.layout.get("logo_y", 0))
+        if logo_y + self.altura_px > self.dots_y:
+            limite = self.dots_y
+            altura_logo = self.altura_px
+            novo_y = max(0, limite - altura_logo)
+            if novo_y != logo_y:
+                logger.debug("Ajuste 'logo_y': %s -> %s", logo_y, novo_y)
+                self.layout["logo_y"] = novo_y
+                logo_y = novo_y
+            if altura_logo > limite:
+                max_largura = max(1, int(largura_desejada * limite / altura_logo))
+                if max_largura != largura_desejada:
+                    logger.debug(
+                        "Ajuste 'logo_largura': %s -> %s", largura_desejada, max_largura
+                    )
+                self.layout["logo_largura"] = max_largura
+                largura_desejada = max_largura
+                self.bitmap, self.largura_bytes, self.altura_px = melhorar_logo(
+                    logo_path, largura_desejada=max_largura
+                )
+                if self.layout.get("logo_y", 0) + self.altura_px > limite:
+                    novo_y = max(0, limite - self.altura_px)
+                    self.layout["logo_y"] = novo_y
+
         self.x_logo = _calc_logo_x(self.layout, self.dots_x, self.largura_bytes)
 
         for chave in (
