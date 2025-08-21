@@ -23,9 +23,12 @@ Estrutura esperada em assets/templates.json (exemplo):
 Se as posições não estiverem no JSON, o código usa LAYOUTS abaixo.
 """
 
+from __future__ import annotations
+
 import json
 import time
 import unicodedata
+from dataclasses import dataclass
 from typing import TypedDict
 
 import win32print
@@ -55,48 +58,179 @@ def _text_width_dots(texto: str, font: str, xm: int) -> int:
 # -------------------- templates (tamanho/direction) --------------------
 _DEFAULT_TEMPLATE_DIM = {
     "100x30": {"largura_mm": 100, "altura_mm": 30, "gap_mm": 2, "direction": 1},
-    "60x80":  {"largura_mm": 60,  "altura_mm": 80, "gap_mm": 2, "direction": 1},
+    "60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2, "direction": 0},
 }
 
-TEMPLATES_DIM: dict[str, dict] | None = None
-_TEMPLATES_DIM_MTIME: float | None = None
 
-def _load_templates_dim(force: bool = False) -> dict[str, dict]:
-    """Carrega templates.json. Aceita tanto dimensões quanto posições.
-    Se houver falha, retorna fallback somente com dimensões.
-    """
-    global TEMPLATES_DIM, _TEMPLATES_DIM_MTIME
-    try:
-        path = recurso_caminho("templates.json")
-        mtime = None
+TEMPLATES: dict[str, dict] | None = None
+
+
+@dataclass
+class Template:
+    largura_mm: int
+    altura_mm: int
+    gap_mm: int
+    direction: int
+    layout: Layout
+    layout_nome: str
+
+
+class TemplateManager:
+    def __init__(self) -> None:
+        self._templates_dim: dict[str, dict] | None = None
+        self._templates_dim_mtime: float | None = None
+
+    def _load_templates_dim(self, force: bool = False) -> dict[str, dict]:
+        """Carrega templates.json. Aceita tanto dimensões quanto posições.
+        Se houver falha, retorna fallback somente com dimensões.
+        """
+        global TEMPLATES
         try:
-            import os
-            mtime = os.path.getmtime(path)
+            if TEMPLATES is not None:
+                self._templates_dim = TEMPLATES
+                return self._templates_dim
+
+            self._templates_dim = None
+            path = recurso_caminho("templates.json")
+            mtime = None
+            try:
+                import os
+                mtime = os.path.getmtime(path)
+            except Exception:
+                pass
+
+            needs_reload = (
+                force
+                or self._templates_dim is None
+                or (
+                    self._templates_dim_mtime is not None
+                    and mtime
+                    and mtime != self._templates_dim_mtime
+                )
+            )
+            if needs_reload:
+                with open(path, "r", encoding="utf-8") as f:
+                    self._templates_dim = json.load(f)
+                self._templates_dim_mtime = mtime
+                TEMPLATES = self._templates_dim
+                logger.info(
+                    "Templates carregados de %s: %s",
+                    path,
+                    ", ".join(self._templates_dim.keys()),
+                )
+            return self._templates_dim  # type: ignore[return-value]
         except Exception:
-            pass
+            logger.exception(
+                "Falha ao carregar templates.json; usando dimensões padrão."
+            )
+            return _DEFAULT_TEMPLATE_DIM.copy()
 
-        if force or TEMPLATES_DIM is None or (_TEMPLATES_DIM_MTIME is not None and mtime and mtime != _TEMPLATES_DIM_MTIME):
-            with open(path, "r", encoding="utf-8") as f:
-                TEMPLATES_DIM = json.load(f)
-            _TEMPLATES_DIM_MTIME = mtime
-            logger.info("Templates carregados de %s: %s", path, ", ".join(TEMPLATES_DIM.keys()))  # type: ignore[arg-type]
-        elif TEMPLATES_DIM is None:
-            # primeira carga sem mtime
-            with open(path, "r", encoding="utf-8") as f:
-                TEMPLATES_DIM = json.load(f)
-            _TEMPLATES_DIM_MTIME = mtime
-            logger.info("Templates carregados de %s: %s", path, ", ".join(TEMPLATES_DIM.keys()))  # type: ignore[arg-type]
-        return TEMPLATES_DIM  # type: ignore[return-value]
-    except Exception:
-        logger.exception("Falha ao carregar templates.json; usando dimensões padrão.")
-        return _DEFAULT_TEMPLATE_DIM.copy()
+    def recarregar_templates(self) -> None:
+        """Força recarga do templates.json (dimensões e, se existir, posições)."""
+        global TEMPLATES
+        self._templates_dim = None
+        self._templates_dim_mtime = None
+        TEMPLATES = None
+        self._load_templates_dim(force=True)
 
-def recarregar_templates() -> None:
-    """Força recarga do templates.json (dimensões e, se existir, posições)."""
-    global TEMPLATES_DIM, _TEMPLATES_DIM_MTIME
-    TEMPLATES_DIM = None
-    _TEMPLATES_DIM_MTIME = None
-    _load_templates_dim(force=True)
+    def _resolver_nome_template(
+        self, nome: str, d: dict[str, dict]
+    ) -> tuple[str, dict]:
+        """Resolve nome considerando normalização e aliases."""
+        modelo = d.get(nome)
+        if modelo:
+            return nome, modelo
+        n_alvo = _norm_key(nome)
+        for k, v in d.items():
+            if _norm_key(k) == n_alvo:
+                return k, v
+        if n_alvo in ALIASES:
+            alvo = ALIASES[n_alvo]
+            modelo = d.get(alvo)
+            if modelo:
+                return alvo, modelo
+            for k, v in d.items():
+                if _norm_key(k) == _norm_key(alvo):
+                    return k, v
+        if _DEFAULT_LAYOUT_KEY in d:
+            return _DEFAULT_LAYOUT_KEY, d[_DEFAULT_LAYOUT_KEY]
+        k = next(iter(d))
+        return k, d[k]
+
+    def _extrair_layout_do_json(self, modelo: dict) -> Layout | None:
+        """Se o dicionário do template no JSON tiver os campos de posição, retorna Layout."""
+        campos = {
+            "titulo",
+            "saida",
+            "categoria",
+            "emissor",
+            "municipio",
+            "data",
+            "fracao",
+            "fragil",
+            "numeracao",
+        }
+        if not any(k in modelo for k in campos):
+            return None
+        layout: Layout = {}
+        for k in campos:
+            if k in modelo:
+                layout[k] = modelo[k]  # type: ignore[assignment]
+        for k in ("logo_y", "logo_largura", "logo_x", "logo_x_mm"):
+            if k in modelo:
+                layout[k] = modelo[k]  # type: ignore[assignment]
+        return layout
+
+    def get_template(self, nome: str) -> Template:
+        templates_dim = self._load_templates_dim()
+        nome_dim, modelo_dim = self._resolver_nome_template(nome, templates_dim)
+
+        largura_mm = int(modelo_dim.get("largura_mm", 60))
+        altura_mm = int(modelo_dim.get("altura_mm", 80))
+        gap_mm = int(modelo_dim.get("gap_mm", 2))
+        direction = int(modelo_dim.get("direction", 1))
+
+        layout_json = self._extrair_layout_do_json(modelo_dim)
+        if layout_json is not None:
+            layout_escolhido = layout_json
+            nome_layout = nome_dim
+        else:
+            nome_layout, layout_escolhido = self._resolver_nome_template(
+                nome_dim, LAYOUTS
+            )
+
+        for req in (
+            "titulo",
+            "saida",
+            "categoria",
+            "emissor",
+            "municipio",
+            "data",
+            "fracao",
+            "fragil",
+            "numeracao",
+        ):
+            if req not in layout_escolhido:
+                raise ValueError(
+                    f"Layout '{nome_layout}' incorreto: campo '{req}' ausente."
+                )
+
+        return Template(
+            largura_mm=largura_mm,
+            altura_mm=altura_mm,
+            gap_mm=gap_mm,
+            direction=direction,
+            layout=layout_escolhido,
+            layout_nome=nome_layout,
+        )
+
+
+template_manager = TemplateManager()
+
+
+def _get_templates() -> dict[str, dict]:
+    """Retorna o dicionário de templates carregado."""
+    return template_manager._load_templates_dim()
 
 # -------------------- layout (posições) --------------------
 class TextoLayout(TypedDict):
@@ -184,7 +318,7 @@ def listar_templates() -> list[str]:
     """Lista (união) dos nomes presentes no templates.json e nos fallbacks."""
     nomes = set(LAYOUTS.keys())
     try:
-        for k in _load_templates_dim().keys():
+        for k in template_manager._load_templates_dim().keys():
             nomes.add(k)
     except Exception:
         pass
@@ -304,78 +438,30 @@ def _ajustar_largura_layout(layout: Layout) -> None:
             logger.debug("Ajuste 'logo_x': %s -> %s", logo_x, max_x)
             layout["logo_x"] = max_x
 
-def _resolver_nome_template(nome: str, d: dict[str, dict]) -> tuple[str, dict]:
-    """Resolve nome considerando normalização e aliases."""
-    modelo = d.get(nome)
-    if modelo:
-        return nome, modelo
-    n_alvo = _norm_key(nome)
-    for k, v in d.items():
-        if _norm_key(k) == n_alvo:
-            return k, v
-    if n_alvo in ALIASES:
-        alvo = ALIASES[n_alvo]
-        modelo = d.get(alvo)
-        if modelo:
-            return alvo, modelo
-        for k, v in d.items():
-            if _norm_key(k) == _norm_key(alvo):
-                return k, v
-    # fallback: primeiro
-    k = next(iter(d))
-    return k, d[k]
-
-def _extrair_layout_do_json(modelo: dict) -> Layout | None:
-    """Se o dicionário do template no JSON tiver os campos de posição, retorna Layout."""
-    campos = {"titulo","saida","categoria","emissor","municipio","data","fracao","fragil","numeracao"}
-    if not any(k in modelo for k in campos):
-        return None
-    layout: Layout = {}
-    # Copia somente campos conhecidos
-    for k in campos:
-        if k in modelo:
-            layout[k] = modelo[k]  # type: ignore[assignment]
-    # extras opcionais
-    for k in ("logo_y","logo_largura","logo_x","logo_x_mm"):
-        if k in modelo:
-            layout[k] = modelo[k]  # type: ignore[assignment]
-    return layout
-
 def aplicar_template(nome: str) -> None:
     """Define qual template será utilizado nas impressões (dimensões + posições)."""
     global LARGURA_ETIQUETA_MM, ALTURA_ETIQUETA_MM, GAP_MM, DIRECTION, LAYOUT_ATUAL, _LAYOUT_NOME_ATUAL
 
-    templates_dim = _load_templates_dim()
-    nome_dim, modelo_dim = _resolver_nome_template(nome, templates_dim)
+    tpl = template_manager.get_template(nome)
 
-    # dimensões
-    LARGURA_ETIQUETA_MM = int(modelo_dim.get("largura_mm", 60))
-    ALTURA_ETIQUETA_MM = int(modelo_dim.get("altura_mm", 80))
-    GAP_MM = int(modelo_dim.get("gap_mm", 2))
-    DIRECTION = int(modelo_dim.get("direction", 1))
+    LARGURA_ETIQUETA_MM = tpl.largura_mm
+    ALTURA_ETIQUETA_MM = tpl.altura_mm
+    GAP_MM = tpl.gap_mm
+    DIRECTION = tpl.direction
 
-    # posições: se o JSON tiver, usa; senão, fallback para LAYOUTS
-    layout_json = _extrair_layout_do_json(modelo_dim)
-    if layout_json is not None:
-        layout_escolhido = layout_json
-        nome_layout = nome_dim
-    else:
-        # fallback para LAYOUTS
-        nome_layout, layout_escolhido = _resolver_nome_template(nome_dim, LAYOUTS)
-
-    # valida campos essenciais
-    for req in ("titulo","saida","categoria","emissor","municipio","data","fracao","fragil","numeracao"):
-        if req not in layout_escolhido:
-            raise ValueError(f"Layout '{nome_layout}' incorreto: campo '{req}' ausente.")
-
-    LAYOUT_ATUAL = layout_escolhido
-    _LAYOUT_NOME_ATUAL = nome_layout
+    LAYOUT_ATUAL = tpl.layout
+    _LAYOUT_NOME_ATUAL = tpl.layout_nome
     _ajustar_altura_layout(LAYOUT_ATUAL)
     _ajustar_largura_layout(LAYOUT_ATUAL)
 
     logger.info(
         "Template aplicado: nome=%s (layout=%s) largura_mm=%s altura_mm=%s gap_mm=%s direction=%s",
-        nome, nome_layout, LARGURA_ETIQUETA_MM, ALTURA_ETIQUETA_MM, GAP_MM, DIRECTION
+        nome,
+        tpl.layout_nome,
+        LARGURA_ETIQUETA_MM,
+        ALTURA_ETIQUETA_MM,
+        GAP_MM,
+        DIRECTION,
     )
 
 class ErroImpressora(TypedDict):
