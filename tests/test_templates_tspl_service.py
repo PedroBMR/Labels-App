@@ -101,25 +101,74 @@ def test_montar_tspl_expected_string(monkeypatch):
     x_logo = printing._calc_logo_x(
         layout, tpl.largura_mm * printing.DOTS_MM, 1
     )
-    expected = (
-        f"SIZE {tpl.largura_mm} mm,{tpl.altura_mm} mm\r\n"
-        f"GAP {tpl.gap_mm} mm,0\r\n"
-        "DENSITY 8\r\n"
-        "SPEED 4\r\n"
-        f"DIRECTION {tpl.direction}\r\n"
-        "CLS\r\n"
-        f'TEXT {layout["titulo"]["x"]},{layout["titulo"]["y"]},"{layout["titulo"]["font"]}",0,{layout["titulo"]["xm"]},{layout["titulo"]["ym"]},"CONIMS"\r\n'
-        f'TEXT {layout["saida"]["x"]},{layout["saida"]["y"]},"{layout["saida"]["font"]}",0,{layout["saida"]["xm"]},{layout["saida"]["ym"]},"Saida: S1"\r\n'
-        f'TEXT {layout["categoria"]["x"]},{layout["categoria"]["y"]},"{layout["categoria"]["font"]}",0,{layout["categoria"]["xm"]},{layout["categoria"]["ym"]},"Categoria: C1"\r\n'
-        f'TEXT {layout["emissor"]["x"]},{layout["emissor"]["y"]},"{layout["emissor"]["font"]}",0,{layout["emissor"]["xm"]},{layout["emissor"]["ym"]},"Emissor: E1"\r\n'
-        f'TEXT {layout["municipio"]["x"]},{layout["municipio"]["y"]},"{layout["municipio"]["font"]}",0,{layout["municipio"]["xm"]},{layout["municipio"]["ym"]},"Municipio: M1"\r\n'
-        f'TEXT {layout["data"]["x"]},{layout["data"]["y"]},"{layout["data"]["font"]}",0,{layout["data"]["xm"]},{layout["data"]["ym"]},"Impresso em: 2024-01-01"\r\n'
-        f'TEXT {layout["fracao"]["x"]},{layout["fracao"]["y"]},"{layout["fracao"]["font"]}",0,{layout["fracao"]["xm"]},{layout["fracao"]["ym"]},"[ ] Fracao"\r\n'
-        f'TEXT {layout["fragil"]["x"]},{layout["fragil"]["y"]},"{layout["fragil"]["font"]}",0,{layout["fragil"]["xm"]},{layout["fragil"]["ym"]},"[ ] Fragil"\r\n'
-        f'TEXT {layout["numeracao"]["x"]},{layout["numeracao"]["y"]},"{layout["numeracao"]["font"]}",0,{layout["numeracao"]["xm"]},{layout["numeracao"]["ym"]},"1 DE 1"\r\n'
-        f"BITMAP {x_logo},{layout['logo_y']},1,1,0,A\r\n"
-        "PRINT 1\r\n"
-    )
+    expected = "\r\n".join(
+        [
+            f"SIZE {tpl.largura_mm} mm,{tpl.altura_mm} mm",
+            f"GAP {tpl.gap_mm} mm,0",
+            "DENSITY 8",
+            "SPEED 4",
+            f"DIRECTION {tpl.direction}",
+            "CLS",
+            (
+                f'TEXT {layout["titulo"]["x"]},{layout["titulo"]["y"]},'
+                f'"{layout["titulo"]["font"]}",0,'
+                f'{layout["titulo"]["xm"]},{layout["titulo"]["ym"]},'
+                '"CONIMS"'
+            ),
+            (
+                f'TEXT {layout["saida"]["x"]},{layout["saida"]["y"]},'
+                f'"{layout["saida"]["font"]}",0,'
+                f'{layout["saida"]["xm"]},{layout["saida"]["ym"]},'
+                '"Saida: S1"'
+            ),
+            (
+                f'TEXT {layout["categoria"]["x"]},{layout["categoria"]["y"]},'
+                f'"{layout["categoria"]["font"]}",0,'
+                f'{layout["categoria"]["xm"]},{layout["categoria"]["ym"]},'
+                '"Categoria: C1"'
+            ),
+            (
+                f'TEXT {layout["emissor"]["x"]},{layout["emissor"]["y"]},'
+                f'"{layout["emissor"]["font"]}",0,'
+                f'{layout["emissor"]["xm"]},{layout["emissor"]["ym"]},'
+                '"Emissor: E1"'
+            ),
+            (
+                f'TEXT {layout["municipio"]["x"]},'
+                f'{layout["municipio"]["y"]},'
+                f'"{layout["municipio"]["font"]}",0,'
+                f'{layout["municipio"]["xm"]},{layout["municipio"]["ym"]},'
+                '"Municipio: M1"'
+            ),
+            (
+                f'TEXT {layout["data"]["x"]},{layout["data"]["y"]},'
+                f'"{layout["data"]["font"]}",0,'
+                f'{layout["data"]["xm"]},{layout["data"]["ym"]},'
+                '"Impresso em: 2024-01-01"'
+            ),
+            (
+                f'TEXT {layout["fracao"]["x"]},{layout["fracao"]["y"]},'
+                f'"{layout["fracao"]["font"]}",0,'
+                f'{layout["fracao"]["xm"]},{layout["fracao"]["ym"]},'
+                '"[ ] Fracao"'
+            ),
+            (
+                f'TEXT {layout["fragil"]["x"]},{layout["fragil"]["y"]},'
+                f'"{layout["fragil"]["font"]}",0,'
+                f'{layout["fragil"]["xm"]},{layout["fragil"]["ym"]},'
+                '"[ ] Fragil"'
+            ),
+            (
+                f'TEXT {layout["numeracao"]["x"]},'
+                f'{layout["numeracao"]["y"]},'
+                f'"{layout["numeracao"]["font"]}",0,'
+                f'{layout["numeracao"]["xm"]},{layout["numeracao"]["ym"]},'
+                '"1 DE 1"'
+            ),
+            f"BITMAP {x_logo},{layout['logo_y']},1,1,0,A",
+            "PRINT 1",
+        ]
+    ) + "\r\n"
 
     assert tspl == expected
 
