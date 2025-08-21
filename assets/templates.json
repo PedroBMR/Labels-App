@@ -10,7 +10,7 @@
     "fracao":    {"x": 20,  "y": 520, "font": "4", "xm": 3, "ym": 3},
     "fragil":    {"x": 300, "y": 520, "font": "4", "xm": 3, "ym": 3},
     "numeracao": {"x": 430, "y": 20,  "font": "6", "xm": 2, "ym": 2},
-    "logo_y": 560, "logo_largura": 280
+    "logo_y": 360, "logo_largura": 280
   },
   "100x30": {
     "largura_mm": 100, "altura_mm": 30, "gap_mm": 2, "direction": 1,

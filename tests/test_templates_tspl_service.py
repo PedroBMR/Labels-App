@@ -173,6 +173,36 @@ def test_montar_tspl_expected_string(monkeypatch):
     assert tspl == expected
 
 
+def test_tspl_60x80_contains_text_and_logo():
+    import printing
+
+    tpl = printing.aplicar_template("60x80")
+    dados = {
+        "saida": "S1",
+        "categoria": "C1",
+        "emissor": "E1",
+        "municipio": "M1",
+        "volumes": 1,
+        "data_hora": "2024-01-01",
+    }
+
+    tspl = printing.montar_tspl(tpl, dados)
+
+    assert "TEXT" in tspl
+    assert "BITMAP" in tspl
+
+    dots_y = tpl.altura_mm * printing.DOTS_MM
+    for line in tspl.splitlines():
+        if line.startswith("BITMAP "):
+            parts = line.split(",")
+            y = int(parts[1])
+            h = int(parts[3])
+            assert y + h <= dots_y
+            break
+    else:
+        assert False, "BITMAP line not found"
+
+
 def test_printer_service_success(monkeypatch):
     import printing
 
