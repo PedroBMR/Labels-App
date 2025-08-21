@@ -140,7 +140,10 @@ class TemplateManager:
         return k, d[k]
 
     def _extrair_layout_do_json(self, modelo: dict) -> Layout | None:
-        """Se o dicionário do template no JSON tiver os campos de posição, retorna Layout."""
+        """
+        Se o dicionário do template no JSON tiver os campos de
+        posição, retorna Layout.
+        """
         campos = {
             "titulo",
             "saida",
@@ -507,7 +510,8 @@ class TsplBuilder:
             cmd += self._t("numeracao", f"{numero_atual} DE {total_display}")
 
             cmd += (
-                f"BITMAP {self.x_logo},{self.layout['logo_y']},{self.largura_bytes},{self.altura_px},0,"
+                f"BITMAP {self.x_logo},{self.layout['logo_y']},"
+                f"{self.largura_bytes},{self.altura_px},0,"
             )
             cmd += self.bitmap.decode(ENCODING, errors="replace") + "\r\n"
             cmd += "PRINT 1\r\n"
@@ -550,7 +554,8 @@ class TsplBuilder:
         cmd += self._t("numeracao", "1 DE 1")
 
         cmd += (
-            f"BITMAP {self.x_logo},{self.layout['logo_y']},{self.largura_bytes},{self.altura_px},0,"
+            f"BITMAP {self.x_logo},{self.layout['logo_y']},"
+            f"{self.largura_bytes},{self.altura_px},0,"
         )
 
         barras = f"BAR {ruler_start},{ruler_y},{ruler_len},4\r\n"
