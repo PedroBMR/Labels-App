@@ -72,7 +72,6 @@ class Template:
     gap_mm: int
     direction: int
     layout: Layout
-    layout_nome: str
 
 
 class TemplateManager:
@@ -193,11 +192,8 @@ class TemplateManager:
         layout_json = self._extrair_layout_do_json(modelo_dim)
         if layout_json is not None:
             layout_escolhido = layout_json
-            nome_layout = nome_dim
         else:
-            nome_layout, layout_escolhido = self._resolver_nome_template(
-                nome_dim, LAYOUTS
-            )
+            _, layout_escolhido = self._resolver_nome_template(nome_dim, LAYOUTS)
 
         for req in (
             "titulo",
@@ -212,17 +208,19 @@ class TemplateManager:
         ):
             if req not in layout_escolhido:
                 raise ValueError(
-                    f"Layout '{nome_layout}' incorreto: campo '{req}' ausente."
+                    f"Layout '{nome_dim}' incorreto: campo '{req}' ausente."
                 )
 
-        return Template(
+        tpl = Template(
             largura_mm=largura_mm,
             altura_mm=altura_mm,
             gap_mm=gap_mm,
             direction=direction,
             layout=layout_escolhido,
-            layout_nome=nome_layout,
         )
+        _ajustar_altura_layout(tpl.layout, tpl.altura_mm)
+        _ajustar_largura_layout(tpl.layout, tpl.largura_mm)
+        return tpl
 
 
 template_manager = TemplateManager()
@@ -293,14 +291,7 @@ ALIASES = {
 }
 
 # -------------------- Defaults de dimensões --------------------
-LARGURA_ETIQUETA_MM: int = 100
-ALTURA_ETIQUETA_MM: int = 30
-GAP_MM: int = 2
-DIRECTION: int = 1
-
 _DEFAULT_LAYOUT_KEY = "100x30"
-LAYOUT_ATUAL: Layout = LAYOUTS.get("Padrão", LAYOUTS[_DEFAULT_LAYOUT_KEY])
-_LAYOUT_NOME_ATUAL: str = _DEFAULT_LAYOUT_KEY
 
 def _norm_key(s: str) -> str:
     s = unicodedata.normalize("NFKD", s) if s else ""
@@ -329,8 +320,8 @@ def _text_height_dots(font: str, ym: int) -> int:
     ym = int(ym) if int(ym) > 0 else 1
     return base * ym
 
-def _ajustar_altura_layout(layout: Layout) -> None:
-    limite = ALTURA_ETIQUETA_MM * DOTS_MM
+def _ajustar_altura_layout(layout: Layout, altura_mm: int) -> None:
+    limite = altura_mm * DOTS_MM
     for chave, espec in layout.items():
         if not isinstance(espec, dict) or "y" not in espec:
             continue
@@ -373,8 +364,8 @@ def _ajustar_altura_layout(layout: Layout) -> None:
                     logger.debug("Ajuste '%s.y': %s -> %s", chave, orig_y, novo_y)
                 espec["y"] = novo_y
 
-def _ajustar_largura_layout(layout: Layout) -> None:
-    limite = LARGURA_ETIQUETA_MM * DOTS_MM
+def _ajustar_largura_layout(layout: Layout, largura_mm: int) -> None:
+    limite = largura_mm * DOTS_MM
 
     textos_padrao = {
         "titulo": "CONIMS",
@@ -426,8 +417,8 @@ def _ajustar_largura_layout(layout: Layout) -> None:
 
     if "logo_x_mm" in layout:
         logo_x_mm = float(layout.get("logo_x_mm", 0))
-        largura_mm = (logo_largura or 0) / DOTS_MM
-        max_x_mm = max(0, LARGURA_ETIQUETA_MM - largura_mm)
+        largura_logo_mm = (logo_largura or 0) / DOTS_MM
+        max_x_mm = max(0, largura_mm - largura_logo_mm)
         if logo_x_mm > max_x_mm:
             logger.debug("Ajuste 'logo_x_mm': %s -> %s", logo_x_mm, max_x_mm)
             layout["logo_x_mm"] = max_x_mm
@@ -438,31 +429,18 @@ def _ajustar_largura_layout(layout: Layout) -> None:
             logger.debug("Ajuste 'logo_x': %s -> %s", logo_x, max_x)
             layout["logo_x"] = max_x
 
-def aplicar_template(nome: str) -> None:
-    """Define qual template será utilizado nas impressões (dimensões + posições)."""
-    global LARGURA_ETIQUETA_MM, ALTURA_ETIQUETA_MM, GAP_MM, DIRECTION, LAYOUT_ATUAL, _LAYOUT_NOME_ATUAL
-
+def aplicar_template(nome: str) -> Template:
+    """Carrega e ajusta o template solicitado."""
     tpl = template_manager.get_template(nome)
-
-    LARGURA_ETIQUETA_MM = tpl.largura_mm
-    ALTURA_ETIQUETA_MM = tpl.altura_mm
-    GAP_MM = tpl.gap_mm
-    DIRECTION = tpl.direction
-
-    LAYOUT_ATUAL = tpl.layout
-    _LAYOUT_NOME_ATUAL = tpl.layout_nome
-    _ajustar_altura_layout(LAYOUT_ATUAL)
-    _ajustar_largura_layout(LAYOUT_ATUAL)
-
     logger.info(
-        "Template aplicado: nome=%s (layout=%s) largura_mm=%s altura_mm=%s gap_mm=%s direction=%s",
+        "Template aplicado: nome=%s largura_mm=%s altura_mm=%s gap_mm=%s direction=%s",
         nome,
-        tpl.layout_nome,
-        LARGURA_ETIQUETA_MM,
-        ALTURA_ETIQUETA_MM,
-        GAP_MM,
-        DIRECTION,
+        tpl.largura_mm,
+        tpl.altura_mm,
+        tpl.gap_mm,
+        tpl.direction,
     )
+    return tpl
 
 class ErroImpressora(TypedDict):
     code: int
@@ -502,16 +480,16 @@ def _calc_logo_x(layout: Layout, dots_x: int, largura_bytes: int) -> int:
         x_logo = (dots_x - (largura_bytes * 8)) // 2  # centraliza
     return max(0, min(x_logo, max(0, dots_x - (largura_bytes * 8))))
 
-def montar_tspl(template: Layout, dados: dict) -> str:
-    """Monta o conteúdo TSPL a partir do layout informado e dos dados."""
-    layout = template
+def montar_tspl(template: Template, dados: dict) -> str:
+    """Monta o conteúdo TSPL a partir do template informado e dos dados."""
+    layout = template.layout
 
     logo_path = recurso_caminho("logo.png")
     bitmap, largura_bytes, altura_px = melhorar_logo(
         logo_path, largura_desejada=layout.get("logo_largura", 240)
     )
 
-    dots_x = LARGURA_ETIQUETA_MM * DOTS_MM
+    dots_x = template.largura_mm * DOTS_MM
     x_logo = _calc_logo_x(layout, dots_x, largura_bytes)
 
     for chave in ("titulo","saida","categoria","emissor","municipio","data","fracao","fragil","numeracao"):
@@ -536,11 +514,11 @@ def montar_tspl(template: Layout, dados: dict) -> str:
     for offset in range(volumes):
         numero_atual = inicio_indice + offset
         cmd = (
-            f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\r\n"
-            f"GAP {GAP_MM} mm,0\r\n"
+            f"SIZE {template.largura_mm} mm,{template.altura_mm} mm\r\n"
+            f"GAP {template.gap_mm} mm,0\r\n"
             "DENSITY 8\r\n"
             "SPEED 4\r\n"
-            f"DIRECTION {DIRECTION}\r\n"
+            f"DIRECTION {template.direction}\r\n"
             "CLS\r\n"
         )
         cmd += t("titulo", "CONIMS")
@@ -591,17 +569,19 @@ def imprimir_etiqueta(tspl: str, repetir_em_falha: bool = False) -> tuple[bool, 
             atraso = 0.5 * (2 ** (tentativa - 1))
             time.sleep(atraso)
 
-def imprimir_pagina_teste(repetir_em_falha: bool = False) -> tuple[bool, ErroImpressora | None]:
-    """Imprime uma página de teste usando o layout atual (régua + campos fictícios)."""
-    layout = LAYOUT_ATUAL
+def imprimir_pagina_teste(
+    template: Template, repetir_em_falha: bool = False
+) -> tuple[bool, ErroImpressora | None]:
+    """Imprime uma página de teste usando o template informado (régua + campos fictícios)."""
+    layout = template.layout
 
     logo_path = recurso_caminho("logo.png")
     bitmap, largura_bytes, altura_px = melhorar_logo(
         logo_path, largura_desejada=layout.get("logo_largura", 240)
     )
 
-    dots_x = LARGURA_ETIQUETA_MM * DOTS_MM
-    dots_y = ALTURA_ETIQUETA_MM * DOTS_MM
+    dots_x = template.largura_mm * DOTS_MM
+    dots_y = template.altura_mm * DOTS_MM
     x_logo = _calc_logo_x(layout, dots_x, largura_bytes)
 
     for chave in ("titulo","saida","categoria","emissor","municipio","data","fracao","fragil","numeracao"):
@@ -631,11 +611,11 @@ def imprimir_pagina_teste(repetir_em_falha: bool = False) -> tuple[bool, ErroImp
                 return _texto_layout(ch, txt, layout)
 
             cmd = (
-                f"SIZE {LARGURA_ETIQUETA_MM} mm,{ALTURA_ETIQUETA_MM} mm\r\n"
-                f"GAP {GAP_MM} mm,0\r\n"
+                f"SIZE {template.largura_mm} mm,{template.altura_mm} mm\r\n"
+                f"GAP {template.gap_mm} mm,0\r\n"
                 "DENSITY 8\r\n"
                 "SPEED 4\r\n"
-                f"DIRECTION {DIRECTION}\r\n"
+                f"DIRECTION {template.direction}\r\n"
                 "CLS\r\n"
             )
             cmd += t("titulo", "CONIMS")

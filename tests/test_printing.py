@@ -81,7 +81,8 @@ def test_reimpressao_faltantes(monkeypatch):
         "inicio_indice": inicio,
         "total_exibicao": total,
     }
-    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    tpl = printing.aplicar_template("Padrão")
+    tspl = printing.montar_tspl(tpl, dados)
     printing.imprimir_etiqueta(tspl)
 
     assert len(printing.win32print.written) == 1
@@ -116,7 +117,8 @@ def test_reimpressao_intervalo(monkeypatch):
         "inicio_indice": inicio,
         "total_exibicao": total,
     }
-    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    tpl = printing.aplicar_template("Padrão")
+    tspl = printing.montar_tspl(tpl, dados)
     printing.imprimir_etiqueta(tspl)
 
     assert len(fake_win32.written) == 1
@@ -136,19 +138,20 @@ def test_imprimir_pagina_teste(monkeypatch):
     )
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
-    ok, erro = printing.imprimir_pagina_teste()
+    tpl = printing.aplicar_template("Padrão")
+    ok, erro = printing.imprimir_pagina_teste(tpl)
 
     assert ok
     assert erro is None
     assert len(fake_win32.written) == 1
     texto = fake_win32.written[0].decode("latin1")
-    assert f"DIRECTION {printing.DIRECTION}" in texto
+    assert f"DIRECTION {tpl.direction}" in texto
     assert "1 DE 1" in texto
-    dots_y = printing.ALTURA_ETIQUETA_MM * printing.DOTS_MM
-    ruler_start = printing.LAYOUT_ATUAL["titulo"]["x"]
+    dots_y = tpl.altura_mm * printing.DOTS_MM
+    ruler_start = tpl.layout["titulo"]["x"]
     ruler_len = min(
         50 * printing.DOTS_MM,
-        printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM - ruler_start,
+        tpl.largura_mm * printing.DOTS_MM - ruler_start,
     )
     ruler_len -= ruler_len % (10 * printing.DOTS_MM)
     expected = f"BAR {ruler_start},{dots_y - 40},{ruler_len},4"
@@ -178,7 +181,7 @@ def test_direction_personalizado(monkeypatch):
         },
     )
 
-    printing.aplicar_template("60x80")
+    tpl = printing.aplicar_template("60x80")
 
     dados = {
         "saida": "S",
@@ -189,10 +192,10 @@ def test_direction_personalizado(monkeypatch):
         "data_hora": "2024-01-01",
     }
 
-    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    tspl = printing.montar_tspl(tpl, dados)
     assert "DIRECTION 0" in tspl
 
-    ok, erro = printing.imprimir_pagina_teste()
+    ok, erro = printing.imprimir_pagina_teste(tpl)
     assert ok
     assert erro is None
     assert len(fake_win32.written) == 1
@@ -200,7 +203,7 @@ def test_direction_personalizado(monkeypatch):
     assert "DIRECTION 0" in texto
 
     printing.TEMPLATES = original_templates
-    printing.aplicar_template("Padrão")
+    printing.template_manager.recarregar_templates()
 
 
 def test_templates_arquivo_inexistente(monkeypatch, tmp_path, caplog):
@@ -224,12 +227,12 @@ def test_template_fallback_60x80(monkeypatch):
     monkeypatch.setattr(printing, "TEMPLATES", None)
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "inexistente.json")
 
-    printing.aplicar_template("60x80")
+    tpl = printing.aplicar_template("60x80")
 
-    assert printing.LARGURA_ETIQUETA_MM == 60
-    assert printing.ALTURA_ETIQUETA_MM == 80
-    assert printing.GAP_MM == 2
-    assert printing.DIRECTION == 0
+    assert tpl.largura_mm == 60
+    assert tpl.altura_mm == 80
+    assert tpl.gap_mm == 2
+    assert tpl.direction == 0
 
     templates = printing._get_templates()
     assert set(templates) == {"100x30", "60x80"}
@@ -242,7 +245,7 @@ def test_templates_chave_invalida(monkeypatch):
 
     fake_win32.written.clear()
     monkeypatch.setattr(printing, "TEMPLATES", None)
-    printing.aplicar_template("inexistente")
+    tpl = printing.aplicar_template("inexistente")
     monkeypatch.setattr(
         printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
     )
@@ -256,7 +259,7 @@ def test_templates_chave_invalida(monkeypatch):
         "volumes": 1,
         "data_hora": "2024-01-01",
     }
-    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    tspl = printing.montar_tspl(tpl, dados)
     printing.imprimir_etiqueta(tspl)
     texto = fake_win32.written[-1].decode("latin1")
     assert "SIZE 100 mm,30 mm" in texto
@@ -269,7 +272,7 @@ def test_templates_alteram_layout(monkeypatch):
     monkeypatch.setattr(
         printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
     )
-    printing.aplicar_template("100x30")
+    tpl = printing.aplicar_template("100x30")
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
     dados = {
         "saida": "S",
@@ -279,7 +282,7 @@ def test_templates_alteram_layout(monkeypatch):
         "volumes": 1,
         "data_hora": "2024-01-01",
     }
-    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    tspl = printing.montar_tspl(tpl, dados)
     printing.imprimir_etiqueta(tspl)
     texto = fake_win32.written[-1].decode("latin1")
     assert "SIZE 100 mm,30 mm" in texto
@@ -295,7 +298,7 @@ def test_100x30_layout(monkeypatch):
     )
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
-    printing.aplicar_template("100x30")
+    tpl = printing.aplicar_template("100x30")
     dados = {
         "saida": "S",
         "categoria": "C",
@@ -304,7 +307,7 @@ def test_100x30_layout(monkeypatch):
         "volumes": 1,
         "data_hora": "2024-01-01",
     }
-    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    tspl = printing.montar_tspl(tpl, dados)
     printing.imprimir_etiqueta(tspl)
     texto = fake_win32.written[-1].decode("latin1")
     assert "SIZE 100 mm,30 mm" in texto
@@ -324,7 +327,7 @@ def test_100x30_coordenadas(monkeypatch):
     )
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
-    printing.aplicar_template("100x30")
+    tpl = printing.aplicar_template("100x30")
     dados = {
         "saida": "S",
         "categoria": "C",
@@ -333,12 +336,12 @@ def test_100x30_coordenadas(monkeypatch):
         "volumes": 1,
         "data_hora": "2024-01-01",
     }
-    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    tspl = printing.montar_tspl(tpl, dados)
     printing.imprimir_etiqueta(tspl)
     texto = fake_win32.written[-1].decode("latin1")
     assert "SIZE 100 mm,30 mm" in texto
-    max_x = printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM
-    max_y = printing.ALTURA_ETIQUETA_MM * printing.DOTS_MM
+    max_x = tpl.largura_mm * printing.DOTS_MM
+    max_y = tpl.altura_mm * printing.DOTS_MM
     for line in texto.splitlines():
         m = re.match(r"TEXT (\d+),(\d+)", line)
         if m:
@@ -359,7 +362,7 @@ def test_60x80_coordenadas(monkeypatch):
     )
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
-    printing.aplicar_template("60x80")
+    tpl = printing.aplicar_template("60x80")
     dados = {
         "saida": "S",
         "categoria": "C",
@@ -368,13 +371,13 @@ def test_60x80_coordenadas(monkeypatch):
         "volumes": 1,
         "data_hora": "2024-01-01",
     }
-    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    tspl = printing.montar_tspl(tpl, dados)
     printing.imprimir_etiqueta(tspl)
     texto = fake_win32.written[-1].decode("latin1")
     assert "SIZE 60 mm,80 mm" in texto
     assert "DIRECTION 0" in texto
-    max_x = printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM
-    max_y = printing.ALTURA_ETIQUETA_MM * printing.DOTS_MM
+    max_x = tpl.largura_mm * printing.DOTS_MM
+    max_y = tpl.altura_mm * printing.DOTS_MM
     for line in texto.splitlines():
         m = re.match(r"TEXT (\d+),(\d+)", line)
         if m:
@@ -399,18 +402,18 @@ def test_100x30_pagina_teste(monkeypatch):
     )
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
-    printing.aplicar_template("100x30")
-    ok, erro = printing.imprimir_pagina_teste()
+    tpl = printing.aplicar_template("100x30")
+    ok, erro = printing.imprimir_pagina_teste(tpl)
     assert ok and erro is None
     assert len(fake_win32.written) == 1
     texto = fake_win32.written[-1].decode("latin1")
     assert "SIZE 100 mm,30 mm" in texto
     assert ",15,120,0," in texto
-    dots_y = printing.ALTURA_ETIQUETA_MM * printing.DOTS_MM
-    ruler_start = printing.LAYOUT_ATUAL["titulo"]["x"]
+    dots_y = tpl.altura_mm * printing.DOTS_MM
+    ruler_start = tpl.layout["titulo"]["x"]
     ruler_len = min(
         50 * printing.DOTS_MM,
-        printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM - ruler_start,
+        tpl.largura_mm * printing.DOTS_MM - ruler_start,
     )
     ruler_len -= ruler_len % (10 * printing.DOTS_MM)
     expected = f"BAR {ruler_start},{dots_y - 40},{ruler_len},4"
@@ -421,9 +424,9 @@ def test_100x30_pagina_teste(monkeypatch):
 def test_100x30_fracao_antes_de_fragil():
     import printing
 
-    printing.aplicar_template("100x30")
-    fracao_x = printing.LAYOUT_ATUAL["fracao"]["x"]
-    fragil_x = printing.LAYOUT_ATUAL["fragil"]["x"]
+    tpl = printing.aplicar_template("100x30")
+    fracao_x = tpl.layout["fracao"]["x"]
+    fragil_x = tpl.layout["fragil"]["x"]
     assert fracao_x < fragil_x
     printing.aplicar_template("Padrão")
 
@@ -438,7 +441,7 @@ def test_100x30_text_bitmap_dentro_largura(monkeypatch):
     )
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
-    printing.aplicar_template("100x30")
+    tpl = printing.aplicar_template("100x30")
     dados = {
         "saida": "S",
         "categoria": "C",
@@ -447,9 +450,9 @@ def test_100x30_text_bitmap_dentro_largura(monkeypatch):
         "volumes": 1,
         "data_hora": "2024-01-01",
     }
-    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    tspl = printing.montar_tspl(tpl, dados)
 
-    max_x = printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM
+    max_x = tpl.largura_mm * printing.DOTS_MM
     for line in tspl.splitlines():
         if line.startswith("TEXT "):
             m = re.match(
@@ -478,7 +481,7 @@ def test_100x30_text_bitmap_dentro_limites(monkeypatch):
     )
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
-    printing.aplicar_template("100x30")
+    tpl = printing.aplicar_template("100x30")
     dados = {
         "saida": "S",
         "categoria": "C",
@@ -487,10 +490,10 @@ def test_100x30_text_bitmap_dentro_limites(monkeypatch):
         "volumes": 1,
         "data_hora": "2024-01-01",
     }
-    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    tspl = printing.montar_tspl(tpl, dados)
 
-    max_x = printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM
-    max_y = printing.ALTURA_ETIQUETA_MM * printing.DOTS_MM
+    max_x = tpl.largura_mm * printing.DOTS_MM
+    max_y = tpl.altura_mm * printing.DOTS_MM
     for line in tspl.splitlines():
         if line.startswith("TEXT "):
             m = re.match(
@@ -522,7 +525,7 @@ def test_total_exibicao_cinco_digitos(monkeypatch):
     )
     monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
-    printing.aplicar_template("100x30")
+    tpl = printing.aplicar_template("100x30")
     total = 12345
     dados = {
         "saida": "S",
@@ -534,14 +537,14 @@ def test_total_exibicao_cinco_digitos(monkeypatch):
         "inicio_indice": total,
         "total_exibicao": total,
     }
-    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    tspl = printing.montar_tspl(tpl, dados)
     m = re.search(r'TEXT (\d+),(\d+),"(\d+)",0,(\d+),(\d+),"12345 DE 12345"', tspl)
     assert m, tspl
     x, _, font, xm, _ = m.groups()
     x = int(x)
     xm = int(xm)
     largura_txt = printing._text_width_dots("12345 DE 12345", font, xm)
-    max_x = printing.LARGURA_ETIQUETA_MM * printing.DOTS_MM
+    max_x = tpl.largura_mm * printing.DOTS_MM
     assert x + largura_txt <= max_x
     printing.aplicar_template("Padrão")
 
@@ -596,7 +599,8 @@ def test_retry_exponencial_logging(monkeypatch, caplog):
         "volumes": 1,
         "data_hora": "2024-01-01",
     }
-    tspl = printing.montar_tspl(printing.LAYOUT_ATUAL, dados)
+    tpl = printing.aplicar_template("Padrão")
+    tspl = printing.montar_tspl(tpl, dados)
 
     with caplog.at_level(logging.INFO):
         ok, erro = printing.imprimir_etiqueta(tspl, repetir_em_falha=True)
