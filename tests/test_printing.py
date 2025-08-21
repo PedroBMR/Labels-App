@@ -56,6 +56,30 @@ def test_descobrir_impressora_padrao():
     assert printing.descobrir_impressora_padrao() == "dummy"
 
 
+def test_printer_service_retry(monkeypatch):
+    import printing
+
+    printing.win32print.written.clear()
+
+    count = {"n": 0}
+
+    def start_doc(h, level, info):
+        count["n"] += 1
+        if count["n"] == 1:
+            raise OSError("falha")
+
+    monkeypatch.setattr(printing.win32print, "StartDocPrinter", start_doc)
+    monkeypatch.setattr(printing.time, "sleep", lambda s: None)
+
+    service = printing.PrinterService(printer_name="dummy")
+    ok, erro = service.send("ABC", retry=2)
+
+    assert ok
+    assert erro is None
+    assert count["n"] == 2
+    assert printing.win32print.written[-1] == b"ABC"
+
+
 def test_reimpressao_faltantes(monkeypatch):
     import printing
 

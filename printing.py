@@ -26,6 +26,7 @@ Se as posições não estiverem no JSON, o código usa LAYOUTS abaixo.
 from __future__ import annotations
 
 import json
+import logging
 import time
 import unicodedata
 from dataclasses import dataclass
@@ -614,37 +615,82 @@ def montar_tspl(template: Template, dados: dict) -> str:
     builder = TsplBuilder(template)
     return builder.build(dados)
 
-def imprimir_etiqueta(tspl: str, repetir_em_falha: bool = False) -> tuple[bool, ErroImpressora | None]:
-    """Envia uma string TSPL já montada para a impressora padrão."""
-    nome_imp = descobrir_impressora_padrao()
-    if nome_imp is None:
-        return False, {"code": 0, "message": "Nenhuma impressora padrão encontrada"}
-    logger.debug("impressora=%s tspl_len=%d", nome_imp, len(tspl))
 
-    max_tentativas = 3 if repetir_em_falha else 1
-    for tentativa in range(1, max_tentativas + 1):
-        logger.info("Tentativa %s de impressão", tentativa)
-        try:
-            h_prn = win32print.OpenPrinter(nome_imp)
-            win32print.StartDocPrinter(h_prn, 1, ("Etiqueta CONIMS", None, "RAW"))
-            win32print.StartPagePrinter(h_prn)
-            win32print.WritePrinter(h_prn, tspl.encode(ENCODING, errors="replace"))
-            win32print.EndPagePrinter(h_prn)
-            win32print.EndDocPrinter(h_prn)
-            win32print.ClosePrinter(h_prn)
-            logger.info("Impressão concluída na tentativa %s", tentativa)
-            return True, None
-        except Exception as e:
-            codigo = getattr(e, "winerror", -1)
-            mensagem = getattr(e, "strerror", str(e))
-            logger.warning("Falha na tentativa %s de impressão: %s - %s", tentativa, codigo, mensagem)
-            if tentativa == max_tentativas:
-                return False, {"code": codigo, "message": mensagem}
-            atraso = 0.5 * (2 ** (tentativa - 1))
-            time.sleep(atraso)
+class PrinterService:
+    """Serviço responsável por enviar comandos TSPL à impressora."""
+
+    def __init__(
+        self,
+        printer_name: str | None = None,
+        *,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        self.printer_name = printer_name
+        self.logger = logger or globals().get("logger")
+
+    def send(
+        self, tspl: str, *, retry: int = 1
+    ) -> tuple[bool, ErroImpressora | None]:
+        nome_imp = self.printer_name
+        if not nome_imp:
+            nome_imp = descobrir_impressora_padrao()
+        if nome_imp is None:
+            return False, {"code": 0, "message": "Nenhuma impressora padrão encontrada"}
+        log = self.logger
+        if log:
+            log.debug("impressora=%s tspl_len=%d", nome_imp, len(tspl))
+
+        for tentativa in range(1, retry + 1):
+            if log:
+                log.info("Tentativa %s de impressão", tentativa)
+            try:
+                h_prn = win32print.OpenPrinter(nome_imp)
+                win32print.StartDocPrinter(h_prn, 1, ("Etiqueta CONIMS", None, "RAW"))
+                win32print.StartPagePrinter(h_prn)
+                win32print.WritePrinter(
+                    h_prn, tspl.encode(ENCODING, errors="replace")
+                )
+                win32print.EndPagePrinter(h_prn)
+                win32print.EndDocPrinter(h_prn)
+                win32print.ClosePrinter(h_prn)
+                if log:
+                    log.info("Impressão concluída na tentativa %s", tentativa)
+                return True, None
+            except Exception as e:  # pragma: no cover - usado em Windows
+                codigo = getattr(e, "winerror", -1)
+                mensagem = getattr(e, "strerror", str(e))
+                if log:
+                    log.warning(
+                        "Falha na tentativa %s de impressão: %s - %s",
+                        tentativa,
+                        codigo,
+                        mensagem,
+                    )
+                if tentativa == retry:
+                    return False, {"code": codigo, "message": mensagem}
+                atraso = 0.5 * (2 ** (tentativa - 1))
+                time.sleep(atraso)
+
+def imprimir_etiqueta(
+    tspl: str,
+    repetir_em_falha: bool = False,
+    *,
+    nome_impressora: str | None = None,
+    logger: logging.Logger | None = None,
+) -> tuple[bool, ErroImpressora | None]:
+    """Envia uma string TSPL já montada para a impressora padrão."""
+
+    service = PrinterService(nome_impressora, logger=logger)
+    retry = 3 if repetir_em_falha else 1
+    return service.send(tspl, retry=retry)
+
 
 def imprimir_pagina_teste(
-    template: Template, repetir_em_falha: bool = False
+    template: Template,
+    repetir_em_falha: bool = False,
+    *,
+    nome_impressora: str | None = None,
+    logger: logging.Logger | None = None,
 ) -> tuple[bool, ErroImpressora | None]:
     """Imprime uma página de teste usando o template informado."""
 
@@ -653,4 +699,9 @@ def imprimir_pagina_teste(
     except ValueError as e:
         return False, {"code": 0, "message": str(e)}
 
-    return imprimir_etiqueta(tspl, repetir_em_falha)
+    return imprimir_etiqueta(
+        tspl,
+        repetir_em_falha,
+        nome_impressora=nome_impressora,
+        logger=logger,
+    )
