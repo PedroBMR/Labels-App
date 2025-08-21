@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """Utility helpers for printing-related routines.
 
 This module centralizes small helpers shared across modules, such as
 font size calculations, logo positioning adjustments and text
 sanitization.
 """
+
+from __future__ import annotations
 
 from typing import Mapping, MutableMapping
 
@@ -34,7 +34,11 @@ def text_height_dots(font: str, ym: int) -> int:
     return base * ym
 
 
-def adjust_logo_position(layout: MutableMapping[str, object], largura_mm: int, dots_mm: int) -> None:
+def adjust_logo_position(
+    layout: MutableMapping[str, object],
+    largura_mm: int,
+    dots_mm: int,
+) -> None:
     """Adjust logo related fields in ``layout`` to fit within ``largura_mm``.
 
     ``layout`` is modified in-place when necessary.
