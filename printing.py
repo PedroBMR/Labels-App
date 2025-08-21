@@ -480,65 +480,139 @@ def _calc_logo_x(layout: Layout, dots_x: int, largura_bytes: int) -> int:
         x_logo = (dots_x - (largura_bytes * 8)) // 2  # centraliza
     return max(0, min(x_logo, max(0, dots_x - (largura_bytes * 8))))
 
-def montar_tspl(template: Template, dados: dict) -> str:
-    """Monta o conteúdo TSPL a partir do template informado e dos dados."""
-    layout = template.layout
 
-    logo_path = recurso_caminho("logo.png")
-    bitmap, largura_bytes, altura_px = melhorar_logo(
-        logo_path, largura_desejada=layout.get("logo_largura", 240)
-    )
+class TsplBuilder:
+    """Gera comandos TSPL a partir de um ``Template``."""
 
-    dots_x = template.largura_mm * DOTS_MM
-    x_logo = _calc_logo_x(layout, dots_x, largura_bytes)
+    def __init__(self, template: Template) -> None:
+        self.template = template
+        self.layout = template.layout
 
-    for chave in ("titulo","saida","categoria","emissor","municipio","data","fracao","fragil","numeracao"):
-        if chave not in layout:
-            raise ValueError(f"Layout incorreto: campo '{chave}' ausente.")
+        logo_path = recurso_caminho("logo.png")
+        self.bitmap, self.largura_bytes, self.altura_px = melhorar_logo(
+            logo_path, largura_desejada=self.layout.get("logo_largura", 240)
+        )
 
-    def t(ch: str, txt: str) -> str:
-        return _texto_layout(ch, txt, layout)
+        self.dots_x = template.largura_mm * DOTS_MM
+        self.dots_y = template.altura_mm * DOTS_MM
+        self.x_logo = _calc_logo_x(self.layout, self.dots_x, self.largura_bytes)
 
-    volumes = int(dados.get("volumes", 1))
-    inicio_indice = int(dados.get("inicio_indice", 1))
-    total_exibicao = dados.get("total_exibicao")
-    total_display = total_exibicao if total_exibicao is not None else volumes
+        for chave in (
+            "titulo",
+            "saida",
+            "categoria",
+            "emissor",
+            "municipio",
+            "data",
+            "fracao",
+            "fragil",
+            "numeracao",
+        ):
+            if chave not in self.layout:
+                raise ValueError(f"Layout incorreto: campo '{chave}' ausente.")
 
-    saida = dados.get("saida", "")
-    categoria = dados.get("categoria", "")
-    emissor = dados.get("emissor", "")
-    municipio = dados.get("municipio", "")
-    data_hora = dados.get("data_hora", "")
+    def _t(self, ch: str, txt: str) -> str:
+        return _texto_layout(ch, txt, self.layout)
 
-    partes: list[str] = []
-    for offset in range(volumes):
-        numero_atual = inicio_indice + offset
+    def build(self, dados: dict) -> str:
+        """Monta etiquetas usando ``dados`` fornecidos."""
+
+        volumes = int(dados.get("volumes", 1))
+        inicio_indice = int(dados.get("inicio_indice", 1))
+        total_exibicao = dados.get("total_exibicao")
+        total_display = total_exibicao if total_exibicao is not None else volumes
+
+        saida = dados.get("saida", "")
+        categoria = dados.get("categoria", "")
+        emissor = dados.get("emissor", "")
+        municipio = dados.get("municipio", "")
+        data_hora = dados.get("data_hora", "")
+
+        partes: list[str] = []
+        for offset in range(volumes):
+            numero_atual = inicio_indice + offset
+            cmd = (
+                f"SIZE {self.template.largura_mm} mm,{self.template.altura_mm} mm\r\n"
+                f"GAP {self.template.gap_mm} mm,0\r\n"
+                "DENSITY 8\r\n"
+                "SPEED 4\r\n"
+                f"DIRECTION {self.template.direction}\r\n"
+                "CLS\r\n"
+            )
+            cmd += self._t("titulo", "CONIMS")
+            cmd += self._t("saida", f"Saida: {saida}")
+            cmd += self._t("categoria", f"Categoria: {categoria}")
+            cmd += self._t("emissor", f"Emissor: {emissor}")
+            cmd += self._t("municipio", f"Municipio: {municipio}")
+            cmd += self._t("data", f"Impresso em: {data_hora}")
+            cmd += self._t("fracao", "[ ] Fracao")
+            cmd += self._t("fragil", "[ ] Fragil")
+            cmd += self._t("numeracao", f"{numero_atual} DE {total_display}")
+
+            cmd += (
+                f"BITMAP {self.x_logo},{self.layout['logo_y']},{self.largura_bytes},{self.altura_px},0,"
+            )
+            cmd += self.bitmap.decode(ENCODING, errors="replace") + "\r\n"
+            cmd += "PRINT 1\r\n"
+            partes.append(cmd)
+
+        tspl = "".join(partes)
+        logger.debug("tspl_first_200=%r", tspl[:200])
+        return tspl
+
+    def build_pagina_teste(self) -> str:
+        """Gera comandos para página de teste."""
+
+        ruler_start = self.layout["titulo"]["x"]
+        ruler_y = self.dots_y - 40
+        ruler_len = min(50 * DOTS_MM, self.dots_x - ruler_start)
+        ruler_len -= ruler_len % (10 * DOTS_MM)
+        if (
+            ruler_len <= 0
+            or ruler_start + ruler_len > self.dots_x
+            or ruler_y + 4 > self.dots_y
+        ):
+            raise ValueError("Layout inválido p/ régua de calibração.")
+
         cmd = (
-            f"SIZE {template.largura_mm} mm,{template.altura_mm} mm\r\n"
-            f"GAP {template.gap_mm} mm,0\r\n"
+            f"SIZE {self.template.largura_mm} mm,{self.template.altura_mm} mm\r\n"
+            f"GAP {self.template.gap_mm} mm,0\r\n"
             "DENSITY 8\r\n"
             "SPEED 4\r\n"
-            f"DIRECTION {template.direction}\r\n"
+            f"DIRECTION {self.template.direction}\r\n"
             "CLS\r\n"
         )
-        cmd += t("titulo", "CONIMS")
-        cmd += t("saida", f"Saida: {saida}")
-        cmd += t("categoria", f"Categoria: {categoria}")
-        cmd += t("emissor", f"Emissor: {emissor}")
-        cmd += t("municipio", f"Municipio: {municipio}")
-        cmd += t("data", f"Impresso em: {data_hora}")
-        cmd += t("fracao", "[ ] Fracao")
-        cmd += t("fragil", "[ ] Fragil")
-        cmd += t("numeracao", f"{numero_atual} DE {total_display}")
+        cmd += self._t("titulo", "CONIMS")
+        cmd += self._t("saida", "Saida: 000")
+        cmd += self._t("categoria", "Categoria: TESTE")
+        cmd += self._t("emissor", "Emissor: TESTE")
+        cmd += self._t("municipio", "Municipio: TESTE")
+        cmd += self._t("data", "Impresso em: 00/00/0000 00:00")
+        cmd += self._t("fracao", "[ ] Fracao")
+        cmd += self._t("fragil", "[ ] Fragil")
+        cmd += self._t("numeracao", "1 DE 1")
 
-        cmd += f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},{altura_px},0,"
-        cmd += bitmap.decode(ENCODING, errors="replace") + "\r\n"
-        cmd += "PRINT 1\r\n"
-        partes.append(cmd)
+        cmd += (
+            f"BITMAP {self.x_logo},{self.layout['logo_y']},{self.largura_bytes},{self.altura_px},0,"
+        )
 
-    tspl = "".join(partes)
-    logger.debug("tspl_first_200=%r", tspl[:200])
-    return tspl
+        barras = f"BAR {ruler_start},{ruler_y},{ruler_len},4\r\n"
+        marcas = ruler_len // (10 * DOTS_MM)
+        for i in range(marcas + 1):
+            altura = 20 if i in (0, marcas) else 12
+            x = ruler_start + i * 10 * DOTS_MM
+            y = ruler_y - altura
+            barras += f"BAR {x},{y},2,{altura}\r\n"
+
+        cmd += self.bitmap.decode(ENCODING, errors="replace")
+        cmd += f"\r\n{barras}PRINT 1\r\n"
+        logger.debug("tspl_first_200=%r", cmd[:200])
+        return cmd
+
+def montar_tspl(template: Template, dados: dict) -> str:
+    """Monta o conteúdo TSPL a partir do template informado e dos dados."""
+    builder = TsplBuilder(template)
+    return builder.build(dados)
 
 def imprimir_etiqueta(tspl: str, repetir_em_falha: bool = False) -> tuple[bool, ErroImpressora | None]:
     """Envia uma string TSPL já montada para a impressora padrão."""
@@ -572,90 +646,11 @@ def imprimir_etiqueta(tspl: str, repetir_em_falha: bool = False) -> tuple[bool, 
 def imprimir_pagina_teste(
     template: Template, repetir_em_falha: bool = False
 ) -> tuple[bool, ErroImpressora | None]:
-    """Imprime uma página de teste usando o template informado (régua + campos fictícios)."""
-    layout = template.layout
+    """Imprime uma página de teste usando o template informado."""
 
-    logo_path = recurso_caminho("logo.png")
-    bitmap, largura_bytes, altura_px = melhorar_logo(
-        logo_path, largura_desejada=layout.get("logo_largura", 240)
-    )
+    try:
+        tspl = TsplBuilder(template).build_pagina_teste()
+    except ValueError as e:
+        return False, {"code": 0, "message": str(e)}
 
-    dots_x = template.largura_mm * DOTS_MM
-    dots_y = template.altura_mm * DOTS_MM
-    x_logo = _calc_logo_x(layout, dots_x, largura_bytes)
-
-    for chave in ("titulo","saida","categoria","emissor","municipio","data","fracao","fragil","numeracao"):
-        if chave not in layout:
-            return False, {"code": 0, "message": f"Layout incorreto: campo '{chave}' ausente."}
-
-    ruler_start = layout["titulo"]["x"]
-    ruler_y = dots_y - 40
-    ruler_len = min(50 * DOTS_MM, dots_x - ruler_start)
-    ruler_len -= ruler_len % (10 * DOTS_MM)
-    if ruler_len <= 0 or ruler_start + ruler_len > dots_x or ruler_y + 4 > dots_y:
-        return False, {"code": 0, "message": "Layout inválido p/ régua de calibração."}
-
-    nome_imp = descobrir_impressora_padrao()
-    if nome_imp is None:
-        return False, {"code": 0, "message": "Nenhuma impressora padrão encontrada"}
-
-    max_tentativas = 3 if repetir_em_falha else 1
-    for tentativa in range(1, max_tentativas + 1):
-        logger.info("Tentativa %s de impressão", tentativa)
-        try:
-            h_prn = win32print.OpenPrinter(nome_imp)
-            win32print.StartDocPrinter(h_prn, 1, ("Etiqueta CONIMS", None, "RAW"))
-            win32print.StartPagePrinter(h_prn)
-
-            def t(ch: str, txt: str) -> str:
-                return _texto_layout(ch, txt, layout)
-
-            cmd = (
-                f"SIZE {template.largura_mm} mm,{template.altura_mm} mm\r\n"
-                f"GAP {template.gap_mm} mm,0\r\n"
-                "DENSITY 8\r\n"
-                "SPEED 4\r\n"
-                f"DIRECTION {template.direction}\r\n"
-                "CLS\r\n"
-            )
-            cmd += t("titulo", "CONIMS")
-            cmd += t("saida", "Saida: 000")
-            cmd += t("categoria", "Categoria: TESTE")
-            cmd += t("emissor", "Emissor: TESTE")
-            cmd += t("municipio", "Municipio: TESTE")
-            cmd += t("data", "Impresso em: 00/00/0000 00:00")
-            cmd += t("fracao", "[ ] Fracao")
-            cmd += t("fragil", "[ ] Fragil")
-            cmd += t("numeracao", "1 DE 1")
-
-            cmd += f"BITMAP {x_logo},{layout['logo_y']},{largura_bytes},{altura_px},0,"
-
-            # régua (marcas a cada 10 mm)
-            barras = f"BAR {ruler_start},{ruler_y},{ruler_len},4\r\n"
-            marcas = ruler_len // (10 * DOTS_MM)
-            for i in range(marcas + 1):
-                altura = 20 if i in (0, marcas) else 12
-                x = ruler_start + i * 10 * DOTS_MM
-                y = ruler_y - altura
-                barras += f"BAR {x},{y},2,{altura}\r\n"
-
-            cmd += bitmap.decode(ENCODING, errors="replace")
-            cmd += f"\r\n{barras}PRINT 1\r\n"
-
-            logger.debug("impressora=%s tspl_len=%d", nome_imp, len(cmd))
-            logger.debug("tspl_first_200=%r", cmd[:200])
-
-            win32print.WritePrinter(h_prn, cmd.encode(ENCODING, errors="replace"))
-            win32print.EndPagePrinter(h_prn)
-            win32print.EndDocPrinter(h_prn)
-            win32print.ClosePrinter(h_prn)
-            logger.info("Impressão concluída na tentativa %s", tentativa)
-            return True, None
-        except Exception as e:
-            codigo = getattr(e, "winerror", -1)
-            mensagem = getattr(e, "strerror", str(e))
-            logger.warning("Falha na tentativa %s de impressão: %s - %s", tentativa, codigo, mensagem)
-            if tentativa == max_tentativas:
-                return False, {"code": codigo, "message": mensagem}
-            atraso = 0.5 * (2 ** (tentativa - 1))
-            time.sleep(atraso)
+    return imprimir_etiqueta(tspl, repetir_em_falha)
