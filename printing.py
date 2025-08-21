@@ -255,7 +255,7 @@ LAYOUTS: dict[str, Layout] = {
         "fragil":    {"x": 300, "y": 520,  "font": "2", "xm": 1, "ym": 1},
         "numeracao": {"x": 430, "y": 20,  "font": "4", "xm": 1, "ym": 1},
         "logo_y": 360,
-        "logo_largura": 200
+        "logo_largura": 100
     },
     "100x30": {
         "titulo":    {"x": 20,  "y": 20,  "font": "3", "xm": 1, "ym": 1},
