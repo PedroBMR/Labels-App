@@ -19,6 +19,8 @@ Exemplo:
 """
 
 import os
+import subprocess
+import sys
 import threading
 from datetime import datetime
 from typing import Any, TypedDict
@@ -734,11 +736,21 @@ class EtiquetaApp(QWidget):
     # Ações de impressão e utilitários
     # =========================
     def _abrir_historico(self) -> None:
-        import subprocess
-
         caminho = recurso_caminho("historico_impressoes.csv")
         if os.path.exists(caminho):
-            subprocess.Popen(["start", "", caminho], shell=True)
+            try:
+                if sys.platform.startswith("win"):
+                    os.startfile(caminho)  # type: ignore[attr-defined]
+                elif sys.platform == "darwin":
+                    subprocess.run(["open", caminho], check=True)
+                else:
+                    subprocess.run(["xdg-open", caminho], check=True)
+            except Exception as e:
+                QMessageBox.warning(
+                    self,
+                    "Histórico",
+                    f"Não foi possível abrir o arquivo de histórico:\n{e}",
+                )
         else:
             QMessageBox.information(
                 self, "Histórico", "O arquivo de histórico ainda não existe."
