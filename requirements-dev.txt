@@ -1,0 +1,4 @@
+pyinstaller>=6.15.0
+black
+isort
+ruff
