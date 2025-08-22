@@ -91,6 +91,9 @@ pip install -r requirements.txt
 ### Comandos
 
 ```powershell
+# executável único com pasta `assets` gravável
+scripts\build_with_assets.ps1
+
 # executável único, sem console
 scripts\build_onefile.ps1
 
@@ -100,9 +103,11 @@ scripts\build_onedir.ps1
 
 Os scripts ativam o ambiente virtual (se existir), instalam dependências
 ausentes, rodam os arquivos `.spec` com o **PyInstaller** e copiam o executável
-final para `dist\GeradorEtiquetas_v{versão}.exe`. É possível alterar o nome do
-executável e o ícone definindo as variáveis de ambiente `APP_NAME` e
-`APP_ICON` antes da execução.
+final para `dist\GeradorEtiquetas_v{versão}.exe`. Execute
+`scripts\build_with_assets.ps1` para gerar um `.exe` acompanhado de uma pasta
+`assets` gravável para os arquivos de histórico. É possível alterar o nome do
+executável e o ícone definindo as variáveis de ambiente `APP_NAME` e `APP_ICON`
+antes da execução.
 
 ---
 
