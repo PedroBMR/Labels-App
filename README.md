@@ -113,10 +113,11 @@ antes da execução.
 
 ## Testes e Lint
 
-Antes de enviar contribuições, execute a suíte de testes e a verificação de
-estilo:
+Antes de enviar contribuições, instale as dependências de desenvolvimento e
+execute a suíte de testes e a verificação de estilo:
 
 ```bash
+pip install -r requirements-dev.txt
 ruff .
 pytest
 ```
