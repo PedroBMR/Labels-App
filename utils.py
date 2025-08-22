@@ -55,7 +55,12 @@ def recurso_caminho(rel_path: str) -> str:
         str: Caminho absoluto para o recurso.
     """
 
-    return os.path.join(_base_dir(), "assets", rel_path)
+    rel_path = os.path.normpath(rel_path)
+    base = os.path.join(_base_dir(), "assets")
+    full = os.path.normpath(os.path.join(base, rel_path))
+    if os.path.commonpath([full, base]) != base:
+        raise ValueError("Caminho fora do diretório de assets")
+    return full
 
 
 def normalize_text(texto: str, *, max_len: int) -> tuple[str, str | None]:
