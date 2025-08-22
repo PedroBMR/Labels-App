@@ -25,12 +25,23 @@ from PIL import Image
 def _base_dir() -> str:
     """Obtém o diretório base do aplicativo.
 
+    Quando o aplicativo é empacotado com PyInstaller (``sys.frozen``),
+    primeiro tenta usar o diretório de instalação onde o executável
+    reside. Caso exista uma pasta ``assets`` ao lado do executável, ela
+    será utilizada. Caso contrário, recai para ``sys._MEIPASS`` (o
+    diretório temporário criado pelo PyInstaller). Em ambiente de
+    desenvolvimento, retorna o diretório onde este arquivo está.
+
     Returns:
         str: Caminho do diretório base.
     """
 
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        return sys._MEIPASS
+    if getattr(sys, "frozen", False):
+        install_dir = os.path.dirname(sys.executable)
+        if os.path.isdir(os.path.join(install_dir, "assets")):
+            return install_dir
+        if hasattr(sys, "_MEIPASS"):
+            return sys._MEIPASS
     return os.path.dirname(os.path.abspath(__file__))
 
 
