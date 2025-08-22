@@ -129,6 +129,28 @@ ruff .
 pytest
 ```
 
+## Manutenção de Dependências
+
+As versões listadas em `requirements.txt` estão fixadas para garantir
+reprodutibilidade. Revise-as periodicamente seguindo os passos abaixo:
+
+1. Atualize os pacotes para versões recentes e edite `requirements.txt` com os
+   novos números de versão.
+2. Reinstale o ambiente:
+   ```bash
+   pip install -r requirements.txt
+   pip install -r requirements-dev.txt
+   ```
+3. Verifique vulnerabilidades com [`pip-audit`](https://pypi.org/project/pip-audit/)
+   ou [`safety`](https://pyup.io/safety/):
+   ```bash
+   pip-audit -r requirements.txt -r requirements-dev.txt
+   ```
+4. Execute `ruff` e `pytest` para validar as atualizações.
+
+Realize essa revisão com regularidade, por exemplo a cada mês ou quando novas
+falhas críticas forem divulgadas.
+
 ---
 
 ## Uso
