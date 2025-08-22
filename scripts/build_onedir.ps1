@@ -21,9 +21,7 @@ pyinstaller --noconfirm .\GeradorEtiquetas.spec
 
 # Retrieve version from _version.py
 $version = (
-    python - <<'PY'
-import _version; print(_version.__version__, end='')
-PY
+    python -c "import _version, sys; sys.stdout.write(_version.__version__)"
 ).Trim()
 
 $exeName = if ($env:APP_NAME) { $env:APP_NAME } else { 'GeradorEtiquetas' }
