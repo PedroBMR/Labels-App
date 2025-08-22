@@ -145,22 +145,6 @@ pytest
 > seu fluxo de impressão.*
 ---
 
-## Atualizações
-
-O arquivo `Updater.bat` automatiza a atualização do executável. Coloque
-`Updater.bat`, `manifest.json` e o novo `GeradorEtiquetas.exe` na mesma pasta e
-execute:
-
-```bat
-Updater.bat /D   :: simula a atualização (dry‑run)
-Updater.bat      :: aplica a atualização
-```
-
-O script valida o hash SHA256, cria backups e atualiza `version.txt`. Dados
-legados são migrados automaticamente ao iniciar o aplicativo. Mantenha sempre
-um backup do diretório antes de atualizar.
-
----
 
 ## Estrutura de templates
 
@@ -182,7 +166,6 @@ log ficam em `logs/app.log` com rotação automática de arquivos.
 - `persistence.py` – salvamento de configurações, contadores e histórico.
 - `utils.py` – utilitários, backup automático e migração de dados legados.
 - `assets/` – ícones, configurações, modelos e arquivos de histórico.
-- `Updater.bat` – script de atualização do executável.
 
 ---
 
