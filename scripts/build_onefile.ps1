@@ -7,6 +7,13 @@ if (Test-Path '.venv\Scripts\Activate.ps1') {
     & '.\venv\Scripts\Activate.ps1'
 }
 
+# Remove conflicting Qt packages if present
+$qtConflicts = @('pyside6', 'pyside6-addons', 'pyside6-essentials')
+foreach ($pkg in $qtConflicts) {
+    pip show $pkg > $null 2>&1
+    if ($LASTEXITCODE -eq 0) { pip uninstall -y $pkg }
+}
+
 # Ensure required packages are installed
 $packages = @('pyinstaller','pyqt5','pillow','pywin32')
 foreach ($pkg in $packages) {
