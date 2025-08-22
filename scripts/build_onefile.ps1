@@ -26,6 +26,9 @@ foreach ($pkg in $packages) {
 # Build executable
 pyinstaller --noconfirm .\GeradorEtiquetas.spec
 
+# Copy assets directory beside executable for runtime access
+Copy-Item -Recurse -Force 'assets' (Join-Path 'dist' 'assets')
+
 # Retrieve version from _version.py
 $version = (
     python -c "import _version, sys; sys.stdout.write(_version.__version__)"
