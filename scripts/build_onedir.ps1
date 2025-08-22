@@ -14,24 +14,28 @@ foreach ($pkg in $qtConflicts) {
     if ($LASTEXITCODE -eq 0) { pip uninstall -y $pkg }
 }
 
-# Ensure required packages are installed
-$packages = @('pyinstaller','pyqt5','pillow','pywin32')
-foreach ($pkg in $packages) {
-    pip show $pkg > $null 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        pip install $pkg
-    }
-}
+# Install runtime and development dependencies
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
 
 # Build executable
 pyinstaller --noconfirm .\GeradorEtiquetas.spec
+
+# Determine executable name
+$exeName = if ($env:APP_NAME) { $env:APP_NAME } else { 'GeradorEtiquetas' }
+$src = Join-Path 'dist' "$exeName.exe"
+
+# Sign executable
+if (Get-Command 'signtool.exe' -ErrorAction SilentlyContinue) {
+    & signtool sign /fd SHA256 /a /tr http://timestamp.digicert.com $src
+} else {
+    Write-Warning 'signtool.exe not found; skipping code signing.'
+}
 
 # Retrieve version from _version.py
 $version = (
     python -c "import _version, sys; sys.stdout.write(_version.__version__)"
 ).Trim()
 
-$exeName = if ($env:APP_NAME) { $env:APP_NAME } else { 'GeradorEtiquetas' }
-$src = Join-Path 'dist' "$exeName.exe"
 $dest = Join-Path 'dist' "${exeName}_v$version.exe"
 Copy-Item -Force -Path $src -Destination $dest

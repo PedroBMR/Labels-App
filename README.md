@@ -41,7 +41,8 @@ reimprimir etiquetas e realizar backup automático dos dados.
 Instale as dependências com:
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt          # uso normal
+pip install -r requirements-dev.txt  # desenvolvimento
 ```
 
 ---
@@ -49,12 +50,13 @@ pip install -r requirements.txt
 ## Ambiente Python 3.13
 
 Para testar o projeto com o **Python 3.13**, utilize um ambiente virtual
-apontando para a versão e instale as dependências a partir de `requirements.txt`:
+apontando para a versão e instale as dependências a partir de `requirements.txt` e `requirements-dev.txt`:
 ```bash
 python3.13 -m venv .venv
 source .venv/bin/activate  # Linux/macOS
 venv\Scripts\activate     # Windows
-pip install -r requirements.txt
+pip install -r requirements.txt          # uso normal
+pip install -r requirements-dev.txt  # desenvolvimento
 ```
 
 ---
@@ -64,7 +66,12 @@ pip install -r requirements.txt
 ### Ambiente de desenvolvimento
 
 1. Clone o repositório e entre na pasta do projeto.
-2. Crie um ambiente virtual opcional e instale as dependências.
+2. Crie um ambiente virtual opcional e instale as dependências:
+
+   ```bash
+   pip install -r requirements.txt          # uso normal
+   pip install -r requirements-dev.txt      # desenvolvimento
+   ```
 3. Execute o aplicativo:
 
    ```bash
@@ -86,7 +93,7 @@ pip install -r requirements.txt
 - Python 3.11 ou superior instalado e acessível pelo `python`.
 - PowerShell.
 - (Opcional) ambiente virtual em `.venv` ou `venv`.
-- Pacotes `pyinstaller`, `pyqt5`, `pillow` e `pywin32` (instalados automaticamente pelos scripts).
+- Dependências de runtime e desenvolvimento listadas em `requirements.txt` e `requirements-dev.txt` (instaladas automaticamente pelos scripts).
 
 ### Comandos
 
