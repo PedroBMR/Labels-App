@@ -64,6 +64,7 @@ from qt_compat import (
     QHBoxLayout,
     QIcon,
     QInputDialog,
+    QIntValidator,
     QLabel,
     QLineEdit,
     QMenu,
@@ -208,7 +209,7 @@ class ConfigDialog(QDialog):
 
 
 class EtiquetaInfo(TypedDict):
-    saida: str
+    saida: int
     categoria: str
     emissor: str
     municipio: str
@@ -250,7 +251,7 @@ class EtiquetaApp(QWidget):
         self.cancel_event = threading.Event()
         self._worker: PrintingWorker | None = None
         self._thread: QThread | None = None
-        self._impressao_context: tuple[str, str, str, str, int, str] | None = None
+        self._impressao_context: tuple[int, str, str, str, int, str] | None = None
 
         self._impressao_template: str | None = None  # <- lembra o modelo usado
         self._template: Template | None = None
@@ -369,6 +370,7 @@ class EtiquetaApp(QWidget):
         layout_quadro.addLayout(grid)
 
         self.saida_input = QLineEdit()
+        self.saida_input.setValidator(QIntValidator(0, 999999))
         self.saida_input.returnPressed.connect(self._imprimir_etiqueta)
 
         self.categoria_input = QComboBox()
@@ -650,12 +652,12 @@ class EtiquetaApp(QWidget):
             self.municipio_input, recentes.get("municipio", []), MUNICIPIOS_PADRAO
         )
 
-    def _coletar_campos(self) -> tuple[str, str, str, str, int, str]:
-        saida = self.saida_input.text().strip()
+    def _coletar_campos(self) -> tuple[int, str, str, str, int, str]:
+        saida_texto = self.saida_input.text().strip()
+        saida = int(saida_texto) if saida_texto else 0
         categoria = self.categoria_input.currentText().strip()
         emissor = self.emissor_input.currentText().strip()
         municipio = self.municipio_input.currentText().strip()
-        saida, _ = normalize_text(saida, max_len=20)
         categoria, _ = normalize_text(categoria, max_len=50)
         emissor, _ = normalize_text(emissor, max_len=50)
         municipio, _ = normalize_text(municipio, max_len=50)
@@ -796,7 +798,7 @@ class EtiquetaApp(QWidget):
         self._impressao_template = tpl  # reforça
 
         dados = {
-            "saida": saida,
+            "saida": str(saida),
             "categoria": categoria,
             "emissor": emissor,
             "municipio": municipio,
@@ -943,7 +945,9 @@ class EtiquetaApp(QWidget):
         if self._template is None:
             QMessageBox.warning(self, "Modelo", "Selecione um modelo de etiqueta.")
             return
-        tspl = montar_tspl(self._template, dados)
+        dados_tspl = dict(dados)
+        dados_tspl["saida"] = str(dados_tspl.get("saida", ""))
+        tspl = montar_tspl(self._template, dados_tspl)
         ok, erro = imprimir_etiqueta(
             tspl,
             repetir_em_falha=self.retry_checkbox.isChecked(),
@@ -990,7 +994,7 @@ class EtiquetaApp(QWidget):
 
             self.cancel_event.clear()
             dados_tspl = {
-                "saida": dados["saida"],
+                "saida": str(dados["saida"]),
                 "categoria": dados["categoria"],
                 "emissor": dados["emissor"],
                 "municipio": dados["municipio"],
@@ -1085,7 +1089,7 @@ class EtiquetaApp(QWidget):
 
             self.cancel_event.clear()
             dados_tspl = {
-                "saida": dados["saida"],
+                "saida": str(dados["saida"]),
                 "categoria": dados["categoria"],
                 "emissor": dados["emissor"],
                 "municipio": dados["municipio"],
