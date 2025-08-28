@@ -31,6 +31,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "backup_quantidade": 7,
 }
 
+# Cache em memória para o conteúdo de ``recentes.json``.
+_RECENTES_CACHE: dict[str, dict[str, int]] | None = None
+# Número de atualizações realizadas desde a última gravação em disco.
+_RECENTES_ATUALIZACOES = 0
+# Intervalo de gravação automática em disco.
+_RECENTES_FLUSH_INTERVALO = 20
+
 
 def carregar_config() -> dict[str, Any]:
     """Lê as configurações persistidas do aplicativo."""
@@ -157,18 +164,30 @@ def salvar_historico(
 
 
 def carregar_recentes() -> dict[str, dict[str, int]]:
-    """Lê as listas de valores usados recentemente."""
+    """Lê as listas de valores usados recentemente.
 
-    caminho = recurso_caminho("recentes.json")
-    if os.path.exists(caminho):
-        with open(caminho, "r", encoding="utf-8") as arquivo:
-            return cast(dict[str, dict[str, int]], json.load(arquivo))
-    return {"categoria": {}, "emissor": {}, "municipio": {}}
+    Os dados são mantidos em cache para evitar leituras repetidas do disco.
+    """
+
+    global _RECENTES_CACHE
+    if _RECENTES_CACHE is None:
+        caminho = recurso_caminho("recentes.json")
+        if os.path.exists(caminho):
+            with open(caminho, "r", encoding="utf-8") as arquivo:
+                _RECENTES_CACHE = cast(dict[str, dict[str, int]], json.load(arquivo))
+        else:
+            _RECENTES_CACHE = {"categoria": {}, "emissor": {}, "municipio": {}}
+    return _RECENTES_CACHE
 
 
 def atualizar_recentes(categoria: str, emissor: str, municipio: str) -> None:
-    """Atualiza o contador de valores mais utilizados."""
+    """Atualiza o contador de valores mais utilizados.
 
+    Os dados são persistidos apenas após um número definido de atualizações,
+    reduzindo o acesso ao disco.
+    """
+
+    global _RECENTES_ATUALIZACOES
     dados = carregar_recentes()
     for campo, valor in (
         ("categoria", categoria),
@@ -183,10 +202,22 @@ def atualizar_recentes(categoria: str, emissor: str, municipio: str) -> None:
         ordenado = sorted(mapa.items(), key=lambda x: x[1], reverse=True)[:20]
         dados[campo] = {k: v for k, v in ordenado}
 
+    _RECENTES_ATUALIZACOES += 1
+    if _RECENTES_ATUALIZACOES >= _RECENTES_FLUSH_INTERVALO:
+        salvar_recentes()
+
+
+def salvar_recentes() -> None:
+    """Persiste o cache de valores recentes em disco."""
+
+    global _RECENTES_ATUALIZACOES
+    if _RECENTES_CACHE is None:
+        return
     caminho = recurso_caminho("recentes.json")
     os.makedirs(os.path.dirname(caminho), exist_ok=True)
     with open(caminho, "w", encoding="utf-8") as arquivo:
-        json.dump(dados, arquivo, ensure_ascii=False, indent=4)
+        json.dump(_RECENTES_CACHE, arquivo, ensure_ascii=False, indent=4)
+    _RECENTES_ATUALIZACOES = 0
 
 
 def carregar_recentes_listas() -> dict[str, list[str]]:
