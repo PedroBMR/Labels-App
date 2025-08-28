@@ -82,6 +82,7 @@ from qt_compat import (
     QTimeEdit,
     QTimer,
     QToolButton,
+    QProgressDialog,
     QUrl,
     QVBoxLayout,
     QWidget,
@@ -252,6 +253,8 @@ class EtiquetaApp(QWidget):
         self._worker: PrintingWorker | None = None
         self._thread: QThread | None = None
         self._impressao_context: tuple[int, str, str, str, int, str] | None = None
+        self._printing = False
+        self._progress_dialog: QProgressDialog | None = None
 
         self._impressao_template: str | None = None  # <- lembra o modelo usado
         self._template: Template | None = None
@@ -609,6 +612,25 @@ class EtiquetaApp(QWidget):
         mark(self.municipio_input, mun_bad)
         mark(self.volumes_input, vol_bad)
 
+    def _set_printing_ui_state(self, printing: bool) -> None:
+        widgets = [
+            self.saida_input,
+            self.categoria_input,
+            self.emissor_input,
+            self.municipio_input,
+            self.volumes_input,
+            self.template_input,
+            self.toggle_template_btn,
+            self.retry_checkbox,
+            self.imprimir_btn,
+            self.reimprimir_btn,
+            self.menu_btn,
+        ]
+        for w in widgets:
+            w.setEnabled(not printing)
+        self._printing = printing
+        self._update_print_button_state()
+
     def _update_print_button_state(self) -> None:
         # Evita rodar antes de a UI terminar de montar
         if not getattr(self, "_ui_ready", False):
@@ -617,7 +639,9 @@ class EtiquetaApp(QWidget):
         self._apply_field_highlights()
         tem_imp = descobrir_impressora_padrao() is not None
         if hasattr(self, "imprimir_btn"):
-            self.imprimir_btn.setEnabled(ok and tem_imp)
+            self.imprimir_btn.setEnabled(ok and tem_imp and not self._printing)
+        if hasattr(self, "cancelar_btn"):
+            self.cancelar_btn.setEnabled(self._printing)
 
     # =========================
     # Listas e normalização
@@ -831,15 +855,30 @@ class EtiquetaApp(QWidget):
         self._worker.finished.connect(self._impressao_finalizada)
         self._worker.finished.connect(self._thread.quit)
         self._thread.finished.connect(self._cleanup_thread)
+        self._set_printing_ui_state(True)
+        self._progress_dialog = QProgressDialog(
+            "Imprimindo…", "Cancelar", 0, 0, self
+        )
+        self._progress_dialog.setWindowModality(Qt.WindowModal)
+        self._progress_dialog.canceled.connect(self._cancelar_impressao)
+        self._progress_dialog.show()
         self._thread.start()
 
     def _cancelar_impressao(self) -> None:
         self.cancel_event.set()
         if self._thread and self._thread.isRunning():
             self._thread.quit()
+        self._set_printing_ui_state(False)
+        if self._progress_dialog:
+            self._progress_dialog.close()
+            self._progress_dialog = None
         self._atualizar_status("❌ Impressão cancelada", "orange")
 
     def _impressao_finalizada(self, ok: bool, erro: dict | None) -> None:
+        self._set_printing_ui_state(False)
+        if self._progress_dialog:
+            self._progress_dialog.close()
+            self._progress_dialog = None
         if self._impressao_context is None:
             return
         (
