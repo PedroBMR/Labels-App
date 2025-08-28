@@ -369,14 +369,23 @@ class EtiquetaApp(QWidget):
         layout_quadro.addLayout(grid)
 
         self.saida_input = QLineEdit()
+        self.saida_input.returnPressed.connect(self._imprimir_etiqueta)
+
         self.categoria_input = QComboBox()
         self.categoria_input.setEditable(True)
+        self.categoria_input.lineEdit().returnPressed.connect(self._imprimir_etiqueta)
+
         self.emissor_input = QComboBox()
         self.emissor_input.setEditable(True)
+        self.emissor_input.lineEdit().returnPressed.connect(self._imprimir_etiqueta)
+
         self.municipio_input = QComboBox()
         self.municipio_input.setEditable(True)
+        self.municipio_input.lineEdit().returnPressed.connect(self._imprimir_etiqueta)
+
         self.volumes_input = QSpinBox()
         self.volumes_input.setMinimum(1)
+        self.volumes_input.lineEdit().returnPressed.connect(self._imprimir_etiqueta)
         self.template_input = QComboBox()
         self.template_input.addItems(listar_templates())
         self.template_input.currentTextChanged.connect(self._aplicar_template)
@@ -448,6 +457,7 @@ class EtiquetaApp(QWidget):
         # Botões
         botoes = QHBoxLayout()
         self.imprimir_btn = QPushButton("Imprimir Agora")
+        self.imprimir_btn.setDefault(True)
         self.imprimir_btn.clicked.connect(self._imprimir_etiqueta)
 
         self.reimprimir_btn = QPushButton("Reimprimir Última")
