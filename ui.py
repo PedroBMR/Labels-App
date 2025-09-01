@@ -255,6 +255,7 @@ class EtiquetaApp(QWidget):
 
         self._impressao_template: str | None = None  # <- lembra o modelo usado
         self._template: Template | None = None
+        self._tem_impressora: bool | None = None
 
         # Estilo base precisa existir antes de sinais dispararem
         self._input_style_base = (
@@ -281,6 +282,11 @@ class EtiquetaApp(QWidget):
         self._atualizar_status("🟢 Pronto")
         self._agendar_backup_diario()
         self._verificar_impressora()
+
+        self._printer_refresh_timer = QTimer(self)
+        self._printer_refresh_timer.setInterval(60000)
+        self._printer_refresh_timer.timeout.connect(self._verificar_impressora)
+        self._printer_refresh_timer.start()
 
         # flag para aplicar o tamanho/centralização só uma vez após mostrar
         self._aplicou_tamanho_inicial = False
@@ -615,7 +621,7 @@ class EtiquetaApp(QWidget):
             return
         ok, _ = self._is_form_valid()
         self._apply_field_highlights()
-        tem_imp = descobrir_impressora_padrao() is not None
+        tem_imp = bool(self._tem_impressora)
         if hasattr(self, "imprimir_btn"):
             self.imprimir_btn.setEnabled(ok and tem_imp)
 
@@ -718,19 +724,17 @@ class EtiquetaApp(QWidget):
             self.retry_checkbox.setChecked(bool(self.config.get("retry_automatico")))
             self._agendar_backup_diario()
             self._verificar_impressora()
-            self._update_print_button_state()
 
     def _verificar_impressora(self) -> None:
         nome = descobrir_impressora_padrao()
+        self._tem_impressora = nome is not None
+        self._update_print_button_state()
         if nome is None:
-            if hasattr(self, "imprimir_btn"):
-                self.imprimir_btn.setEnabled(False)
             self._atualizar_status("⚠️ Nenhuma impressora detectada", "orange")
         else:
             self._atualizar_status("🟢 Pronto")
             self.config["ultima_impressora"] = nome
             salvar_config(self.config)
-            self._update_print_button_state()
 
     def _atualizar_status(
         self, mensagem: str = "🟢 Pronto", cor: str = "white"
