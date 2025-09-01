@@ -280,8 +280,8 @@ class EtiquetaApp(QWidget):
         self._update_print_button_state()
 
         self._atualizar_status("🟢 Pronto")
-        self._agendar_backup_diario()
-        self._verificar_impressora()
+        QTimer.singleShot(0, self._agendar_backup_diario)
+        QTimer.singleShot(0, self._verificar_impressora)
 
         self._printer_refresh_timer = QTimer(self)
         self._printer_refresh_timer.setInterval(60000)
@@ -303,6 +303,11 @@ class EtiquetaApp(QWidget):
             geo.moveCenter(centro)
             self.move(geo.topLeft())
             self._aplicou_tamanho_inicial = True
+            QTimer.singleShot(
+                0,
+                lambda: self._aplicar_template(self.template_input.currentText()),
+            )
+            QTimer.singleShot(0, self._carregar_listas)
 
     def _agendar_backup_diario(self) -> None:
         horario = str(self.config.get("backup_horario", "17:10"))
@@ -414,10 +419,6 @@ class EtiquetaApp(QWidget):
                 idx_tpl = 0
         if idx_tpl >= 0:
             self.template_input.setCurrentIndex(idx_tpl)
-
-        # aplica o modelo efetivamente selecionado
-        self._aplicar_template(self.template_input.currentText())
-        self._carregar_listas()
 
         # Estilo base para inputs (reaplicado nas validações)
         def _estilo(w):
@@ -657,6 +658,7 @@ class EtiquetaApp(QWidget):
         self._popular_combo(
             self.municipio_input, recentes.get("municipio", []), MUNICIPIOS_PADRAO
         )
+        self._update_print_button_state()
 
     def _coletar_campos(self) -> tuple[int, str, str, str, int, str]:
         saida_texto = self.saida_input.text().strip()
