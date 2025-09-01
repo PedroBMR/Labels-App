@@ -26,6 +26,7 @@ Se as posições não estiverem no JSON, o código usa LAYOUTS abaixo.
 from __future__ import annotations
 
 import copy
+import importlib
 import json
 import logging
 import time
@@ -33,17 +34,48 @@ import unicodedata
 from dataclasses import dataclass
 from typing import TypedDict
 
-import win32print
-
-from log import logger
-from persistence import carregar_config, salvar_config
 from printing_utils import (
     FONT_BASE_W,
     adjust_logo_position,
     sanitize_text,
     text_width_dots,
 )
-from utils import melhorar_logo, recurso_caminho
+
+
+def _get_win32print():
+    mod = globals().get("win32print")
+    if mod is None:
+        mod = importlib.import_module("win32print")
+        globals()["win32print"] = mod
+    return mod
+
+
+def __getattr__(name: str):
+    if name == "win32print":
+        return _get_win32print()
+    raise AttributeError(f"module {__name__} has no attribute {name}")
+
+
+def melhorar_logo(*args, **kwargs):
+    utils = importlib.import_module("utils")
+    return utils.melhorar_logo(*args, **kwargs)
+
+
+def recurso_caminho(*args, **kwargs):
+    utils = importlib.import_module("utils")
+    return utils.recurso_caminho(*args, **kwargs)
+
+
+def _logger():
+    return importlib.import_module("log").logger
+
+
+def carregar_config():
+    return importlib.import_module("persistence").carregar_config()
+
+
+def salvar_config(cfg):
+    return importlib.import_module("persistence").salvar_config(cfg)
 
 DOTS_MM: int = 8   # ~203 dpi
 ENCODING: str = "cp1252"  # TSPL espera 8-bit (latin-1/cp1252)
@@ -95,7 +127,7 @@ class TemplateManager:
                 with open(path, "r", encoding="utf-8") as f:
                     self._templates_dim = json.load(f)
                 self._templates_dim_mtime = mtime
-                logger.info(
+                _logger().info(
                     "Templates carregados de %s: %s",
                     path,
                     ", ".join(self._templates_dim.keys()),
@@ -104,7 +136,7 @@ class TemplateManager:
                 return _DEFAULT_TEMPLATE_DIM.copy()
             return self._templates_dim
         except Exception:
-            logger.exception(
+            _logger().exception(
                 "Falha ao carregar templates.json; usando dimensões padrão."
             )
             return _DEFAULT_TEMPLATE_DIM.copy()
@@ -319,29 +351,29 @@ def _ajustar_altura_layout(layout: Layout, altura_mm: int) -> None:
             if novo_y < 0:
                 max_ym = max(1, limite // base)
                 if max_ym != orig_ym:
-                    logger.debug("Ajuste '%s.ym': %s -> %s", chave, orig_ym, max_ym)
+                    _logger().debug("Ajuste '%s.ym': %s -> %s", chave, orig_ym, max_ym)
                 espec["ym"] = max_ym
                 altura = base * max_ym
                 novo_y = max(0, limite - altura)
             if novo_y != orig_y:
-                logger.debug("Ajuste '%s.y': %s -> %s", chave, orig_y, novo_y)
+                _logger().debug("Ajuste '%s.y': %s -> %s", chave, orig_y, novo_y)
                 espec["y"] = novo_y
                 outro = "fragil" if chave == "fracao" else "fracao"
                 if outro in layout and isinstance(layout[outro], dict):
                     outro_y = layout[outro].get("y")
                     if outro_y != novo_y:
-                        logger.debug("Ajuste '%s.y': %s -> %s", outro, outro_y, novo_y)
+                        _logger().debug("Ajuste '%s.y': %s -> %s", outro, outro_y, novo_y)
                 layout[outro]["y"] = novo_y
         else:
             max_ym = max(1, (limite - espec["y"]) // base)
             if max_ym != orig_ym:
-                logger.debug("Ajuste '%s.ym': %s -> %s", chave, orig_ym, max_ym)
+                _logger().debug("Ajuste '%s.ym': %s -> %s", chave, orig_ym, max_ym)
             espec["ym"] = max_ym
             altura = base * max_ym
             if espec["y"] + altura > limite:
                 novo_y = max(0, limite - altura)
                 if novo_y != orig_y:
-                    logger.debug("Ajuste '%s.y': %s -> %s", chave, orig_y, novo_y)
+                    _logger().debug("Ajuste '%s.y': %s -> %s", chave, orig_y, novo_y)
                 espec["y"] = novo_y
 
 def _ajustar_largura_layout(layout: Layout, largura_mm: int) -> None:
@@ -376,7 +408,7 @@ def _ajustar_largura_layout(layout: Layout, largura_mm: int) -> None:
         largura_unit = text_width_dots(texto, font, 1)
         max_xm = max(1, (limite - orig_x) // max(largura_unit, 1))
         if max_xm < orig_xm:
-            logger.debug("Ajuste '%s.xm': %s -> %s", chave, orig_xm, max_xm)
+            _logger().debug("Ajuste '%s.xm': %s -> %s", chave, orig_xm, max_xm)
             espec["xm"] = max_xm
             xm = max_xm
             largura = text_width_dots(texto, font, xm)
@@ -384,7 +416,7 @@ def _ajustar_largura_layout(layout: Layout, largura_mm: int) -> None:
         if espec["x"] + largura > limite:
             novo_x = max(0, limite - largura)
             if novo_x != orig_x:
-                logger.debug("Ajuste '%s.x': %s -> %s", chave, orig_x, novo_x)
+                _logger().debug("Ajuste '%s.x': %s -> %s", chave, orig_x, novo_x)
             espec["x"] = novo_x
 
     # Ajuste do logo
@@ -393,7 +425,7 @@ def _ajustar_largura_layout(layout: Layout, largura_mm: int) -> None:
 def aplicar_template(nome: str) -> Template:
     """Carrega e ajusta o template solicitado."""
     tpl = template_manager.get_template(nome)
-    logger.info(
+    _logger().info(
         "Template aplicado: nome=%s largura_mm=%s altura_mm=%s gap_mm=%s direction=%s",
         nome,
         tpl.largura_mm,
@@ -410,6 +442,7 @@ class ErroImpressora(TypedDict):
 def descobrir_impressora_padrao() -> str | None:
     """Retorna o nome da impressora configurada ou a padrão do sistema."""
     try:
+        win32print = _get_win32print()
         nome = win32print.GetDefaultPrinter()
         config = carregar_config()
         config["ultima_impressora"] = nome
@@ -420,6 +453,7 @@ def descobrir_impressora_padrao() -> str | None:
             config = carregar_config()
             nome = config.get("ultima_impressora")
             if nome:
+                win32print = _get_win32print()
                 handle = win32print.OpenPrinter(nome)
                 win32print.ClosePrinter(handle)
                 return str(nome)
@@ -464,13 +498,13 @@ class TsplBuilder:
             altura_logo = self.altura_px
             novo_y = max(0, limite - altura_logo)
             if novo_y != logo_y:
-                logger.debug("Ajuste 'logo_y': %s -> %s", logo_y, novo_y)
+                _logger().debug("Ajuste 'logo_y': %s -> %s", logo_y, novo_y)
                 self.layout["logo_y"] = novo_y
                 logo_y = novo_y
             if altura_logo > limite:
                 max_largura = max(1, int(largura_desejada * limite / altura_logo))
                 if max_largura != largura_desejada:
-                    logger.debug(
+                    _logger().debug(
                         "Ajuste 'logo_largura': %s -> %s", largura_desejada, max_largura
                     )
                 self.layout["logo_largura"] = max_largura
@@ -545,7 +579,7 @@ class TsplBuilder:
             partes.append(cmd)
 
         tspl = "".join(partes)
-        logger.debug("tspl_first_200=%r", tspl[:200])
+        _logger().debug("tspl_first_200=%r", tspl[:200])
         return tspl
 
     def build_pagina_teste(self) -> str:
@@ -595,7 +629,7 @@ class TsplBuilder:
 
         cmd += self.bitmap.decode(ENCODING, errors="replace")
         cmd += f"\r\n{barras}PRINT 1\r\n"
-        logger.debug("tspl_first_200=%r", cmd[:200])
+        _logger().debug("tspl_first_200=%r", cmd[:200])
         return cmd
 
 def montar_tspl(template: Template, dados: dict) -> str:
@@ -614,7 +648,7 @@ class PrinterService:
         logger: logging.Logger | None = None,
     ) -> None:
         self.printer_name = printer_name
-        self.logger = logger or globals().get("logger")
+        self.logger = logger or _logger()
 
     def send(
         self, tspl: str, *, retry: int = 1
@@ -627,6 +661,8 @@ class PrinterService:
         log = self.logger
         if log:
             log.debug("impressora=%s tspl_len=%d", nome_imp, len(tspl))
+
+        win32print = _get_win32print()
 
         for tentativa in range(1, retry + 1):
             if log:
