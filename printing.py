@@ -362,7 +362,9 @@ def _ajustar_altura_layout(layout: Layout, altura_mm: int) -> None:
                 if outro in layout and isinstance(layout[outro], dict):
                     outro_y = layout[outro].get("y")
                     if outro_y != novo_y:
-                        _logger().debug("Ajuste '%s.y': %s -> %s", outro, outro_y, novo_y)
+                        _logger().debug(
+                            "Ajuste '%s.y': %s -> %s", outro, outro_y, novo_y
+                        )
                 layout[outro]["y"] = novo_y
         else:
             max_ym = max(1, (limite - espec["y"]) // base)
