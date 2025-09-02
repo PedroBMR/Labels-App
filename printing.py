@@ -491,6 +491,7 @@ class TsplBuilder:
                     )
                 self.layout["logo_largura"] = max_largura
                 largura_desejada = max_largura
+                importlib.import_module("utils").melhorar_logo.cache_clear()
                 self.bitmap, self.largura_bytes, self.altura_px = melhorar_logo(
                     logo_path, largura_desejada=max_largura
                 )

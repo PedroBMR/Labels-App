@@ -18,6 +18,7 @@ import os
 import shutil
 import sys
 from datetime import datetime
+from functools import lru_cache
 
 from PIL import Image
 
@@ -83,6 +84,7 @@ def normalize_text(texto: str, *, max_len: int) -> tuple[str, str | None]:
     return limpo, None
 
 
+@lru_cache(maxsize=None)
 def melhorar_logo(
     path_logo: str, largura_desejada: int = 160
 ) -> tuple[bytes, int, int]:
