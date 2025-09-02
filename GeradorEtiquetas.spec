@@ -10,7 +10,6 @@ The final executable is saved as ``dist/GeradorEtiquetas.exe``.
 """
 
 import os
-from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.building.datastruct import Tree
 
 # ---------------------------------------------------------------------------
@@ -20,10 +19,18 @@ MAIN_SCRIPT = "main.py"                        # Entry point of the program
 ASSETS_DIR = "assets"                          # Folder bundled with the app
 ICON_PATH = os.path.join(ASSETS_DIR, "color.ico")
 
-# Collect submodules automatically so manual hiddenimports are not required.
-hiddenimports = []
-for pkg in ("PyQt5", "win32print", "win32api", "win32ui"):
-    hiddenimports += collect_submodules(pkg)
+# Explicit list of modules required at runtime.
+hiddenimports = [
+    "PyQt5.QtCore",
+    "PyQt5.QtGui",
+    "PyQt5.QtWidgets",
+    "pywintypes",
+    "pythoncom",
+    "win32timezone",
+    # PyWin32 modules used directly or by win32print
+    "win32print",
+    "win32api",
+]
 
 # Include the entire assets directory preserving structure
 # Use a list of tuples to specify source and destination pairs
