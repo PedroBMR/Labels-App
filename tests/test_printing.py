@@ -288,6 +288,7 @@ def test_templates_chave_invalida(monkeypatch):
 
 def test_templates_json_cache(monkeypatch, tmp_path):
     import json
+
     import printing
 
     file_path = tmp_path / "templates.json"
@@ -306,7 +307,9 @@ def test_templates_json_cache(monkeypatch, tmp_path):
     monkeypatch.setattr(json, "load", counting_load)
 
     monkeypatch.setattr(
-        printing, "recurso_caminho", lambda p: file_path if p == "templates.json" else "fake"
+        printing,
+        "recurso_caminho",
+        lambda p: file_path if p == "templates.json" else "fake",
     )
 
     printing.template_manager.recarregar_templates()
