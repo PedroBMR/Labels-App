@@ -32,6 +32,7 @@ import logging
 import time
 import unicodedata
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TypedDict
 
 from printing_utils import (
@@ -66,6 +67,13 @@ def recurso_caminho(*args, **kwargs):
     return utils.recurso_caminho(*args, **kwargs)
 
 
+@lru_cache(maxsize=1)
+def _load_templates_json() -> dict[str, dict]:
+    path = recurso_caminho("templates.json")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
 def _logger():
     return importlib.import_module("log").logger
 
@@ -97,44 +105,17 @@ class Template:
 
 
 class TemplateManager:
-    def __init__(self) -> None:
-        self._templates_dim: dict[str, dict] | None = None
-        self._templates_dim_mtime: float | None = None
-
-    def _load_templates_dim(self, force: bool = False) -> dict[str, dict]:
+    def _load_templates_dim(self) -> dict[str, dict]:
         """Carrega templates.json. Aceita tanto dimensões quanto posições.
-        Se houver falha, retorna fallback somente com dimensões.
-        """
+        Se houver falha, retorna fallback somente com dimensões."""
         try:
-            path = recurso_caminho("templates.json")
-            mtime: float | None = None
-            try:
-                import os
-                mtime = os.path.getmtime(path)
-            except Exception:
-                pass
-
-            needs_reload = (
-                force
-                or self._templates_dim is None
-                or (
-                    self._templates_dim_mtime is not None
-                    and mtime
-                    and mtime != self._templates_dim_mtime
-                )
+            templates = _load_templates_json()
+            _logger().info(
+                "Templates carregados de %s: %s",
+                recurso_caminho("templates.json"),
+                ", ".join(templates.keys()),
             )
-            if needs_reload:
-                with open(path, "r", encoding="utf-8") as f:
-                    self._templates_dim = json.load(f)
-                self._templates_dim_mtime = mtime
-                _logger().info(
-                    "Templates carregados de %s: %s",
-                    path,
-                    ", ".join(self._templates_dim.keys()),
-                )
-            if self._templates_dim is None:
-                return _DEFAULT_TEMPLATE_DIM.copy()
-            return self._templates_dim
+            return templates
         except Exception:
             _logger().exception(
                 "Falha ao carregar templates.json; usando dimensões padrão."
@@ -143,9 +124,8 @@ class TemplateManager:
 
     def recarregar_templates(self) -> None:
         """Força recarga do templates.json (dimensões e, se existir, posições)."""
-        self._templates_dim = None
-        self._templates_dim_mtime = None
-        self._load_templates_dim(force=True)
+        _load_templates_json.cache_clear()
+        self._load_templates_dim()
 
     def _resolver_nome_template(
         self, nome: str, d: dict[str, dict]
