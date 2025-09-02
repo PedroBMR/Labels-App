@@ -35,6 +35,26 @@ def test_melhorar_logo_shape(tmp_path):
     assert len(bitmap) == largura_bytes * altura
 
 
+def test_melhorar_logo_cache(monkeypatch, tmp_path):
+    img_path = tmp_path / "logo.png"
+    Image.new("L", (8, 8), color=255).save(img_path)
+
+    original_open = utils.Image.open
+    calls = {"count": 0}
+
+    def counting_open(path: str):
+        calls["count"] += 1
+        return original_open(path)
+
+    monkeypatch.setattr(utils.Image, "open", counting_open)
+    utils.melhorar_logo.cache_clear()
+
+    utils.melhorar_logo(str(img_path), largura_desejada=8)
+    utils.melhorar_logo(str(img_path), largura_desejada=8)
+
+    assert calls["count"] == 1
+
+
 def test_backup_limite(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(utils, "_base_dir", lambda: str(tmp_path))
 
