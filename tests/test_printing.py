@@ -233,8 +233,13 @@ def test_templates_arquivo_inexistente(monkeypatch, tmp_path, caplog):
     )
     printing.template_manager.recarregar_templates()
 
-    with caplog.at_level(logging.ERROR):
-        templates = printing.listar_templates()
+    with caplog.at_level(logging.ERROR, logger="app"):
+        from log import logger as app_logger
+        app_logger.addHandler(caplog.handler)
+        try:
+            templates = printing.listar_templates()
+        finally:
+            app_logger.removeHandler(caplog.handler)
 
     assert templates == ["100x30", "60x80"]
     assert "templates.json" in caplog.text
@@ -669,8 +674,13 @@ def test_retry_exponencial_logging(monkeypatch, caplog):
     tpl = printing.aplicar_template("Padrão")
     tspl = printing.montar_tspl(tpl, dados)
 
-    with caplog.at_level(logging.INFO):
-        ok, erro = printing.imprimir_etiqueta(tspl, repetir_em_falha=True)
+    with caplog.at_level(logging.INFO, logger="app"):
+        from log import logger as app_logger
+        app_logger.addHandler(caplog.handler)
+        try:
+            ok, erro = printing.imprimir_etiqueta(tspl, repetir_em_falha=True)
+        finally:
+            app_logger.removeHandler(caplog.handler)
 
     assert not ok
     assert fake.calls == 3
