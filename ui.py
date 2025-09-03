@@ -525,12 +525,12 @@ class EtiquetaApp(QWidget):
                 "background:#24292e;color:#eeeeee;padding:8px 18px;border-radius:6px;"
                 "font-size: 14px;border: none;",
             )
-        
+
         self.cancelar_btn.setStyleSheet(
             "background:#24292e;color:#ff5555;padding:8px 18px;border-radius:6px;"
             "font-size: 14px;border: none;",
         )
-        
+
         for i, btn in enumerate(
             (
                 self.imprimir_btn,
@@ -540,7 +540,7 @@ class EtiquetaApp(QWidget):
             )
         ):
             botoes.addWidget(btn, i // 2, i % 2)
-        
+
         layout_quadro.addLayout(botoes)
 
         # Status
