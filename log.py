@@ -60,8 +60,8 @@ def _create_tspl_handler(formatter: logging.Formatter) -> logging.Handler:
 
 logger = logging.getLogger("app")
 logger.propagate = False
+logger.setLevel(logging.INFO)
 _DEBUG = os.getenv("DEBUG", "").lower() in {"1", "true", "yes"}
-logger.setLevel(logging.DEBUG if _DEBUG else logging.INFO)
 
 _formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 
