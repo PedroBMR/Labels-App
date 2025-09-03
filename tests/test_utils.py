@@ -79,11 +79,15 @@ def test_backup_limite(tmp_path, monkeypatch, caplog):
 
     monkeypatch.setattr(utils, "datetime", FakeDateTime)
 
-    caplog.set_level(logging.INFO, logger="app")
-
-    utils.backup_automatico()
-    utils.backup_automatico()
-    utils.backup_automatico()
+    with caplog.at_level(logging.INFO, logger="app"):
+        from log import logger as app_logger
+        app_logger.addHandler(caplog.handler)
+        try:
+            utils.backup_automatico()
+            utils.backup_automatico()
+            utils.backup_automatico()
+        finally:
+            app_logger.removeHandler(caplog.handler)
 
     destino = tmp_path / "_backup"
     backups = sorted(destino.glob("historico_impressoes_*.csv"))

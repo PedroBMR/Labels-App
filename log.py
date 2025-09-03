@@ -34,6 +34,7 @@ def _create_file_handler(formatter: logging.Formatter) -> logging.Handler:
         maxBytes=1_000_000,
         backupCount=5,
         encoding="utf-8",
+        delay=True,
     )
     handler.setFormatter(formatter)
     return handler
@@ -50,6 +51,7 @@ def _create_tspl_handler(formatter: logging.Formatter) -> logging.Handler:
         maxBytes=1_000_000,
         backupCount=5,
         encoding="utf-8",
+        delay=True,
     )
     handler.setFormatter(formatter)
     handler.addFilter(_TsplFilter())
@@ -57,17 +59,32 @@ def _create_tspl_handler(formatter: logging.Formatter) -> logging.Handler:
 
 
 logger = logging.getLogger("app")
+logger.propagate = False
 _DEBUG = os.getenv("DEBUG", "").lower() in {"1", "true", "yes"}
 logger.setLevel(logging.DEBUG if _DEBUG else logging.INFO)
 
 _formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-logger.addHandler(_create_file_handler(_formatter))
-logger.addHandler(_create_tspl_handler(_formatter))
+
+_boot_handler = logging.StreamHandler()
+_boot_handler.setLevel(logging.INFO)
+_boot_handler.setFormatter(logging.Formatter("%(message)s"))
+logger.addHandler(_boot_handler)
 
 if _DEBUG:
     console = logging.StreamHandler()
     console.setFormatter(_formatter)
     logger.addHandler(console)
+
+
+def enable_file_logging() -> None:
+    """Ativa logging em arquivos e remove o handler de boot."""
+
+    logger.addHandler(_create_file_handler(_formatter))
+    logger.addHandler(_create_tspl_handler(_formatter))
+
+    if _boot_handler in logger.handlers:
+        logger.removeHandler(_boot_handler)
+        _boot_handler.close()
 
 
 def _thread_excepthook(args: threading.ExceptHookArgs) -> None:
