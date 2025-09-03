@@ -22,8 +22,8 @@ import faulthandler
 import os
 import signal
 import sys
-import traceback
 import time
+import traceback
 from datetime import datetime
 
 BOOT_START = time.perf_counter()
@@ -220,7 +220,10 @@ if __name__ == "__main__":
                 nonlocal _printer_logged
                 _orig_verificar(self)
                 if not _printer_logged:
-                    logger.info("Boot: após verificar impressora %.3fs", time.perf_counter() - BOOT_START)
+                    logger.info(
+                        "Boot: após verificar impressora %.3fs",
+                        time.perf_counter() - BOOT_START,
+                    )
                     _printer_logged = True
             EtiquetaApp._verificar_impressora = _verificar_wrapper
         _patch_printer()
