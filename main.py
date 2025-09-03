@@ -95,7 +95,12 @@ def _early_close_stream():
 # =========================
 from _version import __version__  # noqa: E402
 from log import LOG_FILE, logger  # noqa: E402
-from qt_compat import QApplication, QtMsgType, qInstallMessageHandler  # noqa: E402
+from qt_compat import (  # noqa: E402
+    QApplication,
+    QThread,
+    QtMsgType,
+    qInstallMessageHandler,
+)
 from ui import EtiquetaApp  # noqa: E402
 from utils import migrate_legacy_data  # noqa: E402
 
@@ -197,6 +202,20 @@ def ensure_version_file() -> None:
         logger.exception("Falha ao gravar version.txt")
 
 
+class _PyWin32Preload(QThread):
+    """Pre-importa módulos pywin32 sem bloquear o thread principal."""
+
+    def run(self) -> None:  # noqa: D401 - método do QThread
+        import importlib
+
+        try:
+            importlib.import_module("win32print")
+            importlib.import_module("win32api")
+        except Exception:
+            # Ignore falhas em sistemas que não sejam Windows ou sem pywin32
+            pass
+
+
 if __name__ == "__main__":
     # Liga a captura "oficial" (Qt + excepthook + integra com logger)
     _setup_crash_capture()
@@ -231,6 +250,9 @@ if __name__ == "__main__":
         janela = EtiquetaApp()
         janela.setWindowTitle(f"Gerador de Etiquetas — v{__version__}")
         janela.show()
+        janela._pywin32_preload = _PyWin32Preload()
+        janela._pywin32_preload.finished.connect(janela._pywin32_preload.deleteLater)
+        janela._pywin32_preload.start()
         logger.info("Boot: após criar UI %.3fs", time.perf_counter() - BOOT_START)
 
         # 4) Entra no loop da UI
