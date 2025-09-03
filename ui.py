@@ -270,6 +270,13 @@ class EtiquetaApp(QWidget):
         )
         self._atualizar_contagem_label()
 
+        self._logo_pixmap: QPixmap | None = None
+        logo_path = recurso_caminho("color.png")
+        if os.path.exists(logo_path):
+            self._logo_pixmap = QPixmap(logo_path).scaledToWidth(
+                120, Qt.SmoothTransformation
+            )
+
         self._setup_ui()
         self._aplicar_tema_escuro()
         self._registrar_logger_ui()
@@ -356,10 +363,12 @@ class EtiquetaApp(QWidget):
         logo_label = QLabel()
         logo_label.setAlignment(Qt.AlignCenter)
         logo_path = recurso_caminho("color.png")
-        if os.path.exists(logo_path):
-            logo_label.setPixmap(
-                QPixmap(logo_path).scaledToWidth(120, Qt.SmoothTransformation)
+        if os.path.exists(logo_path) and self._logo_pixmap is None:
+            self._logo_pixmap = QPixmap(logo_path).scaledToWidth(
+                120, Qt.SmoothTransformation
             )
+        if self._logo_pixmap is not None:
+            logo_label.setPixmap(self._logo_pixmap)
         logo_area.addWidget(logo_label)
         titulo = QLabel("Gerador de Etiquetas CONIMS")
         titulo.setFont(QFont("Segoe UI", 14, QFont.Bold))
