@@ -309,6 +309,7 @@ class EtiquetaApp(QWidget):
             geo.moveCenter(centro)
             self.move(geo.topLeft())
             self._aplicou_tamanho_inicial = True
+            QTimer.singleShot(0, self._carregar_templates)
             QTimer.singleShot(
                 0,
                 lambda: self._aplicar_template(self.template_input.currentText()),
@@ -408,25 +409,12 @@ class EtiquetaApp(QWidget):
         self.volumes_input.setMinimum(1)
         self.volumes_input.lineEdit().returnPressed.connect(self._imprimir_etiqueta)
         self.template_input = QComboBox()
-        self.template_input.addItems(listar_templates())
         self.template_input.currentTextChanged.connect(self._aplicar_template)
         self.template_input.currentTextChanged.connect(self._salvar_template_config)
         self.template_input.currentTextChanged.connect(self._update_print_button_state)
 
         self.toggle_template_btn = QPushButton("Alternar modelo")
         self.toggle_template_btn.clicked.connect(self._toggle_template)
-
-        # Seleciona modelo preferido (sem usar "Padrão")
-        preferido = self.config.get("template", "")
-        idx_tpl = self.template_input.findText(preferido)
-        if idx_tpl < 0:
-            idx_tpl = self.template_input.findText("100x30")
-            if idx_tpl < 0:
-                idx_tpl = self.template_input.findText("60x80")
-            if idx_tpl < 0 and self.template_input.count() > 0:
-                idx_tpl = 0
-        if idx_tpl >= 0:
-            self.template_input.setCurrentIndex(idx_tpl)
 
         # Estilo base para inputs (reaplicado nas validações)
         def _estilo(w):
@@ -644,6 +632,20 @@ class EtiquetaApp(QWidget):
     # =========================
     # Listas e normalização
     # =========================
+    def _carregar_templates(self) -> None:
+        self.template_input.clear()
+        self.template_input.addItems(listar_templates())
+        preferido = self.config.get("template", "")
+        idx_tpl = self.template_input.findText(preferido)
+        if idx_tpl < 0:
+            idx_tpl = self.template_input.findText("100x30")
+            if idx_tpl < 0:
+                idx_tpl = self.template_input.findText("60x80")
+            if idx_tpl < 0 and self.template_input.count() > 0:
+                idx_tpl = 0
+        if idx_tpl >= 0:
+            self.template_input.setCurrentIndex(idx_tpl)
+
     def _popular_combo(
         self, combo: QComboBox, recentes: list[str], padroes: list[str]
     ) -> None:
