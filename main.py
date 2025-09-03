@@ -22,8 +22,11 @@ import faulthandler
 import os
 import signal
 import sys
+import time
 import traceback
 from datetime import datetime
+
+BOOT_START = time.perf_counter()
 
 # Diretório do script (funciona no .py e também com PyInstaller em desenvolvimento)
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -95,6 +98,8 @@ from log import LOG_FILE, logger  # noqa: E402
 from qt_compat import QApplication, QtMsgType, qInstallMessageHandler  # noqa: E402
 from ui import EtiquetaApp  # noqa: E402
 from utils import migrate_legacy_data  # noqa: E402
+
+logger.info("Boot: após imports %.3fs", time.perf_counter() - BOOT_START)
 
 # =========================
 # Captura "oficial" (integra com logger e Qt)
@@ -208,9 +213,25 @@ if __name__ == "__main__":
         ensure_version_file()
 
         # 3) Janela principal
+        def _patch_printer():
+            _orig_verificar = EtiquetaApp._verificar_impressora
+            _printer_logged = False
+            def _verificar_wrapper(self):
+                nonlocal _printer_logged
+                _orig_verificar(self)
+                if not _printer_logged:
+                    logger.info(
+                        "Boot: após verificar impressora %.3fs",
+                        time.perf_counter() - BOOT_START,
+                    )
+                    _printer_logged = True
+            EtiquetaApp._verificar_impressora = _verificar_wrapper
+        _patch_printer()
+
         janela = EtiquetaApp()
         janela.setWindowTitle(f"Gerador de Etiquetas — v{__version__}")
         janela.show()
+        logger.info("Boot: após criar UI %.3fs", time.perf_counter() - BOOT_START)
 
         # 4) Entra no loop da UI
         # exec_ was renamed to exec in Qt6 / PySide6; use getattr for compatibility
