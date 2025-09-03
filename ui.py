@@ -61,7 +61,6 @@ from qt_compat import (
     QFormLayout,
     QFrame,
     QGridLayout,
-    QHBoxLayout,
     QIcon,
     QInputDialog,
     QIntValidator,
@@ -473,12 +472,12 @@ class EtiquetaApp(QWidget):
         layout_quadro.addWidget(self.retry_checkbox)
 
         # Botões
-        botoes = QHBoxLayout()
-        self.imprimir_btn = QPushButton("Imprimir Agora")
+        botoes = QGridLayout()
+        self.imprimir_btn = QPushButton("Imprimir\nAgora")
         self.imprimir_btn.setDefault(True)
         self.imprimir_btn.clicked.connect(self._imprimir_etiqueta)
 
-        self.reimprimir_btn = QPushButton("Reimprimir Última")
+        self.reimprimir_btn = QPushButton("Reimprimir\nÚltima")
         self.reimprimir_btn.clicked.connect(self._reimprimir_ultima)
 
         self.cancelar_btn = QPushButton("Cancelar")
@@ -524,17 +523,24 @@ class EtiquetaApp(QWidget):
         ):
             b.setStyleSheet(
                 "background:#24292e;color:#eeeeee;padding:8px 18px;border-radius:6px;"
-                "font-size: 14px;border: none;"
+                "font-size: 14px;border: none;",
             )
-            botoes.addWidget(b)
-
-        botoes.addWidget(self.menu_btn)
-
+        
         self.cancelar_btn.setStyleSheet(
             "background:#24292e;color:#ff5555;padding:8px 18px;border-radius:6px;"
-            "font-size: 14px;border: none;"
+            "font-size: 14px;border: none;",
         )
-
+        
+        for i, btn in enumerate(
+            (
+                self.imprimir_btn,
+                self.reimprimir_btn,
+                self.cancelar_btn,
+                self.menu_btn,
+            )
+        ):
+            botoes.addWidget(btn, i // 2, i % 2)
+        
         layout_quadro.addLayout(botoes)
 
         # Status
