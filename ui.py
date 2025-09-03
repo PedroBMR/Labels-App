@@ -166,16 +166,13 @@ class ConfigDialog(QDialog):
         self.setWindowTitle("Configurações")
         layout = QVBoxLayout(self)
 
+        self._settings = settings
+
         form = QFormLayout()
         self.printer_edit = QLineEdit(settings.get("ultima_impressora", ""))
         form.addRow("Impressora:", self.printer_edit)
 
         self.template_combo = QComboBox()
-        self.template_combo.addItems(listar_templates())
-        # evita cair em "Padrão" (que não existe no JSON)
-        idx = self.template_combo.findText(settings.get("template", ""))
-        if idx >= 0:
-            self.template_combo.setCurrentIndex(idx)
         form.addRow("Modelo:", self.template_combo)
 
         self.retry_check = QCheckBox("Repetir automaticamente em falha (3x)")
@@ -197,6 +194,18 @@ class ConfigDialog(QDialog):
         botoes.accepted.connect(self.accept)
         botoes.rejected.connect(self.reject)
         layout.addWidget(botoes)
+
+    def showEvent(self, event: QCloseEvent) -> None:
+        super().showEvent(event)
+        QTimer.singleShot(0, self._preencher_templates)
+
+    def _preencher_templates(self) -> None:
+        self.template_combo.clear()
+        self.template_combo.addItems(listar_templates())
+        preferido = self._settings.get("template", "")
+        idx = self.template_combo.findText(preferido)
+        if idx >= 0:
+            self.template_combo.setCurrentIndex(idx)
 
     def obter_config(self) -> dict[str, Any]:
         return {
