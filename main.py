@@ -96,7 +96,7 @@ def _early_close_stream():
 import logging  # noqa: E402
 
 from _version import __version__  # noqa: E402
-from log import LOG_FILE, enable_file_logging, logger  # noqa: E402
+from log import LOG_FILE, boot_logging, enable_file_logging, logger  # noqa: E402
 from qt_compat import (  # noqa: E402
     QApplication,
     QThread,
@@ -105,8 +105,6 @@ from qt_compat import (  # noqa: E402
 )
 from ui import EtiquetaApp  # noqa: E402
 from utils import migrate_legacy_data  # noqa: E402
-
-logger.info("Boot: após imports %.3fs", time.perf_counter() - BOOT_START)
 
 # =========================
 # Captura "oficial" (integra com logger e Qt)
@@ -219,59 +217,61 @@ class _PyWin32Preload(QThread):
 
 
 if __name__ == "__main__":
-    # Liga a captura "oficial" (Qt + excepthook + integra com logger)
-    _setup_crash_capture()
+    with boot_logging():
+        logger.info("Boot: após imports %.3fs", time.perf_counter() - BOOT_START)
+        # Liga a captura "oficial" (Qt + excepthook + integra com logger)
+        _setup_crash_capture()
 
-    try:
-        logger.info("Aplicação iniciada (v%s)", __version__)
-        # 1) Migra dados do legado para assets (uma vez só)
-        migrate_legacy_data()
-
-        # 2) Cria a aplicação Qt
-        app = QApplication(sys.argv)
-
-        # Garante que version.txt existe/está atualizado
-        ensure_version_file()
-
-        # 3) Janela principal
-        def _patch_printer():
-            _orig_verificar = EtiquetaApp._verificar_impressora
-            _printer_logged = False
-            def _verificar_wrapper(self):
-                nonlocal _printer_logged
-                _orig_verificar(self)
-                if not _printer_logged:
-                    logger.info(
-                        "Boot: após verificar impressora %.3fs",
-                        time.perf_counter() - BOOT_START,
-                    )
-                    _printer_logged = True
-            EtiquetaApp._verificar_impressora = _verificar_wrapper
-        _patch_printer()
-
-        janela = EtiquetaApp()
-        janela.setWindowTitle(f"Gerador de Etiquetas — v{__version__}")
-        janela.show()
-        janela._pywin32_preload = _PyWin32Preload()
-        janela._pywin32_preload.finished.connect(janela._pywin32_preload.deleteLater)
-        janela._pywin32_preload.start()
-        logger.info("Boot: após criar UI %.3fs", time.perf_counter() - BOOT_START)
-        enable_file_logging()
-        if os.getenv("DEBUG", "").lower() in {"1", "true", "yes"}:
-            logger.setLevel(logging.DEBUG)
-
-        # 4) Entra no loop da UI
-        # exec_ was renamed to exec in Qt6 / PySide6; use getattr for compatibility
-        sys.exit(getattr(app, "exec", app.exec_)())
-
-    except Exception:
-        # Loga qualquer falha inesperada; também vai para crash_stderr.log via
-        # excepthook
-        logger.exception("Crash fatal na thread principal")
         try:
-            _CRASH_STREAM.write("\n=== MAIN EXCEPTION ===\n")  # type: ignore[union-attr]
-            traceback.print_exc(file=_CRASH_STREAM)  # type: ignore[arg-type]
-            _CRASH_STREAM.flush()  # type: ignore[union-attr]
+            logger.info("Aplicação iniciada (v%s)", __version__)
+            # 1) Migra dados do legado para assets (uma vez só)
+            migrate_legacy_data()
+
+            # 2) Cria a aplicação Qt
+            app = QApplication(sys.argv)
+
+            # Garante que version.txt existe/está atualizado
+            ensure_version_file()
+
+            # 3) Janela principal
+            def _patch_printer():
+                _orig_verificar = EtiquetaApp._verificar_impressora
+                _printer_logged = False
+                def _verificar_wrapper(self):
+                    nonlocal _printer_logged
+                    _orig_verificar(self)
+                    if not _printer_logged:
+                        logger.info(
+                            "Boot: após verificar impressora %.3fs",
+                            time.perf_counter() - BOOT_START,
+                        )
+                        _printer_logged = True
+                EtiquetaApp._verificar_impressora = _verificar_wrapper
+            _patch_printer()
+
+            janela = EtiquetaApp()
+            janela.setWindowTitle(f"Gerador de Etiquetas — v{__version__}")
+            janela.show()
+            janela._pywin32_preload = _PyWin32Preload()
+            janela._pywin32_preload.finished.connect(janela._pywin32_preload.deleteLater)
+            janela._pywin32_preload.start()
+            logger.info("Boot: após criar UI %.3fs", time.perf_counter() - BOOT_START)
+            enable_file_logging()
+            if os.getenv("DEBUG", "").lower() in {"1", "true", "yes"}:
+                logger.setLevel(logging.DEBUG)
+
+            # 4) Entra no loop da UI
+            # exec_ was renamed to exec in Qt6 / PySide6; use getattr for compatibility
+            sys.exit(getattr(app, "exec", app.exec_)())
+
         except Exception:
-            pass
-        raise
+            # Loga qualquer falha inesperada; também vai para crash_stderr.log via
+            # excepthook
+            logger.exception("Crash fatal na thread principal")
+            try:
+                _CRASH_STREAM.write("\n=== MAIN EXCEPTION ===\n")  # type: ignore[union-attr]
+                traceback.print_exc(file=_CRASH_STREAM)  # type: ignore[arg-type]
+                _CRASH_STREAM.flush()  # type: ignore[union-attr]
+            except Exception:
+                pass
+            raise

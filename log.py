@@ -15,8 +15,9 @@ Exemplo:
 import logging
 import os
 import threading
+from contextlib import contextmanager
 from logging.handlers import RotatingFileHandler
-from typing import Callable
+from typing import Callable, Iterator
 
 from utils import _base_dir
 
@@ -65,9 +66,20 @@ _DEBUG = os.getenv("DEBUG", "").lower() in {"1", "true", "yes"}
 
 _formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 
-_boot_handler = logging.StreamHandler()
-_boot_handler.setLevel(logging.INFO)
-_boot_handler.setFormatter(logging.Formatter("%(message)s"))
+
+
+class _BootHandler(logging.Handler):
+    """Handler leve que mantém registros apenas em memória."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.INFO)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:  # pragma: no cover - simples
+        self.records.append(record)
+
+
+_boot_handler = _BootHandler()
 logger.addHandler(_boot_handler)
 
 if _DEBUG:
@@ -76,14 +88,28 @@ if _DEBUG:
     logger.addHandler(console)
 
 
+@contextmanager
+def boot_logging() -> Iterator[None]:
+    """Contexto temporário para o log de boot em memória."""
+
+    try:
+        yield
+    finally:
+        if _boot_handler in logger.handlers:
+            logger.removeHandler(_boot_handler)
+            _boot_handler.close()
+
+
 def enable_file_logging() -> None:
-    """Ativa logging em arquivos e remove o handler de boot."""
+    """Ativa logging em arquivos e persiste logs de boot."""
 
     logger.addHandler(_create_file_handler(_formatter))
     logger.addHandler(_create_tspl_handler(_formatter))
 
     if _boot_handler in logger.handlers:
         logger.removeHandler(_boot_handler)
+        for record in _boot_handler.records:
+            logger.handle(record)
         _boot_handler.close()
 
 
