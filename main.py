@@ -95,6 +95,7 @@ def _early_close_stream():
 # =========================
 from _version import __version__  # noqa: E402
 from log import LOG_FILE, enable_file_logging, logger  # noqa: E402
+import logging  # noqa: E402
 from qt_compat import (  # noqa: E402
     QApplication,
     QThread,
@@ -255,6 +256,8 @@ if __name__ == "__main__":
         janela._pywin32_preload.start()
         logger.info("Boot: após criar UI %.3fs", time.perf_counter() - BOOT_START)
         enable_file_logging()
+        if os.getenv("DEBUG", "").lower() in {"1", "true", "yes"}:
+            logger.setLevel(logging.DEBUG)
 
         # 4) Entra no loop da UI
         # exec_ was renamed to exec in Qt6 / PySide6; use getattr for compatibility
