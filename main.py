@@ -96,7 +96,7 @@ def _early_close_stream():
 import logging  # noqa: E402
 
 from _version import __version__  # noqa: E402
-from log import LOG_FILE, enable_file_logging, logger, boot_logging  # noqa: E402
+from log import LOG_FILE, boot_logging, enable_file_logging, logger  # noqa: E402
 from qt_compat import (  # noqa: E402
     QApplication,
     QThread,
