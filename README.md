@@ -104,7 +104,7 @@ scripts\build_with_assets.ps1
 # executável único, sem console
 scripts\build_onefile.ps1
 
-# modo pasta para depuração
+# modo pasta para depuração (usa `GeradorEtiquetas_onedir.spec` sem UPX)
 scripts\build_onedir.ps1
 ```
 
@@ -115,6 +115,11 @@ final para `dist\GeradorEtiquetas_v{versão}.exe`. Execute
 `assets` gravável para os arquivos de histórico. É possível alterar o nome do
 executável e o ícone definindo as variáveis de ambiente `APP_NAME` e `APP_ICON`
 antes da execução.
+
+Use `scripts\build_onedir.ps1` para gerar um build de desenvolvimento baseado
+em diretório através de `GeradorEtiquetas_onedir.spec`. Nessa configuração, a
+compressão UPX é desativada para acelerar a compilação e evitar problemas de
+depuração.
 
 ---
 

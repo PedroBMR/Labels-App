@@ -19,7 +19,7 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 
 # Build executable
-pyinstaller --noconfirm .\GeradorEtiquetas.spec
+pyinstaller --noconfirm .\GeradorEtiquetas_onedir.spec
 
 # Determine executable name
 $exeName = if ($env:APP_NAME) { $env:APP_NAME } else { 'GeradorEtiquetas' }
