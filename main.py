@@ -93,9 +93,10 @@ def _early_close_stream():
 # =========================
 # IMPORTS reais do app (depois do preâmbulo)
 # =========================
+import logging  # noqa: E402
+
 from _version import __version__  # noqa: E402
 from log import LOG_FILE, enable_file_logging, logger  # noqa: E402
-import logging  # noqa: E402
 from qt_compat import (  # noqa: E402
     QApplication,
     QThread,
