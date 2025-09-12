@@ -19,11 +19,20 @@ MAIN_SCRIPT = "main.py"                        # Entry point of the program
 ASSETS_DIR = "assets"                          # Folder bundled with the app
 ICON_PATH = os.path.join(ASSETS_DIR, "color.ico")
 
+# ----------------------------------------------------------------------------
+# Qt binding configuration
+
+QT_BINDING = os.environ.get("QT_BINDING", "PyQt5")
+
+if QT_BINDING == "PySide6":
+    qt_hiddenimports = ["PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets"]
+    qt_excludes = ["PyQt5", "PyQt5.QtCore", "PyQt5.QtGui", "PyQt5.QtWidgets"]
+else:  # Default to PyQt5
+    qt_hiddenimports = ["PyQt5.QtCore", "PyQt5.QtGui", "PyQt5.QtWidgets"]
+    qt_excludes = ["PySide6", "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets"]
+
 # Explicit list of modules required at runtime.
-hiddenimports = [
-    "PyQt5.QtCore",
-    "PyQt5.QtGui",
-    "PyQt5.QtWidgets",
+hiddenimports = qt_hiddenimports + [
     "pywintypes",
     "pythoncom",
     "win32timezone",
@@ -49,7 +58,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=qt_excludes,
     noarchive=False,
 )
 
