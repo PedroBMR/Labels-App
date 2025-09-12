@@ -18,6 +18,16 @@ foreach ($pkg in $qtConflicts) {
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
 
+# Ensure only one Qt binding is installed
+pip show PyQt5 > $null 2>&1
+$hasPyQt5 = $LASTEXITCODE -eq 0
+pip show PySide6 > $null 2>&1
+$hasPySide6 = $LASTEXITCODE -eq 0
+if ($hasPyQt5 -and $hasPySide6) {
+    Write-Error 'Both PyQt5 and PySide6 are installed. Please uninstall the unnecessary binding.'
+    exit 1
+}
+
 # Build executable
 pyinstaller --noconfirm .\GeradorEtiquetas_onedir.spec
 
