@@ -7,8 +7,17 @@ if (Test-Path '.venv\Scripts\Activate.ps1') {
     & '.\venv\Scripts\Activate.ps1'
 }
 
-# Remove conflicting Qt packages if present
-$qtConflicts = @('pyside6', 'pyside6-addons', 'pyside6-essentials')
+# Determine which Qt binding to use (default: PyQt5)
+$binding = $env:QT_BINDING
+if (-not $binding) { $binding = 'PyQt5' }
+$env:QT_BINDING = $binding
+
+# Remove packages for the opposite binding, if present
+if ($binding -eq 'PySide6') {
+    $qtConflicts = @('pyqt5', 'pyqt5-qt5', 'pyqt5-sip')
+} else {
+    $qtConflicts = @('pyside6', 'pyside6-addons', 'pyside6-essentials')
+}
 foreach ($pkg in $qtConflicts) {
     pip show $pkg > $null 2>&1
     if ($LASTEXITCODE -eq 0) { pip uninstall -y $pkg }
@@ -17,6 +26,13 @@ foreach ($pkg in $qtConflicts) {
 # Install runtime and development dependencies
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
+
+# Install the selected Qt binding
+if ($binding -eq 'PySide6') {
+    pip install -r requirements-pyside6.txt
+} else {
+    pip install -r requirements-pyqt5.txt
+}
 
 # Ensure only one Qt binding is installed
 pip show PyQt5 > $null 2>&1
@@ -52,3 +68,4 @@ $version = (
 
 $dest = Join-Path 'dist' "${exeName}_v$version.exe"
 Copy-Item -Force -Path $src -Destination $dest
+
