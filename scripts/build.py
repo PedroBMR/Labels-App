@@ -95,7 +95,8 @@ def ensure_virtualenv_on_path() -> None:
     line length limit and keep the logic easy to follow.
     """
 
-    if sys.prefix != sys.base_prefix:
+    inside_venv = sys.prefix != sys.base_prefix
+    if inside_venv:
         debug("Interpreter already running inside a virtual environment")
         return
 
@@ -122,28 +123,47 @@ def package_installed(name: str) -> bool:
     return spec is not None
 
 
+def check_qt_environment(conflicts: Iterable[str]) -> set[str]:
+    """Return the conflicting Qt packages detected in the environment."""
+
+    return {
+        conflict
+        for conflict in conflicts
+        if package_installed(conflict)
+    }
+
+
 def validate_binding(binding: str) -> None:
     """Ensure that the selected Qt binding is available and conflict free."""
 
     if binding not in QT_BINDINGS:
         supported = ", ".join(sorted(QT_BINDINGS))
-        raise BuildError(f"Unknown Qt binding '{binding}'. Choose one of {supported}.")
+        message = (
+            f"Unknown Qt binding '{binding}'. "
+            f"Choose one of {supported}."
+        )
+        raise BuildError(message)
 
     config = QT_BINDINGS[binding]
     module_name = config["module"]
     conflicts = config["conflicts"]
 
     if not package_installed(module_name):
-        print(
-            "[build] Warning: the selected Qt binding does not appear to be installed."
+        warning = (
+            "[build] Warning: the selected Qt binding does not appear to be "
+            "installed."
         )
+        print(warning)
 
-    for conflict in conflicts:
-        if package_installed(conflict):
-            raise BuildError(
-                "Both Qt bindings are installed. Uninstall the unused binding before "
-                "building the executable."
-            )
+    detected_conflicts = check_qt_environment(conflicts)
+    if detected_conflicts:
+        conflicts_list = ", ".join(sorted(detected_conflicts))
+        message = (
+            "Both Qt bindings are installed "
+            f"({conflicts_list}). "
+            "Uninstall the unused binding before building the executable."
+        )
+        raise BuildError(message)
 
 
 # ---------------------------------------------------------------------------
@@ -165,15 +185,14 @@ def assemble_pyinstaller_args(
     within the configured 88-character limit.
     """
 
-    args: list[str] = [
+    base_command = [
         sys.executable,
         "-m",
         "PyInstaller",
         "--noconfirm",
-        str(spec_path),
-        "--name",
-        exe_name,
     ]
+    spec_arguments = [str(spec_path), "--name", exe_name]
+    args: list[str] = [*base_command, *spec_arguments]
 
     if clean:
         args.append("--clean")
@@ -183,11 +202,9 @@ def assemble_pyinstaller_args(
     assets_spec = f"{ASSETS_DIR}{os.pathsep}{ASSETS_DIR.name}"
     args.extend(["--add-data", assets_spec])
 
-    if binding == "PySide6":
-        qt_exclude = ["--exclude-module", "PyQt5"]
-    else:
-        qt_exclude = ["--exclude-module", "PySide6"]
-    args.extend(qt_exclude)
+    module_to_exclude = "PyQt5" if binding == "PySide6" else "PySide6"
+    exclude_args = ["--exclude-module", module_to_exclude]
+    args.extend(exclude_args)
 
     hidden_imports = [
         "--hidden-import",
@@ -228,11 +245,12 @@ def sign_executable(executable: Path) -> None:
         return
 
     timestamp = TIMESTAMP_URL
+    hash_algorithm = "SHA256"
     sign_command = [
         signtool,
         "sign",
         "/fd",
-        "SHA256",
+        hash_algorithm,
         "/a",
         "/tr",
         timestamp,
@@ -327,5 +345,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    exit_code = main()
+    raise SystemExit(exit_code)
 
