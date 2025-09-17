@@ -1,9 +1,0 @@
-('assets',
- 'assets',
- [],
- 'DATA',
- [('assets\\color.ico', 'assets\\color.ico', 'DATA'),
-  ('assets\\color.png', 'assets\\color.png', 'DATA'),
-  ('assets\\logo.png', 'assets\\logo.png', 'DATA'),
-  ('assets\\menu-aberto.png', 'assets\\menu-aberto.png', 'DATA'),
-  ('assets\\templates.json', 'assets\\templates.json', 'DATA')])
