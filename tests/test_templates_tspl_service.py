@@ -17,37 +17,7 @@ from copy import deepcopy
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-
-class BaseWin32:
-    def __init__(self) -> None:
-        self.written: list[bytes] = []
-
-    def GetDefaultPrinter(self):
-        return "dummy"
-
-    def OpenPrinter(self, name):
-        return object()
-
-    def StartDocPrinter(self, h, level, info):
-        pass
-
-    def StartPagePrinter(self, h):
-        pass
-
-    def WritePrinter(self, h, data):
-        self.written.append(data)
-
-    def EndPagePrinter(self, h):
-        pass
-
-    def EndDocPrinter(self, h):
-        pass
-
-    def ClosePrinter(self, h):
-        pass
-
-
-sys.modules.setdefault("win32print", BaseWin32())
+from tests._fake_win32 import BaseWin32
 
 
 def test_template_selection_and_adjustment():
