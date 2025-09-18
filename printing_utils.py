@@ -27,13 +27,6 @@ def text_width_dots(texto: str, font: str, xm: int) -> int:
     return len(str(texto)) * base * xm
 
 
-def text_height_dots(font: str, ym: int) -> int:
-    """Return the height of a font in dots considering ``ym`` multiplier."""
-    base = FONT_BASE_W.get(str(font), 12)
-    ym = int(ym) if int(ym) > 0 else 1
-    return base * ym
-
-
 def adjust_logo_position(
     layout: MutableMapping[str, object],
     largura_mm: int,
