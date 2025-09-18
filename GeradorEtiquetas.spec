@@ -10,6 +10,7 @@ The final executable is saved as ``dist/GeradorEtiquetas.exe``.
 """
 
 import os
+from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.building.datastruct import Tree
 
 # ---------------------------------------------------------------------------
@@ -30,6 +31,9 @@ if QT_BINDING == "PySide6":
 else:  # Default to PyQt5
     qt_hiddenimports = ["PyQt5.QtCore", "PyQt5.QtGui", "PyQt5.QtWidgets"]
     qt_excludes = ["PySide6", "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets"]
+
+qt_hiddenimports.extend(collect_submodules(QT_BINDING))
+qt_hiddenimports.insert(0, QT_BINDING)
 
 # Explicit list of modules required at runtime.
 hiddenimports = qt_hiddenimports + [
