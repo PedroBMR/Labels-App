@@ -17,37 +17,9 @@ from copy import deepcopy
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
+from tests._fake_win32 import FakeWin32, fake_win32
 
-class BaseWin32:
-    def __init__(self) -> None:
-        self.written: list[bytes] = []
-
-    def GetDefaultPrinter(self):
-        return "dummy"
-
-    def OpenPrinter(self, name):
-        return object()
-
-    def StartDocPrinter(self, h, level, info):
-        pass
-
-    def StartPagePrinter(self, h):
-        pass
-
-    def WritePrinter(self, h, data):
-        self.written.append(data)
-
-    def EndPagePrinter(self, h):
-        pass
-
-    def EndDocPrinter(self, h):
-        pass
-
-    def ClosePrinter(self, h):
-        pass
-
-
-sys.modules.setdefault("win32print", BaseWin32())
+sys.modules["win32print"] = fake_win32  # type: ignore[assignment]
 
 
 def test_template_selection_and_adjustment():
@@ -243,7 +215,7 @@ def test_default_label_texts_flow_through_builds(monkeypatch):
 def test_printer_service_success(monkeypatch):
     import printing
 
-    class SuccessWin32(BaseWin32):
+    class SuccessWin32(FakeWin32):
         pass
 
     fake = SuccessWin32()
@@ -257,7 +229,7 @@ def test_printer_service_success(monkeypatch):
 def test_printer_service_failure(monkeypatch):
     import printing
 
-    class FailingWin32(BaseWin32):
+    class FailingWin32(FakeWin32):
         def StartDocPrinter(self, h, level, info):
             raise Exception("boom")
 
