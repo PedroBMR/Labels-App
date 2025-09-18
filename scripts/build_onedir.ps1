@@ -1,51 +1,5 @@
 $ErrorActionPreference = 'Stop'
 
-# Activate virtual environment if present
-if (Test-Path '.venv\Scripts\Activate.ps1') {
-    & '.\.venv\Scripts\Activate.ps1'
-} elseif (Test-Path 'venv\Scripts\Activate.ps1') {
-    & '.\venv\Scripts\Activate.ps1'
-}
+. "$PSScriptRoot/build_shared.ps1"
 
-# Remove conflicting Qt packages if present
-$qtConflicts = @('pyside6', 'pyside6-addons', 'pyside6-essentials')
-foreach ($pkg in $qtConflicts) {
-    pip show $pkg > $null 2>&1
-    if ($LASTEXITCODE -eq 0) { pip uninstall -y $pkg }
-}
-
-# Install runtime and development dependencies
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
-
-# Ensure only one Qt binding is installed
-pip show PyQt5 > $null 2>&1
-$hasPyQt5 = $LASTEXITCODE -eq 0
-pip show PySide6 > $null 2>&1
-$hasPySide6 = $LASTEXITCODE -eq 0
-if ($hasPyQt5 -and $hasPySide6) {
-    Write-Error 'Both PyQt5 and PySide6 are installed. Please uninstall the unnecessary binding.'
-    exit 1
-}
-
-# Build executable
-pyinstaller --noconfirm .\GeradorEtiquetas_onedir.spec
-
-# Determine executable name
-$exeName = if ($env:APP_NAME) { $env:APP_NAME } else { 'GeradorEtiquetas' }
-$src = Join-Path 'dist' "$exeName.exe"
-
-# Sign executable
-if (Get-Command 'signtool.exe' -ErrorAction SilentlyContinue) {
-    & signtool sign /fd SHA256 /a /tr http://timestamp.digicert.com $src
-} else {
-    Write-Warning 'signtool.exe not found; skipping code signing.'
-}
-
-# Retrieve version from _version.py
-$version = (
-    python -c "import _version, sys; sys.stdout.write(_version.__version__)"
-).Trim()
-
-$dest = Join-Path 'dist' "${exeName}_v$version.exe"
-Copy-Item -Force -Path $src -Destination $dest
+Invoke-Build -SpecFile '.\GeradorEtiquetas_onedir.spec' -Binding 'PyQt5'
