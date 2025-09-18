@@ -38,18 +38,22 @@ reimprimir etiquetas e realizar backup automático dos dados.
 - **pywin32** (somente no Windows) para envio direto à impressora
 - Impressora térmica compatível com **TSPL** (ex.: Gainscha GS‑2406T)
 
-As bindings Qt são opcionais e instaladas separadamente. Escolha uma:
+As bindings Qt são opcionais e instaladas separadamente. Instale primeiro as
+dependências base (ou de desenvolvimento, que já incluem as base) e, em
+seguida, escolha a binding desejada:
 
 ```bash
-pip install -r requirements-pyqt5.txt   # usa PyQt5
-# ou
-pip install -r requirements-pyside6.txt # usa PySide6
+pip install -r requirements.txt          # dependências de runtime
+# ou, para desenvolvimento (inclui as dependências de runtime)
+pip install -r requirements-dev.txt
 ```
 
-Para desenvolvimento, adicione também:
+Depois selecione uma das bindings Qt:
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -r requirements-pyqt5.txt    # usa PyQt5
+# ou
+pip install -r requirements-pyside6.txt  # usa PySide6
 ```
 
 ---
@@ -57,13 +61,15 @@ pip install -r requirements-dev.txt
 ## Ambiente Python 3.13
 
 Para testar o projeto com o **Python 3.13**, utilize um ambiente virtual
-apontando para a versão e instale as dependências a partir de `requirements-pyside6.txt` (ou `requirements-pyqt5.txt`) e `requirements-dev.txt`:
+apontando para a versão, instale as dependências de desenvolvimento e, em
+seguida, a binding Qt desejada (`requirements-pyside6.txt` ou
+`requirements-pyqt5.txt`):
 ```bash
 python3.13 -m venv .venv
 source .venv/bin/activate  # Linux/macOS
 venv\Scripts\activate     # Windows
-pip install -r requirements-pyside6.txt  # ou requirements-pyqt5.txt
 pip install -r requirements-dev.txt
+pip install -r requirements-pyside6.txt  # ou requirements-pyqt5.txt
 ```
 
 ---
@@ -76,8 +82,8 @@ pip install -r requirements-dev.txt
 2. Crie um ambiente virtual opcional e instale as dependências:
 
    ```bash
-   pip install -r requirements-pyqt5.txt   # ou requirements-pyside6.txt
    pip install -r requirements-dev.txt
+   pip install -r requirements-pyqt5.txt   # ou requirements-pyside6.txt
    ```
 3. Execute o aplicativo:
 
@@ -100,7 +106,11 @@ pip install -r requirements-dev.txt
 - Python 3.11 ou superior instalado e acessível pelo `python`.
 - PowerShell.
 - (Opcional) ambiente virtual em `.venv` ou `venv`.
-- Dependências de runtime listadas em `requirements.txt` e no arquivo da binding Qt escolhida (`requirements-pyqt5.txt` ou `requirements-pyside6.txt`), além das de desenvolvimento em `requirements-dev.txt` (instaladas automaticamente pelos scripts).
+- Dependências de runtime listadas em `requirements.txt` (instaladas junto com
+  `requirements-dev.txt`, quando aplicável) e a binding Qt escolhida
+  (`requirements-pyqt5.txt` ou `requirements-pyside6.txt`), além das de
+  desenvolvimento em `requirements-dev.txt` (instaladas automaticamente pelos
+  scripts).
 
 ### Comandos
 
@@ -138,8 +148,8 @@ Antes de enviar contribuições, instale as dependências de desenvolvimento e
 execute a suíte de testes e a verificação de estilo:
 
 ```bash
-pip install -r requirements-pyqt5.txt   # ou requirements-pyside6.txt
 pip install -r requirements-dev.txt
+pip install -r requirements-pyqt5.txt   # ou requirements-pyside6.txt
 ruff .
 pytest
 ```
@@ -151,12 +161,14 @@ reprodutibilidade. Revise-as periodicamente seguindo os passos abaixo:
 
 1. Atualize os pacotes para versões recentes e edite `requirements.txt` com os
    novos números de versão.
-2. Reinstale o ambiente:
+2. Reinstale o ambiente (comece pelas dependências base ou de desenvolvimento e
+   finalize com a binding Qt):
    ```bash
-   pip install -r requirements.txt
-   pip install -r requirements-pyqt5.txt   # ou requirements-pyside6.txt
    pip install -r requirements-dev.txt
+   pip install -r requirements-pyqt5.txt   # ou requirements-pyside6.txt
    ```
+   Para um ambiente somente de runtime, substitua o primeiro comando por
+   `pip install -r requirements.txt`.
 3. Verifique vulnerabilidades com [`pip-audit`](https://pypi.org/project/pip-audit/)
    ou [`safety`](https://pyup.io/safety/):
    ```bash
