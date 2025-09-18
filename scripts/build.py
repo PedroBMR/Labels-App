@@ -189,15 +189,20 @@ def assemble_pyinstaller_args(
         sys.executable,
         "-m",
         "PyInstaller",
-        "--noconfirm",
     ]
-    spec_arguments = [str(spec_path), "--name", exe_name]
-    args: list[str] = [*base_command, *spec_arguments]
+    args: list[str] = [*base_command, "--noconfirm"]
 
     if clean:
         args.append("--clean")
+
+    if spec_path.suffix == ".spec":
+        args.append(str(spec_path))
+        return args
+
     if windowed:
         args.append("--windowed")
+
+    args.extend(["--name", exe_name])
 
     assets_spec = f"{ASSETS_DIR}{os.pathsep}{ASSETS_DIR.name}"
     args.extend(["--add-data", assets_spec])
@@ -215,6 +220,8 @@ def assemble_pyinstaller_args(
         "win32timezone",
     ]
     args.extend(hidden_imports)
+
+    args.append(str(spec_path))
 
     return args
 
