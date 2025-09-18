@@ -48,7 +48,6 @@ function Invoke-Build {
         if (Test-PipPackage $pkg) { pip uninstall -y $pkg }
     }
 
-    pip install -r requirements.txt
     pip install -r requirements-dev.txt
 
     if ($selectedBinding -eq 'PySide6') {
