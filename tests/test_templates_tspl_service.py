@@ -203,6 +203,43 @@ def test_tspl_60x80_contains_text_and_logo():
         assert False, "BITMAP line not found"
 
 
+def test_default_label_texts_flow_through_builds(monkeypatch):
+    import printing
+
+    monkeypatch.setattr(
+        printing,
+        "melhorar_logo",
+        lambda p, largura_desejada=240: (b"A", 1, 1),
+    )
+    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+
+    template = printing.aplicar_template("100x30")
+
+    monkeypatch.setitem(printing.DEFAULT_LABEL_TEXTS, "titulo", "NOVO TITULO")
+    monkeypatch.setitem(printing.DEFAULT_LABEL_TEXTS, "fragil", "[X] FRAGIL")
+    monkeypatch.setitem(printing.DEFAULT_LABEL_TEXTS, "saida", "Saida -> {saida}")
+
+    builder = printing.TsplBuilder(template)
+    dados = {
+        "saida": "S1",
+        "categoria": "C1",
+        "emissor": "E1",
+        "municipio": "M1",
+        "volumes": 1,
+        "data_hora": "2024-01-01",
+    }
+
+    tspl = builder.build(dados)
+    assert "NOVO TITULO" in tspl
+    assert "[X] FRAGIL" in tspl
+    assert "Saida -> S1" in tspl
+
+    pagina_teste = builder.build_pagina_teste()
+    assert "NOVO TITULO" in pagina_teste
+    assert "[X] FRAGIL" in pagina_teste
+    assert "Saida -> 000" in pagina_teste
+
+
 def test_printer_service_success(monkeypatch):
     import printing
 

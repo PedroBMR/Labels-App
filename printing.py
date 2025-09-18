@@ -33,7 +33,7 @@ import time
 import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TypedDict
+from typing import Mapping, TypedDict
 
 from printing_utils import (
     FONT_BASE_W,
@@ -87,6 +87,55 @@ def salvar_config(cfg):
 
 DOTS_MM: int = 8   # ~203 dpi
 ENCODING: str = "cp1252"  # TSPL espera 8-bit (latin-1/cp1252)
+
+# Textos padrão utilizados nos campos das etiquetas.
+DEFAULT_LABEL_TEXTS: dict[str, str] = {
+    "titulo": "CONIMS",
+    "saida": "Saida: {saida}",
+    "categoria": "Categoria: {categoria}",
+    "emissor": "Emissor: {emissor}",
+    "municipio": "Municipio: {municipio}",
+    "data": "Impresso em: {data_hora}",
+    "fracao": "[ ] Fracao",
+    "fragil": "[ ] Fragil",
+    "numeracao": "{numero} DE {total}",
+}
+
+
+class _SafeFormatDict(dict[str, str]):
+    def __missing__(self, key: str) -> str:
+        return ""
+
+
+def _build_label_context(**kwargs: object) -> _SafeFormatDict:
+    ctx: dict[str, object] = {k: ("" if v is None else v) for k, v in kwargs.items()}
+
+    numero_value = next(
+        (ctx[k] for k in ("numero", "numero_atual", "indice") if k in ctx),
+        None,
+    )
+    if numero_value is not None:
+        for alias in ("numero", "numero_atual", "indice"):
+            ctx.setdefault(alias, numero_value)
+
+    total_value = next(
+        (ctx[k] for k in ("total", "total_exibicao") if k in ctx),
+        None,
+    )
+    if total_value is not None:
+        for alias in ("total", "total_exibicao"):
+            ctx.setdefault(alias, total_value)
+
+    return _SafeFormatDict({k: str(v) for k, v in ctx.items()})
+
+
+def _render_label_text(chave: str, context: Mapping[str, str]) -> str:
+    texto = DEFAULT_LABEL_TEXTS.get(chave)
+    if texto is None:
+        return "X"
+    if not isinstance(context, _SafeFormatDict):
+        context = _SafeFormatDict({k: str(v) for k, v in context.items()})
+    return texto.format_map(context)
 
 # -------------------- templates (tamanho/direction) --------------------
 _DEFAULT_TEMPLATE_DIM = {
@@ -361,23 +410,21 @@ def _ajustar_altura_layout(layout: Layout, altura_mm: int) -> None:
 def _ajustar_largura_layout(layout: Layout, largura_mm: int) -> None:
     limite = largura_mm * DOTS_MM
 
-    textos_padrao = {
-        "titulo": "CONIMS",
-        "saida": "Saida: 000",
-        "categoria": "Categoria: X",
-        "emissor": "Emissor: X",
-        "municipio": "Municipio: X",
-        "data": "Impresso em: 00/00/0000 00:00",
-        "fracao": "[ ] Fracao",
-        "fragil": "[ ] Fragil",
-        "numeracao": "9999 DE 9999",
-    }
+    textos_contexto = _build_label_context(
+        saida="000",
+        categoria="X",
+        emissor="X",
+        municipio="X",
+        data_hora="00/00/0000 00:00",
+        numero="9999",
+        total="9999",
+    )
 
     for chave, espec in layout.items():
         if not isinstance(espec, dict) or "x" not in espec:
             continue
 
-        texto = textos_padrao.get(chave, "X")
+        texto = _render_label_text(chave, textos_contexto)
         font = str(espec.get("font", "2"))
         xm = max(int(espec.get("xm", 1)), 1)
         largura = text_width_dots(texto, font, xm)
@@ -535,6 +582,17 @@ class TsplBuilder:
         partes: list[str] = []
         for offset in range(volumes):
             numero_atual = inicio_indice + offset
+            textos_contexto = _build_label_context(
+                saida=saida,
+                categoria=categoria,
+                emissor=emissor,
+                municipio=municipio,
+                data_hora=data_hora,
+                numero_atual=numero_atual,
+                total=total_display,
+                total_exibicao=total_display,
+                volumes=volumes,
+            )
             cmd = (
                 f"SIZE {self.template.largura_mm} mm,{self.template.altura_mm} mm\r\n"
                 f"GAP {self.template.gap_mm} mm,0\r\n"
@@ -543,15 +601,18 @@ class TsplBuilder:
                 f"DIRECTION {self.template.direction}\r\n"
                 "CLS\r\n"
             )
-            cmd += self._t("titulo", "CONIMS")
-            cmd += self._t("saida", f"Saida: {saida}")
-            cmd += self._t("categoria", f"Categoria: {categoria}")
-            cmd += self._t("emissor", f"Emissor: {emissor}")
-            cmd += self._t("municipio", f"Municipio: {municipio}")
-            cmd += self._t("data", f"Impresso em: {data_hora}")
-            cmd += self._t("fracao", "[ ] Fracao")
-            cmd += self._t("fragil", "[ ] Fragil")
-            cmd += self._t("numeracao", f"{numero_atual} DE {total_display}")
+            for chave in (
+                "titulo",
+                "saida",
+                "categoria",
+                "emissor",
+                "municipio",
+                "data",
+                "fracao",
+                "fragil",
+                "numeracao",
+            ):
+                cmd += self._t(chave, _render_label_text(chave, textos_contexto))
 
             cmd += (
                 f"BITMAP {self.x_logo},{self.layout['logo_y']},"
@@ -587,15 +648,27 @@ class TsplBuilder:
             f"DIRECTION {self.template.direction}\r\n"
             "CLS\r\n"
         )
-        cmd += self._t("titulo", "CONIMS")
-        cmd += self._t("saida", "Saida: 000")
-        cmd += self._t("categoria", "Categoria: TESTE")
-        cmd += self._t("emissor", "Emissor: TESTE")
-        cmd += self._t("municipio", "Municipio: TESTE")
-        cmd += self._t("data", "Impresso em: 00/00/0000 00:00")
-        cmd += self._t("fracao", "[ ] Fracao")
-        cmd += self._t("fragil", "[ ] Fragil")
-        cmd += self._t("numeracao", "1 DE 1")
+        textos_contexto = _build_label_context(
+            saida="000",
+            categoria="TESTE",
+            emissor="TESTE",
+            municipio="TESTE",
+            data_hora="00/00/0000 00:00",
+            numero=1,
+            total=1,
+        )
+        for chave in (
+            "titulo",
+            "saida",
+            "categoria",
+            "emissor",
+            "municipio",
+            "data",
+            "fracao",
+            "fragil",
+            "numeracao",
+        ):
+            cmd += self._t(chave, _render_label_text(chave, textos_contexto))
 
         cmd += (
             f"BITMAP {self.x_logo},{self.layout['logo_y']},"
