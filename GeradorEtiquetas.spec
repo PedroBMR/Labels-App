@@ -11,7 +11,6 @@ The final executable is saved as ``dist/GeradorEtiquetas.exe``.
 
 import os
 from PyInstaller.utils.hooks import collect_submodules
-from PyInstaller.building.datastruct import Tree
 
 # ---------------------------------------------------------------------------
 # Basic project paths and metadata
