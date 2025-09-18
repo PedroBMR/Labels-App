@@ -117,11 +117,13 @@ scripts\build_onedir.ps1
 
 Os scripts ativam o ambiente virtual (se existir), instalam dependências
 ausentes, rodam os arquivos `.spec` com o **PyInstaller** e copiam o executável
-final para `dist\GeradorEtiquetas_v{versão}.exe`. Execute
-`scripts\build_with_assets.ps1` para gerar um `.exe` acompanhado de uma pasta
-`assets` gravável para os arquivos de histórico. É possível alterar o nome do
-executável e o ícone definindo as variáveis de ambiente `APP_NAME` e `APP_ICON`
-antes da execução.
+final para `dist\GeradorEtiquetas_v{versão}.exe`. A versão exibida é lida da
+constante `__version__` definida em `_version.py`; não edite `version.txt`, pois
+ele é recriado automaticamente por `main.ensure_version_file()` ao iniciar o
+aplicativo. Execute `scripts\build_with_assets.ps1` para gerar um `.exe`
+acompanhado de uma pasta `assets` gravável para os arquivos de histórico. É
+possível alterar o nome do executável e o ícone definindo as variáveis de
+ambiente `APP_NAME` e `APP_ICON` antes da execução.
 
 Use `scripts\build_onedir.ps1` para gerar um build de desenvolvimento baseado
 em diretório através de `GeradorEtiquetas_onedir.spec`. Nessa configuração, a

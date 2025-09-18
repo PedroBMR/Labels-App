@@ -6,3 +6,4 @@ _backup/
 assets/*.json
 assets/*.csv
 assets/*.bak
+version.txt
