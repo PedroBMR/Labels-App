@@ -2,9 +2,26 @@
 
 from __future__ import annotations
 
+import sys
 import typing as _t
+from pathlib import Path
 
 import pytest
+
+_TESTS_ROOT = Path(__file__).resolve().parent
+_PROJECT_ROOT = _TESTS_ROOT.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(_PROJECT_ROOT))
+
+from tests._fake_win32 import fake_win32
+
+sys.modules["win32print"] = fake_win32  # type: ignore[assignment]
+
+
+@pytest.fixture(autouse=True)
+def _reset_fake_win32_written():
+    fake_win32.written.clear()
+    yield
 
 
 class _LogoResourcePatcher:

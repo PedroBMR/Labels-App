@@ -17,9 +17,7 @@ from copy import deepcopy
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from tests._fake_win32 import FakeWin32, fake_win32
-
-sys.modules["win32print"] = fake_win32  # type: ignore[assignment]
+from tests._fake_win32 import FakeWin32
 
 
 def test_template_selection_and_adjustment():
