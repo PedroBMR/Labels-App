@@ -22,7 +22,6 @@ Estrutura esperada em assets/templates.json (exemplo):
 }
 Se as posições não estiverem no JSON, o código usa LAYOUTS abaixo.
 """
-
 from __future__ import annotations
 
 import copy
