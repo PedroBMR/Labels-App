@@ -52,16 +52,11 @@ def test_printer_service_retry(monkeypatch):
     assert printing.win32print.written[-1] == b"ABC"
 
 
-def test_reimpressao_faltantes(monkeypatch):
+def test_reimpressao_faltantes(fake_logo_recurso):
     import printing
 
     printing.win32print.written.clear()
-    monkeypatch.setattr(
-        printing,
-        "melhorar_logo",
-        lambda p, largura_desejada=240: (b"ABC", 1, 1),
-    )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+    fake_logo_recurso.set_logo((b"ABC", 1, 1))
 
     total = 10
     faltantes = 3
@@ -88,16 +83,11 @@ def test_reimpressao_faltantes(monkeypatch):
     assert "10 DE 10" in texto
 
 
-def test_reimpressao_intervalo(monkeypatch):
+def test_reimpressao_intervalo(fake_logo_recurso):
     import printing
 
     fake_win32.written.clear()
-    monkeypatch.setattr(
-        printing,
-        "melhorar_logo",
-        lambda p, largura_desejada=240: (b"ABC", 1, 1),
-    )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+    fake_logo_recurso.set_logo((b"ABC", 1, 1))
 
     total = 10
     inicio, fim = 5, 8
@@ -125,14 +115,10 @@ def test_reimpressao_intervalo(monkeypatch):
     assert "9 DE 10" not in texto
 
 
-def test_imprimir_pagina_teste(monkeypatch):
+def test_imprimir_pagina_teste(fake_logo_recurso):
     import printing
 
     fake_win32.written.clear()
-    monkeypatch.setattr(
-        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
-    )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
     tpl = printing.aplicar_template("Padrão")
     ok, erro = printing.imprimir_pagina_teste(tpl)
@@ -154,12 +140,9 @@ def test_imprimir_pagina_teste(monkeypatch):
     assert expected in texto
 
 
-def test_direction_personalizado(monkeypatch, tmp_path):
+def test_direction_personalizado(fake_logo_recurso, tmp_path):
     import printing
     fake_win32.written.clear()
-    monkeypatch.setattr(
-        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
-    )
     tpl_path = tmp_path / "templates.json"
     tpl_path.write_text(
         '{"60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2, "direction": 0}}',
@@ -169,7 +152,7 @@ def test_direction_personalizado(monkeypatch, tmp_path):
     def fake_recurso(p):
         return tpl_path if p == "templates.json" else "fake"
 
-    monkeypatch.setattr(printing, "recurso_caminho", fake_recurso)
+    fake_logo_recurso.set_recurso(fake_recurso)
     printing.template_manager.recarregar_templates()
 
     tpl = printing.aplicar_template("60x80")
@@ -196,11 +179,9 @@ def test_direction_personalizado(monkeypatch, tmp_path):
     printing._load_templates_json.cache_clear()
 
 
-def test_templates_arquivo_inexistente(monkeypatch, tmp_path, caplog):
+def test_templates_arquivo_inexistente(fake_logo_recurso, tmp_path, caplog):
     import printing
-    monkeypatch.setattr(
-        printing, "recurso_caminho", lambda p: tmp_path / "inexistente.json"
-    )
+    fake_logo_recurso.set_recurso(lambda p: tmp_path / "inexistente.json")
     printing.template_manager.recarregar_templates()
 
     with caplog.at_level(logging.ERROR, logger="app"):
@@ -216,9 +197,9 @@ def test_templates_arquivo_inexistente(monkeypatch, tmp_path, caplog):
     printing._load_templates_json.cache_clear()
 
 
-def test_template_fallback_60x80(monkeypatch):
+def test_template_fallback_60x80(fake_logo_recurso):
     import printing
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "inexistente.json")
+    fake_logo_recurso.set_recurso(lambda p: "inexistente.json")
     printing.template_manager.recarregar_templates()
 
     tpl = printing.aplicar_template("60x80")
@@ -235,15 +216,11 @@ def test_template_fallback_60x80(monkeypatch):
     printing._load_templates_json.cache_clear()
 
 
-def test_templates_chave_invalida(monkeypatch):
+def test_templates_chave_invalida(fake_logo_recurso):
     import printing
     fake_win32.written.clear()
     printing.template_manager.recarregar_templates()
     tpl = printing.aplicar_template("inexistente")
-    monkeypatch.setattr(
-        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
-    )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
     dados = {
         "saida": "S",
@@ -261,7 +238,7 @@ def test_templates_chave_invalida(monkeypatch):
     printing.template_manager.recarregar_templates()
 
 
-def test_templates_json_cache(monkeypatch, tmp_path):
+def test_templates_json_cache(monkeypatch, tmp_path, fake_logo_recurso):
     import json
 
     import printing
@@ -281,10 +258,8 @@ def test_templates_json_cache(monkeypatch, tmp_path):
 
     monkeypatch.setattr(json, "load", counting_load)
 
-    monkeypatch.setattr(
-        printing,
-        "recurso_caminho",
-        lambda p: file_path if p == "templates.json" else "fake",
+    fake_logo_recurso.set_recurso(
+        lambda p: file_path if p == "templates.json" else "fake"
     )
 
     printing.template_manager.recarregar_templates()
@@ -305,15 +280,11 @@ def test_templates_json_cache(monkeypatch, tmp_path):
     assert count["n"] == 2
 
     printing._load_templates_json.cache_clear()
-def test_templates_alteram_layout(monkeypatch):
+def test_templates_alteram_layout(fake_logo_recurso):
     import printing
 
     fake_win32.written.clear()
-    monkeypatch.setattr(
-        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
-    )
     tpl = printing.aplicar_template("100x30")
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
     dados = {
         "saida": "S",
         "categoria": "C",
@@ -329,14 +300,10 @@ def test_templates_alteram_layout(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
-def test_100x30_layout(monkeypatch):
+def test_100x30_layout(fake_logo_recurso):
     import printing
 
     fake_win32.written.clear()
-    monkeypatch.setattr(
-        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
-    )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
     printing.template_manager.recarregar_templates()
 
     tpl = printing.aplicar_template("100x30")
@@ -357,16 +324,12 @@ def test_100x30_layout(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
-def test_100x30_coordenadas(monkeypatch):
+def test_100x30_coordenadas(fake_logo_recurso):
     import re
 
     import printing
 
     fake_win32.written.clear()
-    monkeypatch.setattr(
-        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
-    )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
     tpl = printing.aplicar_template("100x30")
     dados = {
@@ -392,16 +355,12 @@ def test_100x30_coordenadas(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
-def test_60x80_coordenadas(monkeypatch):
+def test_60x80_coordenadas(fake_logo_recurso):
     import re
 
     import printing
 
     fake_win32.written.clear()
-    monkeypatch.setattr(
-        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
-    )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
     tpl = printing.aplicar_template("60x80")
     dados = {
@@ -428,20 +387,17 @@ def test_60x80_coordenadas(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
-def test_100x30_pagina_teste(monkeypatch):
+def test_100x30_pagina_teste(fake_logo_recurso):
     import printing
 
     fake_win32.written.clear()
-    monkeypatch.setattr(
-        printing,
-        "melhorar_logo",
+    fake_logo_recurso.set_logo(
         lambda p, largura_desejada=240: (
             b"A",
             max(1, largura_desejada // 8),
             largura_desejada,
-        ),
+        )
     )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
     printing.template_manager.recarregar_templates()
 
     tpl = printing.aplicar_template("100x30")
@@ -473,15 +429,12 @@ def test_100x30_fracao_antes_de_fragil():
     printing.aplicar_template("Padrão")
 
 
-def test_100x30_text_bitmap_dentro_largura(monkeypatch):
+def test_100x30_text_bitmap_dentro_largura(fake_logo_recurso):
     import re
 
     import printing
 
-    monkeypatch.setattr(
-        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 15, 1)
-    )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+    fake_logo_recurso.set_logo((b"A", 15, 1))
 
     tpl = printing.aplicar_template("100x30")
     dados = {
@@ -513,15 +466,12 @@ def test_100x30_text_bitmap_dentro_largura(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
-def test_100x30_text_bitmap_dentro_limites(monkeypatch):
+def test_100x30_text_bitmap_dentro_limites(fake_logo_recurso):
     import re
 
     import printing
 
-    monkeypatch.setattr(
-        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 2, 16)
-    )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
+    fake_logo_recurso.set_logo((b"A", 2, 16))
 
     tpl = printing.aplicar_template("100x30")
     dados = {
@@ -557,15 +507,11 @@ def test_100x30_text_bitmap_dentro_limites(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
-def test_total_exibicao_cinco_digitos(monkeypatch):
+def test_total_exibicao_cinco_digitos(fake_logo_recurso):
     import re
 
     import printing
 
-    monkeypatch.setattr(
-        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
-    )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
     tpl = printing.aplicar_template("100x30")
     total = 12345
@@ -591,7 +537,7 @@ def test_total_exibicao_cinco_digitos(monkeypatch):
     printing.aplicar_template("Padrão")
 
 
-def test_retry_exponencial_logging(monkeypatch, caplog):
+def test_retry_exponencial_logging(monkeypatch, caplog, fake_logo_recurso):
     import logging
 
     import printing
@@ -627,10 +573,6 @@ def test_retry_exponencial_logging(monkeypatch, caplog):
 
     fake = FailingWin32()
     monkeypatch.setattr(printing, "win32print", fake)
-    monkeypatch.setattr(
-        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
-    )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
     monkeypatch.setattr(printing.time, "sleep", lambda s: None)
 
     dados = {

@@ -49,14 +49,10 @@ def test_template_selection_and_adjustment():
             assert 0 <= spec["y"] <= max_y
 
 
-def test_montar_tspl_expected_string(monkeypatch):
+def test_montar_tspl_expected_string(fake_logo_recurso):
     import printing
 
     tpl = printing.aplicar_template("100x30")
-    monkeypatch.setattr(
-        printing, "melhorar_logo", lambda p, largura_desejada=240: (b"A", 1, 1)
-    )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
     dados = {
         "saida": "S1",
@@ -175,15 +171,8 @@ def test_tspl_60x80_contains_text_and_logo():
         assert False, "BITMAP line not found"
 
 
-def test_default_label_texts_flow_through_builds(monkeypatch):
+def test_default_label_texts_flow_through_builds(monkeypatch, fake_logo_recurso):
     import printing
-
-    monkeypatch.setattr(
-        printing,
-        "melhorar_logo",
-        lambda p, largura_desejada=240: (b"A", 1, 1),
-    )
-    monkeypatch.setattr(printing, "recurso_caminho", lambda p: "fake")
 
     template = printing.aplicar_template("100x30")
 
