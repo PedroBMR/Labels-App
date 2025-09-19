@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import sys
 import typing as _t
 
 import pytest
+
+from ._fake_win32 import fake_win32
+
+sys.modules["win32print"] = fake_win32  # type: ignore[assignment]
 
 
 class _LogoResourcePatcher:
