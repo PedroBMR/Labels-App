@@ -31,6 +31,7 @@ import json
 import logging
 import time
 import unicodedata
+from collections.abc import Iterator, Mapping as MappingABC
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Mapping, TypedDict
@@ -72,6 +73,30 @@ def _load_templates_json() -> dict[str, dict]:
     path = recurso_caminho("templates.json")
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+class TemplateCatalog(MappingABC[str, dict[str, object]]):
+    """Read-only view of template metadata stored in ``assets/templates.json``."""
+
+    def _raw(self) -> dict[str, dict]:
+        return _load_templates_json()
+
+    def __getitem__(self, key: str) -> dict[str, object]:
+        return copy.deepcopy(self._raw()[key])
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._raw())
+
+    def __len__(self) -> int:
+        return len(self._raw())
+
+    def as_dict(self) -> dict[str, dict[str, object]]:
+        """Return a deep copy of the template catalog."""
+
+        return copy.deepcopy(self._raw())
+
+
+DEFAULT_TEMPLATES = TemplateCatalog()
 
 
 def _logger():
@@ -171,7 +196,7 @@ class TemplateManager:
         """Carrega templates.json. Aceita tanto dimensões quanto posições.
         Se houver falha, retorna fallback somente com dimensões."""
         try:
-            templates = _load_templates_json()
+            templates = DEFAULT_TEMPLATES.as_dict()
             _logger().info(
                 "Templates carregados de %s: %s",
                 recurso_caminho("templates.json"),

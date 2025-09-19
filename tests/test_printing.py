@@ -10,9 +10,11 @@ Exemplo:
     $ pytest tests/test_printing.py
 """
 
+import json
 import logging
 import os
 import sys
+from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
@@ -20,6 +22,18 @@ from printing_utils import FONT_BASE_W, text_width_dots
 from tests._fake_win32 import fake_win32
 
 sys.modules["win32print"] = fake_win32  # type: ignore[assignment]
+
+
+def test_default_templates_match_assets_file():
+    import printing
+
+    catalog = printing.DEFAULT_TEMPLATES.as_dict()
+    asset_path = Path(__file__).resolve().parent.parent / "assets" / "templates.json"
+    with asset_path.open("r", encoding="utf-8") as fh:
+        expected = json.load(fh)
+
+    assert catalog == expected
+    assert printing.template_manager._load_templates_dim() == catalog
 
 
 def test_descobrir_impressora_padrao():

@@ -204,6 +204,11 @@ contém `largura_mm`, `altura_mm` e `gap_mm` em milímetros. Edite esse arquivo
 para ajustar layouts existentes ou adicionar novos modelos. Reinicie o
 aplicativo para aplicar as mudanças.
 
+Para facilitar inspeções em tempo de execução, o módulo `printing` expõe uma
+visão somente leitura desse arquivo por meio de `printing.DEFAULT_TEMPLATES`.
+Esse catálogo é carregado diretamente do JSON, garantindo uma única fonte de
+verdade para os metadados dos templates.
+
 Backups automáticos do histórico são gravados em `_backup/` e os registros de
 log ficam em `logs/app.log` com rotação automática de arquivos.
 
