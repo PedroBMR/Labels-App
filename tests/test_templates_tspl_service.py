@@ -11,11 +11,8 @@ Exemplo:
     $ pytest tests/test_templates_tspl_service.py
 """
 
-import os
 import sys
 from copy import deepcopy
-
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from tests._fake_win32 import FakeWin32, fake_win32
 

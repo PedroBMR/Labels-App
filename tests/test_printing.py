@@ -11,10 +11,7 @@ Exemplo:
 """
 
 import logging
-import os
 import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from printing_utils import FONT_BASE_W, text_width_dots
 from tests._fake_win32 import fake_win32
