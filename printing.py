@@ -547,6 +547,16 @@ class TsplBuilder:
     def _t(self, ch: str, txt: str) -> str:
         return _texto_layout(ch, txt, self.layout)
 
+    def _render_header(self) -> str:
+        return (
+            f"SIZE {self.template.largura_mm} mm,{self.template.altura_mm} mm\r\n"
+            f"GAP {self.template.gap_mm} mm,0\r\n"
+            "DENSITY 8\r\n"
+            "SPEED 4\r\n"
+            f"DIRECTION {self.template.direction}\r\n"
+            "CLS\r\n"
+        )
+
     def build(self, dados: dict) -> str:
         """Monta etiquetas usando ``dados`` fornecidos."""
 
@@ -575,14 +585,7 @@ class TsplBuilder:
                 total_exibicao=total_display,
                 volumes=volumes,
             )
-            cmd = (
-                f"SIZE {self.template.largura_mm} mm,{self.template.altura_mm} mm\r\n"
-                f"GAP {self.template.gap_mm} mm,0\r\n"
-                "DENSITY 8\r\n"
-                "SPEED 4\r\n"
-                f"DIRECTION {self.template.direction}\r\n"
-                "CLS\r\n"
-            )
+            cmd = self._render_header()
             for chave in LABEL_FIELDS:
                 cmd += self._t(chave, _render_label_text(chave, textos_contexto))
 
@@ -612,14 +615,7 @@ class TsplBuilder:
         ):
             raise ValueError("Layout inválido p/ régua de calibração.")
 
-        cmd = (
-            f"SIZE {self.template.largura_mm} mm,{self.template.altura_mm} mm\r\n"
-            f"GAP {self.template.gap_mm} mm,0\r\n"
-            "DENSITY 8\r\n"
-            "SPEED 4\r\n"
-            f"DIRECTION {self.template.direction}\r\n"
-            "CLS\r\n"
-        )
+        cmd = self._render_header()
         textos_contexto = _build_label_context(
             saida="000",
             categoria="TESTE",
