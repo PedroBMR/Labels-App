@@ -101,6 +101,19 @@ DEFAULT_LABEL_TEXTS: dict[str, str] = {
     "numeracao": "{numero} DE {total}",
 }
 
+# Campos obrigatórios presentes nos layouts de etiquetas, na ordem esperada.
+LABEL_FIELDS: tuple[str, ...] = (
+    "titulo",
+    "saida",
+    "categoria",
+    "emissor",
+    "municipio",
+    "data",
+    "fracao",
+    "fragil",
+    "numeracao",
+)
+
 
 class _SafeFormatDict(dict[str, str]):
     def __missing__(self, key: str) -> str:
@@ -205,21 +218,10 @@ class TemplateManager:
         Se o dicionário do template no JSON tiver os campos de
         posição, retorna Layout.
         """
-        campos = {
-            "titulo",
-            "saida",
-            "categoria",
-            "emissor",
-            "municipio",
-            "data",
-            "fracao",
-            "fragil",
-            "numeracao",
-        }
-        if not any(k in modelo for k in campos):
+        if not any(k in modelo for k in LABEL_FIELDS):
             return None
         layout: Layout = {}
-        for k in campos:
+        for k in LABEL_FIELDS:
             if k in modelo:
                 layout[k] = modelo[k]  # type: ignore[assignment]
         for k in ("logo_y", "logo_largura", "logo_x", "logo_x_mm"):
@@ -244,17 +246,7 @@ class TemplateManager:
 
         layout_escolhido = copy.deepcopy(layout_escolhido)
 
-        for req in (
-            "titulo",
-            "saida",
-            "categoria",
-            "emissor",
-            "municipio",
-            "data",
-            "fracao",
-            "fragil",
-            "numeracao",
-        ):
+        for req in LABEL_FIELDS:
             if req not in layout_escolhido:
                 raise ValueError(
                     f"Layout '{nome_dim}' incorreto: campo '{req}' ausente."
@@ -548,17 +540,7 @@ class TsplBuilder:
 
         self.x_logo = _calc_logo_x(self.layout, self.dots_x, self.largura_bytes)
 
-        for chave in (
-            "titulo",
-            "saida",
-            "categoria",
-            "emissor",
-            "municipio",
-            "data",
-            "fracao",
-            "fragil",
-            "numeracao",
-        ):
+        for chave in LABEL_FIELDS:
             if chave not in self.layout:
                 raise ValueError(f"Layout incorreto: campo '{chave}' ausente.")
 
@@ -601,17 +583,7 @@ class TsplBuilder:
                 f"DIRECTION {self.template.direction}\r\n"
                 "CLS\r\n"
             )
-            for chave in (
-                "titulo",
-                "saida",
-                "categoria",
-                "emissor",
-                "municipio",
-                "data",
-                "fracao",
-                "fragil",
-                "numeracao",
-            ):
+            for chave in LABEL_FIELDS:
                 cmd += self._t(chave, _render_label_text(chave, textos_contexto))
 
             cmd += (
@@ -657,17 +629,7 @@ class TsplBuilder:
             numero=1,
             total=1,
         )
-        for chave in (
-            "titulo",
-            "saida",
-            "categoria",
-            "emissor",
-            "municipio",
-            "data",
-            "fracao",
-            "fragil",
-            "numeracao",
-        ):
+        for chave in LABEL_FIELDS:
             cmd += self._t(chave, _render_label_text(chave, textos_contexto))
 
         cmd += (
