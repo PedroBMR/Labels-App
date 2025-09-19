@@ -28,6 +28,25 @@ def test_descobrir_impressora_padrao():
     assert printing.descobrir_impressora_padrao() == "dummy"
 
 
+def test_default_templates_match_assets_file():
+    import json
+
+    import printing
+
+    path = printing.recurso_caminho("templates.json")
+    with open(path, "r", encoding="utf-8") as fp:
+        data = json.load(fp)
+
+    try:
+        assert data == printing.DEFAULT_TEMPLATES
+        expected_layouts = {
+            nome: modelo["layout"] for nome, modelo in printing.DEFAULT_TEMPLATES.items()
+        }
+        assert printing.LAYOUTS == expected_layouts
+    finally:
+        printing._load_templates_json.cache_clear()
+
+
 def test_printer_service_retry(monkeypatch):
     import printing
 
@@ -156,6 +175,8 @@ def test_direction_personalizado(fake_logo_recurso, tmp_path):
     printing.template_manager.recarregar_templates()
 
     tpl = printing.aplicar_template("60x80")
+    merged_templates = printing._get_templates()
+    assert merged_templates["60x80"]["layout"] == printing.DEFAULT_TEMPLATES["60x80"]["layout"]
 
     dados = {
         "saida": "S",
@@ -211,6 +232,7 @@ def test_template_fallback_60x80(fake_logo_recurso):
 
     templates = printing._get_templates()
     assert set(templates) == {"100x30", "60x80"}
+    assert templates["60x80"]["layout"] == printing.DEFAULT_TEMPLATES["60x80"]["layout"]
 
     printing.aplicar_template("Padrão")
     printing._load_templates_json.cache_clear()

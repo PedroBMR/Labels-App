@@ -7,20 +7,26 @@ Destaques:
 - Alternância de templates por nome (ex.: "60x80", "100x30").
 - Tamanho/direction a partir de templates.json.
 - (Novo) Se o templates.json trouxer também posições dos campos (titulo/saida/...),
-  essas posições serão usadas. Se não houver, usa o fallback embutido em LAYOUTS.
+  essas posições serão usadas. Se não houver, usa o fallback canônico em LAYOUTS.
 - Envio via spool do Windows (win32print). Salva logs úteis.
 
 Estrutura esperada em assets/templates.json (exemplo):
 {
   "60x80": {
-    "largura_mm": 60, "altura_mm": 80, "gap_mm": 2, "direction": 1,
-    "titulo": {"x":20,"y":20,"font":"5","xm":3,"ym":3},
-    ...
-    "logo_y": 360, "logo_largura": 280
+    "largura_mm": 60,
+    "altura_mm": 80,
+    "gap_mm": 2,
+    "direction": 0,
+    "layout": {
+      "titulo": {"x":20,"y":20,"font":"5","xm":3,"ym":3},
+      ...,
+      "logo_y": 360,
+      "logo_largura": 280
+    }
   },
   "100x30": { ... }
 }
-Se as posições não estiverem no JSON, o código usa LAYOUTS abaixo.
+Se o JSON não trouxer as posições, o fallback em ``DEFAULT_TEMPLATES``/``LAYOUTS`` é usado.
 """
 
 from __future__ import annotations
@@ -33,7 +39,7 @@ import time
 import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Mapping, TypedDict
+from typing import Any, Mapping, TypedDict
 
 from printing_utils import (
     FONT_BASE_W,
@@ -115,6 +121,59 @@ LABEL_FIELDS: tuple[str, ...] = (
 )
 
 
+_DIMENSION_KEYS: tuple[str, ...] = ("largura_mm", "altura_mm", "gap_mm", "direction")
+_LAYOUT_OPTIONAL_KEYS: tuple[str, ...] = (
+    "logo_y",
+    "logo_largura",
+    "logo_x",
+    "logo_x_mm",
+)
+_LAYOUT_CONTENT_KEYS = set(LABEL_FIELDS) | set(_LAYOUT_OPTIONAL_KEYS)
+
+# Mapeamento canônico com dimensões e layout disponíveis no projeto.
+DEFAULT_TEMPLATES: dict[str, dict[str, Any]] = {
+    "60x80": {
+        "largura_mm": 60,
+        "altura_mm": 80,
+        "gap_mm": 2,
+        "direction": 0,
+        "layout": {
+            "titulo": {"x": 20, "y": 10, "font": "3", "xm": 2, "ym": 2},
+            "saida": {"x": 20, "y": 70, "font": "2", "xm": 1, "ym": 1},
+            "categoria": {"x": 20, "y": 100, "font": "2", "xm": 1, "ym": 1},
+            "emissor": {"x": 20, "y": 130, "font": "2", "xm": 1, "ym": 1},
+            "municipio": {"x": 20, "y": 180, "font": "2", "xm": 1, "ym": 1},
+            "data": {"x": 20, "y": 230, "font": "2", "xm": 1, "ym": 1},
+            "fracao": {"x": 20, "y": 270, "font": "2", "xm": 1, "ym": 1},
+            "fragil": {"x": 280, "y": 270, "font": "2", "xm": 1, "ym": 1},
+            "numeracao": {"x": 180, "y": 360, "font": "5", "xm": 2, "ym": 2},
+            "logo_y": 700,
+            "logo_largura": 220,
+        },
+    },
+    "100x30": {
+        "largura_mm": 100,
+        "altura_mm": 30,
+        "gap_mm": 2,
+        "direction": 1,
+        "layout": {
+            "titulo": {"x": 20, "y": 20, "font": "3", "xm": 1, "ym": 1},
+            "saida": {"x": 20, "y": 60, "font": "2", "xm": 1, "ym": 1},
+            "categoria": {"x": 20, "y": 90, "font": "2", "xm": 1, "ym": 1},
+            "emissor": {"x": 20, "y": 120, "font": "2", "xm": 1, "ym": 1},
+            "municipio": {"x": 20, "y": 150, "font": "2", "xm": 1, "ym": 1},
+            "data": {"x": 20, "y": 180, "font": "2", "xm": 1, "ym": 1},
+            "fracao": {"x": 20, "y": 220, "font": "2", "xm": 1, "ym": 1},
+            "fragil": {"x": 200, "y": 220, "font": "2", "xm": 1, "ym": 1},
+            "numeracao": {"x": 450, "y": 36, "font": "2", "xm": 2, "ym": 2},
+            "logo_y": 75,
+            "logo_largura": 120,
+            "logo_x": 550,
+        },
+    },
+}
+
+
 class _SafeFormatDict(dict[str, str]):
     def __missing__(self, key: str) -> str:
         return ""
@@ -152,9 +211,101 @@ def _render_label_text(chave: str, context: Mapping[str, str]) -> str:
 
 # -------------------- templates (tamanho/direction) --------------------
 _DEFAULT_TEMPLATE_DIM = {
-    "100x30": {"largura_mm": 100, "altura_mm": 30, "gap_mm": 2, "direction": 1},
-    "60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2, "direction": 0},
+    nome: {
+        chave: copy.deepcopy(modelo[chave])
+        for chave in _DIMENSION_KEYS
+        if chave in modelo
+    }
+    for nome, modelo in DEFAULT_TEMPLATES.items()
 }
+
+
+def _clone_template_data(template: Mapping[str, Any]) -> dict[str, Any]:
+    return copy.deepcopy(dict(template))
+
+
+def _extract_dimensions(modelo: Mapping[str, Any]) -> dict[str, Any]:
+    dims: dict[str, Any] = {}
+    dimensoes = modelo.get("dimensions")
+    if isinstance(dimensoes, dict):
+        for chave in _DIMENSION_KEYS:
+            if chave in dimensoes:
+                dims[chave] = copy.deepcopy(dimensoes[chave])
+    for chave in _DIMENSION_KEYS:
+        if chave in modelo:
+            dims[chave] = copy.deepcopy(modelo[chave])
+    return dims
+
+
+def _extract_layout_dict(modelo: Mapping[str, Any]) -> Layout | None:
+    layout: Layout = {}
+    origem = modelo.get("layout")
+    if isinstance(origem, dict):
+        for chave in LABEL_FIELDS:
+            if chave in origem:
+                layout[chave] = copy.deepcopy(origem[chave])  # type: ignore[assignment]
+        for chave in _LAYOUT_OPTIONAL_KEYS:
+            if chave in origem:
+                layout[chave] = copy.deepcopy(origem[chave])  # type: ignore[assignment]
+        if layout:
+            return layout
+
+    encontrado = False
+    for chave in LABEL_FIELDS:
+        if chave in modelo:
+            layout[chave] = copy.deepcopy(modelo[chave])  # type: ignore[assignment]
+            encontrado = True
+    for chave in _LAYOUT_OPTIONAL_KEYS:
+        if chave in modelo:
+            layout[chave] = copy.deepcopy(modelo[chave])  # type: ignore[assignment]
+            encontrado = True
+    if not encontrado:
+        return None
+    return layout
+
+
+def _normalize_template_dict(modelo: Mapping[str, Any]) -> dict[str, Any]:
+    normalizado = _extract_dimensions(modelo)
+    for chave, valor in modelo.items():
+        if chave in _DIMENSION_KEYS or chave == "layout":
+            continue
+        if chave in _LAYOUT_CONTENT_KEYS:
+            continue
+        normalizado[chave] = copy.deepcopy(valor)
+
+    layout = _extract_layout_dict(modelo)
+    if layout is not None:
+        normalizado["layout"] = layout
+    return normalizado
+
+
+def _merge_template_dicts(
+    fallback: Mapping[str, Any], override: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    resultado = _clone_template_data(fallback)
+    if override is None:
+        return resultado
+
+    normalizado = _normalize_template_dict(override)
+    layout_override = normalizado.pop("layout", None)
+    for chave, valor in normalizado.items():
+        resultado[chave] = valor
+
+    if layout_override is not None:
+        base_layout = resultado.get("layout")
+        if isinstance(base_layout, dict):
+            layout_final: Layout = copy.deepcopy(base_layout)
+        else:
+            layout_final = {}  # type: ignore[assignment]
+        for chave, valor in layout_override.items():
+            layout_final[chave] = copy.deepcopy(valor)  # type: ignore[assignment]
+        resultado["layout"] = layout_final
+
+    return resultado
+
+
+def _default_templates_copy() -> dict[str, dict[str, Any]]:
+    return {nome: _clone_template_data(modelo) for nome, modelo in DEFAULT_TEMPLATES.items()}
 
 
 @dataclass
@@ -168,8 +319,8 @@ class Template:
 
 class TemplateManager:
     def _load_templates_dim(self) -> dict[str, dict]:
-        """Carrega templates.json. Aceita tanto dimensões quanto posições.
-        Se houver falha, retorna fallback somente com dimensões."""
+        """Carrega templates.json e mescla com os fallbacks canônicos."""
+        fallback = _default_templates_copy()
         try:
             templates = _load_templates_json()
             _logger().info(
@@ -177,12 +328,20 @@ class TemplateManager:
                 recurso_caminho("templates.json"),
                 ", ".join(templates.keys()),
             )
-            return templates
+            merged: dict[str, dict[str, Any]] = {
+                nome: _merge_template_dicts(modelo_padrao, templates.get(nome))
+                for nome, modelo_padrao in DEFAULT_TEMPLATES.items()
+            }
+            for nome, modelo_usuario in templates.items():
+                if nome in merged:
+                    continue
+                merged[nome] = _normalize_template_dict(modelo_usuario)
+            return merged
         except Exception:
             _logger().exception(
-                "Falha ao carregar templates.json; usando dimensões padrão."
+                "Falha ao carregar templates.json; usando modelos padrão."
             )
-            return _DEFAULT_TEMPLATE_DIM.copy()
+            return fallback
 
     def recarregar_templates(self) -> None:
         """Força recarga do templates.json (dimensões e, se existir, posições)."""
@@ -213,21 +372,9 @@ class TemplateManager:
         k = next(iter(d))
         return k, d[k]
 
-    def _extrair_layout_do_json(self, modelo: dict) -> Layout | None:
-        """
-        Se o dicionário do template no JSON tiver os campos de
-        posição, retorna Layout.
-        """
-        if not any(k in modelo for k in LABEL_FIELDS):
-            return None
-        layout: Layout = {}
-        for k in LABEL_FIELDS:
-            if k in modelo:
-                layout[k] = modelo[k]  # type: ignore[assignment]
-        for k in ("logo_y", "logo_largura", "logo_x", "logo_x_mm"):
-            if k in modelo:
-                layout[k] = modelo[k]  # type: ignore[assignment]
-        return layout
+    def _extrair_layout_do_json(self, modelo: Mapping[str, Any]) -> Layout | None:
+        """Obtém layout informado no JSON, caso disponível."""
+        return _extract_layout_dict(modelo)
 
     def get_template(self, nome: str) -> Template:
         templates_dim = self._load_templates_dim()
@@ -297,34 +444,8 @@ class Layout(TypedDict, total=False):
 
 # Fallback embutido para posições
 LAYOUTS: dict[str, Layout] = {
-    "60x80": {
-        "titulo": {"x": 20, "y": 10, "font": "3", "xm": 2, "ym": 2},
-        "saida": {"x": 20, "y": 70, "font": "2", "xm": 1, "ym": 1},
-        "categoria": {"x": 20, "y": 100, "font": "2", "xm": 1, "ym": 1},
-        "emissor": {"x": 20, "y": 130, "font": "2", "xm": 1, "ym": 1},
-        "municipio": {"x": 20, "y": 180, "font": "2", "xm": 1, "ym": 1},
-        "data": {"x": 20, "y": 230, "font": "2", "xm": 1, "ym": 1},
-        "fracao": {"x": 20, "y": 270, "font": "2", "xm": 1, "ym": 1},
-        "fragil": {"x": 280, "y": 270, "font": "2", "xm": 1, "ym": 1},
-        "numeracao": {"x": 180, "y": 360, "font": "5", "xm": 2, "ym": 2},
-        "logo_y": 700,
-        "logo_largura": 220,
-    },
-
-    "100x30": {
-        "titulo":    {"x": 20,  "y": 20,  "font": "3", "xm": 1, "ym": 1},
-        "saida":     {"x": 20,  "y": 60,  "font": "2", "xm": 1, "ym": 1},
-        "categoria": {"x": 20,  "y": 90,  "font": "2", "xm": 1, "ym": 1},
-        "emissor":   {"x": 20,  "y": 120, "font": "2", "xm": 1, "ym": 1},
-        "municipio": {"x": 20,  "y": 150, "font": "2", "xm": 1, "ym": 1},
-        "data":      {"x": 20,  "y": 180, "font": "2", "xm": 1, "ym": 1},
-        "fracao":    {"x": 20,  "y": 220, "font": "2", "xm": 1, "ym": 1},
-        "fragil":    {"x": 200, "y": 220, "font": "2", "xm": 1, "ym": 1},
-        "numeracao": {"x": 450, "y": 36,  "font": "2", "xm": 2, "ym": 2},
-        "logo_y": 75,
-        "logo_largura": 120,
-        "logo_x": 550
-    }
+    nome: _extract_layout_dict(modelo) or {}
+    for nome, modelo in DEFAULT_TEMPLATES.items()
 }
 
 # -------------------- Aliases (compatibilidade) --------------------
