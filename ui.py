@@ -64,7 +64,6 @@ from qt_compat import (
     QGridLayout,
     QIcon,
     QInputDialog,
-    QIntValidator,
     QLabel,
     QLineEdit,
     QMenu,
@@ -73,6 +72,8 @@ from qt_compat import (
     QPalette,
     QPixmap,
     QPushButton,
+    QRegularExpression,
+    QRegularExpressionValidator,
     QSizePolicy,
     QSpacerItem,
     QSpinBox,
@@ -424,7 +425,9 @@ class EtiquetaApp(QWidget):
         layout_quadro.addLayout(grid)
 
         self.saida_input = QLineEdit()
-        self.saida_input.setValidator(QIntValidator(0, 999999))
+        self.saida_input.setValidator(
+            QRegularExpressionValidator(QRegularExpression(r"\d*"))
+        )
         self.saida_input.returnPressed.connect(self._imprimir_etiqueta)
 
         self.categoria_input = QComboBox()
