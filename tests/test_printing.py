@@ -28,6 +28,60 @@ def test_descobrir_impressora_padrao():
     assert printing.descobrir_impressora_padrao() == "dummy"
 
 
+def test_listar_impressoras_enum(monkeypatch):
+    import printing
+
+    monkeypatch.setattr(
+        printing, "carregar_config", lambda: {"ultima_impressora": "Ultima"}
+    )
+
+    def fake_enum(flags, *args):
+        assert flags == 3
+        return [
+            (flags, "desc", "Printer A", ""),
+            (flags, "desc", "Printer B", ""),
+            {"pPrinterName": "Printer A"},
+        ]
+
+    monkeypatch.setattr(
+        printing.win32print, "PRINTER_ENUM_LOCAL", 1, raising=False
+    )
+    monkeypatch.setattr(
+        printing.win32print, "PRINTER_ENUM_CONNECTIONS", 2, raising=False
+    )
+    monkeypatch.setattr(printing.win32print, "EnumPrinters", fake_enum, raising=False)
+
+    assert printing.listar_impressoras() == ["Printer A", "Printer B", "Ultima"]
+
+
+def test_listar_impressoras_fallback(monkeypatch):
+    import printing
+
+    monkeypatch.setattr(
+        printing, "carregar_config", lambda: {"ultima_impressora": "Ultima"}
+    )
+
+    def fake_enum(flags, *args):
+        raise OSError("falha")
+
+    monkeypatch.setattr(printing.win32print, "EnumPrinters", fake_enum, raising=False)
+
+    assert printing.listar_impressoras() == ["Ultima"]
+
+
+def test_listar_impressoras_sem_ultima(monkeypatch):
+    import printing
+
+    monkeypatch.setattr(printing, "carregar_config", lambda: {})
+
+    def fake_enum(flags, *args):
+        raise RuntimeError("erro")
+
+    monkeypatch.setattr(printing.win32print, "EnumPrinters", fake_enum, raising=False)
+
+    assert printing.listar_impressoras() == []
+
+
 def test_printer_service_retry(monkeypatch):
     import printing
 
