@@ -84,6 +84,74 @@ def carregar_config():
 def salvar_config(cfg):
     return importlib.import_module("persistence").salvar_config(cfg)
 
+
+def listar_impressoras() -> list[str]:
+    """Lista as impressoras disponíveis no sistema."""
+
+    try:
+        config = carregar_config()
+    except Exception:
+        config = {}
+
+    ultima = str(config.get("ultima_impressora") or "").strip()
+
+    try:
+        win32print = _get_win32print()
+        flags = int(getattr(win32print, "PRINTER_ENUM_LOCAL", 0)) | int(
+            getattr(win32print, "PRINTER_ENUM_CONNECTIONS", 0)
+        )
+        enum = win32print.EnumPrinters  # type: ignore[attr-defined]
+        impressoras_info = None
+        try:
+            impressoras_info = enum(flags)
+        except TypeError:
+            for args in ((flags, None, 2), (2, None, flags)):
+                try:
+                    impressoras_info = enum(*args)
+                    break
+                except TypeError:
+                    continue
+        if impressoras_info is None:
+            impressoras_info = []
+    except Exception:
+        return [ultima] if ultima else []
+
+    nomes: list[str] = []
+    vistos: set[str] = set()
+
+    for info in impressoras_info or []:
+        nome: str | None = None
+        if isinstance(info, dict):
+            nome = info.get("pPrinterName") or info.get("Name")
+        elif isinstance(info, (list, tuple)):
+            if len(info) >= 3 and isinstance(info[2], str):
+                nome = info[2]
+            else:
+                for valor in info:
+                    if isinstance(valor, str) and valor:
+                        nome = valor
+                        break
+        elif isinstance(info, bytes):
+            nome = info.decode("utf-8", errors="ignore")
+        elif isinstance(info, str):
+            nome = info
+
+        if not nome:
+            continue
+
+        nome = nome.strip()
+        if not nome or nome in vistos:
+            continue
+
+        vistos.add(nome)
+        nomes.append(nome)
+
+    if ultima and ultima not in vistos:
+        nomes.append(ultima)
+
+    return nomes
+
+
 DOTS_MM: int = 8   # ~203 dpi
 ENCODING: str = "cp1252"  # TSPL espera 8-bit (latin-1/cp1252)
 

@@ -45,6 +45,7 @@ from printing import (
     descobrir_impressora_padrao,
     imprimir_etiqueta,
     imprimir_pagina_teste,
+    listar_impressoras,
     listar_templates,
     montar_tspl,
 )
@@ -169,8 +170,9 @@ class ConfigDialog(QDialog):
         self._settings = settings
 
         form = QFormLayout()
-        self.printer_edit = QLineEdit(settings.get("ultima_impressora", ""))
-        form.addRow("Impressora:", self.printer_edit)
+        self.printer_combo = QComboBox()
+        self.printer_combo.setEditable(True)
+        form.addRow("Impressora:", self.printer_combo)
 
         self.template_combo = QComboBox()
         form.addRow("Modelo:", self.template_combo)
@@ -197,7 +199,30 @@ class ConfigDialog(QDialog):
 
     def showEvent(self, event: QCloseEvent) -> None:
         super().showEvent(event)
-        QTimer.singleShot(0, self._preencher_templates)
+        QTimer.singleShot(0, self._preparar_campos)
+
+    def _preparar_campos(self) -> None:
+        self._preencher_impressoras()
+        self._preencher_templates()
+
+    def _preencher_impressoras(self) -> None:
+        self.printer_combo.clear()
+        impressoras = listar_impressoras()
+        if impressoras:
+            self.printer_combo.addItems(impressoras)
+
+        preferida = str(self._settings.get("ultima_impressora", "")).strip()
+        if not preferida:
+            preferida = descobrir_impressora_padrao() or ""
+
+        if preferida:
+            idx = self.printer_combo.findText(preferida)
+            if idx >= 0:
+                self.printer_combo.setCurrentIndex(idx)
+            else:
+                self.printer_combo.setEditText(preferida)
+        elif self.printer_combo.isEditable():
+            self.printer_combo.clearEditText()
 
     def _preencher_templates(self) -> None:
         self.template_combo.clear()
@@ -209,7 +234,7 @@ class ConfigDialog(QDialog):
 
     def obter_config(self) -> dict[str, Any]:
         return {
-            "ultima_impressora": self.printer_edit.text().strip(),
+            "ultima_impressora": self.printer_combo.currentText().strip(),
             "template": self.template_combo.currentText(),
             "retry_automatico": self.retry_check.isChecked(),
             "backup_horario": self.time_edit.time().toString("HH:mm"),
