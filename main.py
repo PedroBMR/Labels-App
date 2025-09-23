@@ -66,18 +66,27 @@ sys.excepthook = _early_excepthook
 
 # Habilita faulthandler para dumps de threads em sinais/crashes nativos
 try:
-    faulthandler.enable(_EARLY_CRASH_STREAM, all_threads=True)  # type: ignore[arg-type]
+    faulthandler.enable(  # type: ignore[arg-type]
+        _EARLY_CRASH_STREAM,
+        all_threads=True,
+    )
 except Exception:
     faulthandler.enable(all_threads=True)
 
 # Registra sinais comuns (nem todos existem no Windows, mas não faz mal checar)
-for _sig in (getattr(signal, "SIGSEGV", None),
-             getattr(signal, "SIGABRT", None),
-             getattr(signal, "SIGILL", None),
-             getattr(signal, "SIGFPE", None)):
+for _sig in (
+    getattr(signal, "SIGSEGV", None),
+    getattr(signal, "SIGABRT", None),
+    getattr(signal, "SIGILL", None),
+    getattr(signal, "SIGFPE", None),
+):
     if _sig is not None:
         try:
-            faulthandler.register(_sig, file=_EARLY_CRASH_STREAM, all_threads=True)  # type: ignore[arg-type]
+            faulthandler.register(  # type: ignore[arg-type]
+                _sig,
+                file=_EARLY_CRASH_STREAM,
+                all_threads=True,
+            )
         except Exception:
             pass
 
@@ -131,8 +140,15 @@ def _setup_crash_capture() -> None:
         except Exception:
             pass
         try:
-            _CRASH_STREAM.write("\n=== UNHANDLED EXCEPTION ===\n")  # type: ignore[union-attr]
-            traceback.print_exception(exc_type, exc, tb, file=_CRASH_STREAM)  # type: ignore[arg-type]
+            _CRASH_STREAM.write(  # type: ignore[union-attr]
+                "\n=== UNHANDLED EXCEPTION ===\n"
+            )
+            traceback.print_exception(  # type: ignore[arg-type]
+                exc_type,
+                exc,
+                tb,
+                file=_CRASH_STREAM,
+            )
             _CRASH_STREAM.flush()  # type: ignore[union-attr]
         except Exception:
             pass
@@ -253,7 +269,9 @@ if __name__ == "__main__":
             janela.setWindowTitle(f"Gerador de Etiquetas — v{__version__}")
             janela.show()
             janela._pywin32_preload = _PyWin32Preload()
-            janela._pywin32_preload.finished.connect(janela._pywin32_preload.deleteLater)
+            janela._pywin32_preload.finished.connect(
+                janela._pywin32_preload.deleteLater
+            )
             janela._pywin32_preload.start()
             logger.info("Boot: após criar UI %.3fs", time.perf_counter() - BOOT_START)
             enable_file_logging()
@@ -269,7 +287,9 @@ if __name__ == "__main__":
             # excepthook
             logger.exception("Crash fatal na thread principal")
             try:
-                _CRASH_STREAM.write("\n=== MAIN EXCEPTION ===\n")  # type: ignore[union-attr]
+                _CRASH_STREAM.write(  # type: ignore[union-attr]
+                    "\n=== MAIN EXCEPTION ===\n"
+                )
                 traceback.print_exc(file=_CRASH_STREAM)  # type: ignore[arg-type]
                 _CRASH_STREAM.flush()  # type: ignore[union-attr]
             except Exception:
