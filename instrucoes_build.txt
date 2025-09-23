@@ -1,0 +1,69 @@
+Guia simples para gerar o instalador do Labels-App (Windows)
+
+1. Instale o Python 3.11 (ou superior):
+   • Baixe o instalador em https://www.python.org/downloads/windows/
+   • Marque a opção “Add Python to PATH” durante a instalação.
+   • Após terminar, abra o Menu Iniciar, pesquise por “PowerShell”, abra e digite:
+     python --version
+     → se aparecer algo como “Python 3.11.x”, está tudo certo.
+
+2. Permita a execução de scripts no PowerShell (faça isso apenas uma vez):
+   • Ainda no PowerShell, digite:
+     Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+   • Responda “S” (Sim) quando for perguntado.
+
+3. Baixe o código do Labels-App:
+   • Acesse o repositório (GitHub ou ZIP compartilhado).
+   • Se recebeu um arquivo ZIP, clique com o botão direito e escolha “Extrair tudo…”.
+   • Abra a pasta extraída; você verá arquivos como README.md, main.py e uma pasta “scripts”.
+
+4. Abra a pasta do projeto no PowerShell:
+   • No Explorador de Arquivos, vá até a pasta do projeto.
+   • Clique na barra de endereço, digite powershell e pressione Enter.
+   • Confirme que o prompt mostra algo parecido com:
+     PS C:\Users\SeuUsuario\Downloads\Labels-App>
+
+5. (Opcional, mas recomendado) Crie um ambiente virtual para isolar dependências:
+   python -m venv .venv
+   • Aguarde a criação da pasta “.venv”.
+
+6. Ative o ambiente virtual:
+   .\.venv\Scripts\Activate.ps1
+   • O prompt passará a mostrar “(.venv)” antes do caminho.
+
+7. Atualize o pip (opcional, mas ajuda a evitar problemas):
+   python -m pip install --upgrade pip
+
+8. Instale as dependências principais:
+   pip install -r requirements-dev.txt
+   • Aguarde até o PowerShell voltar a aceitar comandos.
+
+9. Escolha a biblioteca gráfica Qt:
+   • Para a opção mais comum (PyQt5), execute:
+     pip install -r requirements-pyqt5.txt
+   • Se preferir PySide6 (Python 3.13, por exemplo), use:
+     pip install -r requirements-pyside6.txt
+
+10. Gere o executável com o script pronto:
+    .\scripts\build_with_assets.ps1
+    • O script vai:
+      – Garantir que todas as dependências estejam instaladas.
+      – Rodar o PyInstaller usando o arquivo GeradorEtiquetas.spec.
+      – Copiar a pasta “assets” para dentro da pasta “dist”, deixando-a gravável.
+
+11. Verifique o resultado:
+    • Ao final, abra a pasta “dist”.
+    • Você verá dois arquivos:
+      – GeradorEtiquetas.exe (executável principal)
+      – GeradorEtiquetas_vX.Y.Z.exe (cópia nomeada com a versão oficial)
+    • Use esse executável para distribuir o programa.
+
+12. Dicas extras:
+    • Se quiser forçar o uso de PyQt5 ou PySide6 sem alterar o passo 9, defina a variável QT_BINDING antes de rodar o script:
+      $env:QT_BINDING = "PySide6"
+      .\scripts\build_with_assets.ps1
+    • Para alterar o nome ou ícone do executável, defina variáveis antes da etapa 10:
+      $env:APP_NAME = "MeuAppEtiquetas"
+      $env:APP_ICON = "c:\caminho\icone.ico"
+      .\scripts\build_with_assets.ps1
+    • Sempre que atualizar o código, repita a etapa 10 para gerar um novo executável.
