@@ -45,3 +45,30 @@ def test_compile_tspl_snapshot():
     lines = [line.strip() for line in commands.strip().splitlines() if line.strip()]
     assert lines[0].startswith("SIZE")
     assert any("Olá Teste" in line for line in lines)
+
+
+def test_render_qrcode_without_dependency(monkeypatch):
+    from render import preview
+
+    document = TemplateDocument(
+        name="qr-missing",
+        page={"backend": "tspl", "width_mm": 40, "height_mm": 30, "dpi": 203},
+        elements=[
+            {
+                "type": "qrcode",
+                "x_mm": 2,
+                "y_mm": 2,
+                "width_mm": 20,
+                "height_mm": 20,
+                "value": "{codigo}",
+            }
+        ],
+        variables={
+            "codigo": TemplateVariable(name="codigo", required=True),
+        },
+    )
+
+    monkeypatch.setattr(preview, "qrcode", None)
+
+    image = preview.render_template(document.to_dict(), {"codigo": "123456"})
+    assert image.mode == "L"
