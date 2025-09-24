@@ -135,6 +135,7 @@ class LabelScene(QGraphicsScene):
         item = create_item(element)
         self.addItem(item)
         item.geometryCommitted.connect(self._on_geometry_committed)
+        item.apply_element(element)
         return item
 
     def delete_item(self, item: GraphicsElementItem) -> None:
