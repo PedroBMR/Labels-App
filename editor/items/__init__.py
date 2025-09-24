@@ -7,10 +7,11 @@ from typing import Any, Mapping
 from qt_compat import QGraphicsItem, QGraphicsRectItem, QRectF, Qt
 
 from .base import GraphicsElementItem, iter_element_items
-from .text import TextGraphicsItem
+from .text import EditableTextItem, TextGraphicsItem
 
 __all__ = [
     "GraphicsElementItem",
+    "EditableTextItem",
     "TextGraphicsItem",
     "create_base_rect_item",
     "create_item",
@@ -44,5 +45,4 @@ def create_base_rect_item(rect: QRectF) -> QGraphicsRectItem:
 def create_text_item(element: Mapping[str, Any] | None = None) -> TextGraphicsItem:
     """Create a :class:`TextGraphicsItem` applying default flags."""
 
-    item = TextGraphicsItem(element)
-    return item
+    return TextGraphicsItem(element)

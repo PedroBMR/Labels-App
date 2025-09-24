@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import math
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from compile import Calibration, SafeDict
 from model.template import TemplateDocument
@@ -28,6 +28,30 @@ from .items import (
     create_item,
     create_text_item,
 )
+
+
+def build_model_from_scene(
+    scene: "LabelScene",
+    name: str,
+    variables: Mapping[str, Any] | None = None,
+) -> TemplateDocument:
+    """Return a :class:`TemplateDocument` representing ``scene``."""
+
+    elements: list[dict[str, Any]] = []
+    for item in scene.editable_items():
+        if not item.isVisible():
+            continue
+        element = item.to_dict()
+        if bool(element.get("hidden")):
+            continue
+        elements.append(element)
+    page = dict(scene.page)
+    return TemplateDocument(
+        name=name,
+        page=page,
+        elements=elements,
+        variables=dict(variables or {}),
+    )
 
 
 def _compute_dots_per_mm(page: Mapping[str, Any]) -> float:
@@ -175,6 +199,31 @@ class LabelScene(QGraphicsScene):
 
     def delete_item(self, item: GraphicsElementItem) -> None:
         self.removeItem(item)
+
+    def remove_items(
+        self, items: Iterable[GraphicsElementItem | TextGraphicsItem]
+    ) -> bool:
+        removed = False
+        for item in list(items):
+            if getattr(item, "_locked", False):
+                continue
+            self.removeItem(item)
+            removed = True
+        if removed:
+            self.clearSelection()
+            self.clear_guides()
+            self.update()
+        return removed
+
+    def remove_selected_items(self) -> bool:
+        return self.remove_items(self.selected_items())
+
+    def can_remove_selected_items(self) -> bool:
+        for item in self.selected_items():
+            if getattr(item, "_locked", False):
+                continue
+            return True
+        return False
 
     def element_rect(self, element: Mapping[str, Any]) -> QRectF:
         width = float(element.get("width_mm", 20.0))
@@ -369,15 +418,7 @@ class LabelScene(QGraphicsScene):
         name: str,
         variables: Mapping[str, Any] | None = None,
     ) -> TemplateDocument:
-        elements = [item.to_dict() for item in self._iter_editable_items()]
-        page = dict(self.page)
-        document = TemplateDocument(
-            name=name,
-            page=page,
-            elements=elements,
-            variables=dict(variables or {}),
-        )
-        return document
+        return build_model_from_scene(self, name, variables)
 
     def load_document(self, document: TemplateDocument) -> None:
         self.clear()

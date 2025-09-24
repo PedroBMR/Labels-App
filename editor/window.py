@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from editor.widget import LabelEditorWidget
-from model.template import TemplateDocument, TemplateVariable, slugify
+from model.template import TemplateDocument, TemplateVariable
 from printing import (
     Template,
     compile_template,
@@ -37,6 +37,7 @@ from qt_compat import (
     QWidget,
     pyqtSignal,
 )
+from template_store import template_store
 
 __all__ = ["LabelEditorWindow"]
 
@@ -482,19 +483,12 @@ class LabelEditorWindow(QMainWindow):
         return name
 
     def _path_for_name(self, name: str) -> Path:
-        directory = template_manager.directory
-        directory.mkdir(parents=True, exist_ok=True)
-        slug = slugify(name or "template") or "template"
-        return directory / f"{slug}.json"
+        return template_store.path_for_name(name)
 
     def _ensure_in_templates(self, path: Path) -> Path:
-        directory = template_manager.directory
-        directory.mkdir(parents=True, exist_ok=True)
-        if path.parent == directory:
-            return path
         fallback = (self.current_document.name or "").strip() or path.stem or "Modelo"
         self.current_document.name = fallback
-        return self._path_for_name(fallback)
+        return template_store.ensure_path(path, name=fallback)
 
     def _write_template(self, path: Path, *, overwrite: bool = False) -> None:
         target = self._ensure_in_templates(path)
@@ -506,13 +500,26 @@ class LabelEditorWindow(QMainWindow):
             )
             return
         name = self._ensure_document_name()
+        self.editor.update_preview(immediate=True)
         template = self.editor.to_document(
             name,
             self.current_document.variables,
         )
         self.current_document = template
+        is_same_file = self.current_path is not None and Path(self.current_path) == target
         try:
-            template.dump(target)
+            saved_path = template_store.save(
+                template,
+                path=target,
+                overwrite=overwrite or is_same_file,
+            )
+        except FileExistsError:
+            QMessageBox.warning(
+                self,
+                "Arquivo existente",
+                "Já existe um arquivo com esse nome. Escolha outro nome para o modelo.",
+            )
+            return
         except OSError as exc:  # pragma: no cover - feedback ao usuário
             QMessageBox.critical(
                 self,
@@ -520,9 +527,8 @@ class LabelEditorWindow(QMainWindow):
                 f"Não foi possível salvar o modelo: {exc}",
             )
             return
-        self.current_path = target
-        template_manager.reload()
-        self.status.showMessage(f"Template salvo em {target}", 3000)
+        self.current_path = saved_path
+        self.status.showMessage(f"Template salvo em {saved_path}", 3000)
 
     # ------------------------------------------------------------------
     def _show_tutorial(self) -> None:
@@ -542,6 +548,7 @@ class LabelEditorWindow(QMainWindow):
 
     # ------------------------------------------------------------------
     def _compile(self, backend: str = "tspl") -> tuple[str, str]:
+        self.editor.update_preview(immediate=True)
         template = self.editor.to_document(
             self.current_document.name,
             self.current_document.variables,
