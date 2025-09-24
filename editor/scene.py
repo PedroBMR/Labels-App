@@ -86,6 +86,7 @@ class LabelScene(QGraphicsScene):
         self._guide_pen = QPen(QColor(255, 128, 0))
         self._guide_pen.setWidth(0)
         self._alignment_tolerance = 6.0
+        self._snap_to_grid = False
         self.setBackgroundBrush(QColor(250, 250, 250))
         self._update_scene_rect()
 
@@ -156,29 +157,32 @@ class LabelScene(QGraphicsScene):
 
     # ------------------------------------------------------------------
     def snap_point(self, item: GraphicsElementItem, new_pos: QPointF) -> QPointF:
-        grid = self.grid_pixels()
-        if grid > 0.0:
-            new_pos.setX(round(new_pos.x() / grid) * grid)
-            new_pos.setY(round(new_pos.y() / grid) * grid)
+        snapped = QPointF(new_pos)
+        if self._snap_to_grid:
+            grid = self.grid_pixels()
+            if grid > 0.0:
+                snapped.setX(round(snapped.x() / grid) * grid)
+                snapped.setY(round(snapped.y() / grid) * grid)
         rect = item.shapeRect()
-        rect.moveTo(new_pos)
+        rect.moveTo(snapped)
         aligned = self._align_rect(item, rect)
         return aligned.topLeft()
 
     def snap_rect(self, rect: QRectF, item: GraphicsElementItem) -> QRectF:
-        grid = self.grid_pixels()
         snapped = QRectF(rect)
-        if grid > 0.0:
-            left = round(snapped.left() / grid) * grid
-            top = round(snapped.top() / grid) * grid
-            right = round(snapped.right() / grid) * grid
-            bottom = round(snapped.bottom() / grid) * grid
-            snapped = QRectF(
-                left,
-                top,
-                max(grid, right - left),
-                max(grid, bottom - top),
-            )
+        if self._snap_to_grid:
+            grid = self.grid_pixels()
+            if grid > 0.0:
+                left = round(snapped.left() / grid) * grid
+                top = round(snapped.top() / grid) * grid
+                right = round(snapped.right() / grid) * grid
+                bottom = round(snapped.bottom() / grid) * grid
+                snapped = QRectF(
+                    left,
+                    top,
+                    max(grid, right - left),
+                    max(grid, bottom - top),
+                )
         return self._align_rect(item, snapped)
 
     def snap_rotation(self, angle: float) -> float:

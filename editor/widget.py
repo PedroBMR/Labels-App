@@ -209,53 +209,63 @@ class LabelEditorWidget(QWidget):
         self.preview_widget.set_image(image)
 
     def create_default(self, kind: str) -> dict[str, Any]:
+        page = self.scene.page
+        page_width = float(page.get("width_mm", 80.0) or 80.0)
+        page_height = float(page.get("height_mm", 60.0) or 60.0)
+
+        def _center(element: dict[str, Any]) -> dict[str, Any]:
+            width = float(element.get("width_mm", page_width) or page_width)
+            height = float(element.get("height_mm", page_height) or page_height)
+            width = max(1.0, min(width, page_width))
+            height = max(1.0, min(height, page_height))
+            element["width_mm"] = width
+            element["height_mm"] = height
+            element["x_mm"] = max(0.0, (page_width - width) / 2.0)
+            element["y_mm"] = max(0.0, (page_height - height) / 2.0)
+            return element
+
         if kind == "text":
-            return {
+            element = {
                 "type": "text",
-                "x_mm": 5,
-                "y_mm": 5,
                 "width_mm": 30,
                 "height_mm": 10,
                 "content": "Novo texto",
                 "font": {"size": 22},
             }
+            return _center(element)
         if kind == "barcode":
-            return {
+            element = {
                 "type": "barcode",
-                "x_mm": 5,
-                "y_mm": 20,
                 "width_mm": 50,
                 "height_mm": 20,
                 "value": "123456789012",
                 "symbology": "code128",
             }
+            return _center(element)
         if kind == "qr":
-            return {
+            element = {
                 "type": "qr",
-                "x_mm": 10,
-                "y_mm": 10,
                 "width_mm": 25,
                 "height_mm": 25,
                 "value": "https://",
                 "error": "M",
             }
+            return _center(element)
         if kind == "image":
-            return {
+            element = {
                 "type": "image",
-                "x_mm": 10,
-                "y_mm": 10,
                 "width_mm": 30,
                 "height_mm": 20,
                 "fit": "contain",
             }
+            return _center(element)
         if kind == "shape":
-            return {
+            element = {
                 "type": "shape",
                 "kind": "rect",
-                "x_mm": 2,
-                "y_mm": 2,
                 "width_mm": 40,
                 "height_mm": 30,
                 "thickness_mm": 0.5,
             }
+            return _center(element)
         raise ValueError(f"Tipo desconhecido: {kind}")
