@@ -21,7 +21,13 @@ from qt_compat import (
     QUndoStack,
 )
 
-from .items import GraphicsElementItem, create_item, iter_element_items
+from .items import (
+    GraphicsElementItem,
+    TextGraphicsItem,
+    create_base_rect_item,
+    create_item,
+    create_text_item,
+)
 
 
 def _compute_dots_per_mm(page: Mapping[str, Any]) -> float:
@@ -38,7 +44,7 @@ def _compute_dots_per_mm(page: Mapping[str, Any]) -> float:
 
 
 class _StateChange(QUndoCommand):
-    item: GraphicsElementItem
+    item: GraphicsElementItem | TextGraphicsItem
     before: Any
     after: Any
 
@@ -87,6 +93,7 @@ class LabelScene(QGraphicsScene):
         self._guide_pen.setWidth(0)
         self._alignment_tolerance = 6.0
         self.setBackgroundBrush(QColor(250, 250, 250))
+        self._base_rect = None
         self._update_scene_rect()
 
     # ------------------------------------------------------------------
@@ -94,7 +101,7 @@ class LabelScene(QGraphicsScene):
         self.page = dict(page)
         self._dots_per_mm = _compute_dots_per_mm(self.page)
         self._update_scene_rect()
-        for item in iter_element_items(self.items()):
+        for item in self._iter_editable_items():
             item.apply_element(item.to_dict())
 
     def _update_scene_rect(self) -> None:
@@ -102,6 +109,19 @@ class LabelScene(QGraphicsScene):
         height = self.page.get("height_mm", 60.0)
         rect = QRectF(0, 0, self.mm_to_pixels_x(width), self.mm_to_pixels_y(height))
         self.setSceneRect(rect)
+        self._ensure_base_rect(rect)
+
+    def _ensure_base_rect(self, rect: QRectF) -> None:
+        if self._base_rect is None:
+            self._base_rect = create_base_rect_item(rect)
+            self._base_rect.setPen(QPen(QColor(210, 210, 210)))
+            self._base_rect.setZValue(-100)
+            self._base_rect.setAcceptedMouseButtons(Qt.NoButton)
+            self.addItem(self._base_rect)
+        else:
+            self._base_rect.prepareGeometryChange()
+            self._base_rect.setRect(rect)
+            self._base_rect.setPos(0, 0)
 
     # ------------------------------------------------------------------
     def mm_to_pixels_x(self, value: float) -> float:
@@ -127,11 +147,26 @@ class LabelScene(QGraphicsScene):
 
     def set_preview_variables(self, variables: Mapping[str, Any]) -> None:
         self._variables = dict(variables)
-        for item in iter_element_items(self.items()):
+        for item in self._iter_editable_items():
             item.apply_element(item.to_dict())
 
+    def _iter_editable_items(self):
+        for item in self.items():
+            if isinstance(item, (GraphicsElementItem, TextGraphicsItem)):
+                yield item
+
+    def editable_items(self) -> list[GraphicsElementItem | TextGraphicsItem]:
+        return list(self._iter_editable_items())
+
     # ------------------------------------------------------------------
-    def add_element(self, element: Mapping[str, Any]) -> GraphicsElementItem:
+    def add_element(self, element: Mapping[str, Any]) -> GraphicsElementItem | TextGraphicsItem:
+        element_type = str(element.get("type", "")).lower()
+        if element_type == "text":
+            item = create_text_item(element)
+            self.addItem(item)
+            item.apply_element(element)
+            item.geometryCommitted.connect(self._on_geometry_committed)
+            return item
         item = create_item(element)
         self.addItem(item)
         item.geometryCommitted.connect(self._on_geometry_committed)
@@ -198,7 +233,7 @@ class LabelScene(QGraphicsScene):
         vertical_guides: list[float] = []
         horizontal_guides: list[float] = []
 
-        for other in iter_element_items(self.items()):
+        for other in self._iter_editable_items():
             if other is item or not other.isVisible():
                 continue
             other_rect = other.sceneBoundingRect()
@@ -311,11 +346,15 @@ class LabelScene(QGraphicsScene):
         painter.restore()
 
     # ------------------------------------------------------------------
-    def _on_geometry_committed(self, item: GraphicsElementItem, before, after) -> None:
+    def _on_geometry_committed(
+        self, item: GraphicsElementItem | TextGraphicsItem, before, after
+    ) -> None:
         command = _StateChange(item, before, after, "Mover elemento")
         self.undo_stack.push(command)
 
-    def change_property(self, item: GraphicsElementItem, name: str, value: Any) -> None:
+    def change_property(
+        self, item: GraphicsElementItem | TextGraphicsItem, name: str, value: Any
+    ) -> None:
         current = copy.deepcopy(item.element.get(name))
         if name == "font":
             current = copy.deepcopy(item.element.get("font", {}))
@@ -330,9 +369,7 @@ class LabelScene(QGraphicsScene):
         name: str,
         variables: Mapping[str, Any] | None = None,
     ) -> TemplateDocument:
-        elements = [
-            item.to_dict() for item in iter_element_items(self.items())
-        ]
+        elements = [item.to_dict() for item in self._iter_editable_items()]
         page = dict(self.page)
         document = TemplateDocument(
             name=name,
@@ -344,6 +381,7 @@ class LabelScene(QGraphicsScene):
 
     def load_document(self, document: TemplateDocument) -> None:
         self.clear()
+        self._base_rect = None
         self.page = document.page
         self._dots_per_mm = _compute_dots_per_mm(self.page)
         self._update_scene_rect()
@@ -351,8 +389,12 @@ class LabelScene(QGraphicsScene):
             self.add_element(element)
 
     # ------------------------------------------------------------------
-    def selected_items(self) -> list[GraphicsElementItem]:
-        return list(iter_element_items(self.selectedItems()))
+    def selected_items(self) -> list[GraphicsElementItem | TextGraphicsItem]:
+        selected: list[GraphicsElementItem | TextGraphicsItem] = []
+        for item in self.selectedItems():
+            if isinstance(item, (GraphicsElementItem, TextGraphicsItem)):
+                selected.append(item)
+        return selected
 
     def bring_to_front(self) -> None:
         for index, item in enumerate(self.selected_items(), start=1):
@@ -426,7 +468,7 @@ class LabelScene(QGraphicsScene):
 class _PropertyChange(QUndoCommand):
     def __init__(
         self,
-        item: GraphicsElementItem,
+        item: GraphicsElementItem | TextGraphicsItem,
         name: str,
         before: Any,
         after: Any,

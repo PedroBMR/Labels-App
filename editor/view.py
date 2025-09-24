@@ -12,9 +12,16 @@ class LabelView(QGraphicsView):
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.setRenderHint(QPainter.Antialiasing, True)
+        self.setRenderHints(
+            QPainter.Antialiasing
+            | QPainter.TextAntialiasing
+            | QPainter.SmoothPixmapTransform
+        )
         self.setDragMode(QGraphicsView.RubberBandDrag)
-        self._panning = False
+        self.setViewportUpdateMode(QGraphicsView.MinimalViewportUpdate)
+        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+        self._space_panning = False
+        self._middle_panning = False
         self._last_pan_pos: QPointF | None = None
         self.horizontalScrollBar().valueChanged.connect(
             self._notify_viewport_change
@@ -28,26 +35,44 @@ class LabelView(QGraphicsView):
     def wheelEvent(self, event) -> None:  # noqa: D401 - Qt API
         if event.modifiers() & Qt.ControlModifier:
             angle = event.angleDelta().y()
-            factor = 1.2 if angle > 0 else 1 / 1.2
-            self.scale(factor, factor)
-            event.accept()
-            self.viewportChanged.emit()
-            return
+            if angle:
+                factor = 1.0015 ** angle
+                self.scale(factor, factor)
+                event.accept()
+                self.viewportChanged.emit()
+                return
         super().wheelEvent(event)
 
+    def keyPressEvent(self, event) -> None:  # noqa: D401 - Qt API
+        if event.key() == Qt.Key_Space and not event.isAutoRepeat():
+            self._space_panning = True
+            self.setDragMode(QGraphicsView.ScrollHandDrag)
+            self.viewport().setCursor(Qt.OpenHandCursor)
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event) -> None:  # noqa: D401 - Qt API
+        if event.key() == Qt.Key_Space and not event.isAutoRepeat():
+            self._space_panning = False
+            if not self._middle_panning:
+                self.setDragMode(QGraphicsView.RubberBandDrag)
+                self.viewport().unsetCursor()
+            event.accept()
+            return
+        super().keyReleaseEvent(event)
+
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: D401 - Qt API
-        if event.button() == Qt.MiddleButton or (
-            event.button() == Qt.LeftButton and event.modifiers() & Qt.SpaceModifier
-        ):
-            self._panning = True
+        if event.button() == Qt.MiddleButton:
+            self._middle_panning = True
             self._last_pan_pos = event.pos()
-            self.setCursor(Qt.ClosedHandCursor)
+            self.viewport().setCursor(Qt.ClosedHandCursor)
             event.accept()
             return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: D401 - Qt API
-        if self._panning and self._last_pan_pos is not None:
+        if self._middle_panning and self._last_pan_pos is not None:
             delta = event.pos() - self._last_pan_pos
             self._last_pan_pos = event.pos()
             self.horizontalScrollBar().setValue(
@@ -62,9 +87,14 @@ class LabelView(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: D401 - Qt API
-        if self._panning and event.button() in (Qt.MiddleButton, Qt.LeftButton):
-            self._panning = False
-            self.setCursor(Qt.ArrowCursor)
+        if event.button() == Qt.MiddleButton and self._middle_panning:
+            self._middle_panning = False
+            self._last_pan_pos = None
+            if self._space_panning:
+                self.viewport().setCursor(Qt.OpenHandCursor)
+            else:
+                self.setDragMode(QGraphicsView.RubberBandDrag)
+                self.viewport().unsetCursor()
             event.accept()
             self.viewportChanged.emit()
             return

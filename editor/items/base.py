@@ -57,13 +57,12 @@ class GraphicsElementItem(QGraphicsObject):
         self._initial_state: GeometryState | None = None
         self._resize_anchor: str | None = None
         self._rotating = False
-        self._dragging = False
-        self._drag_offset = QPointF()
         self.setFlags(
             QGraphicsObject.ItemIsSelectable
             | QGraphicsObject.ItemIsMovable
             | QGraphicsObject.ItemSendsGeometryChanges
         )
+        self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
         self.setAcceptHoverEvents(True)
         if element:
             self.apply_element(element)
@@ -218,7 +217,6 @@ class GraphicsElementItem(QGraphicsObject):
         handle = self._handle_at_pos(event.pos())
         self._resize_anchor = handle if handle and handle != "rotate" else None
         self._rotating = handle == "rotate"
-        self._dragging = False
         if self._rotating:
             self.setCursor(Qt.ClosedHandCursor)
         elif (
@@ -226,9 +224,6 @@ class GraphicsElementItem(QGraphicsObject):
             and event.button() == Qt.LeftButton
             and not self._locked
         ):
-            self._dragging = True
-            top_left = self.mapToScene(QPointF(0.0, 0.0))
-            self._drag_offset = event.scenePos() - top_left
             self.setCursor(Qt.ClosedHandCursor)
         super().mousePressEvent(event)
 
@@ -239,10 +234,6 @@ class GraphicsElementItem(QGraphicsObject):
         if self._resize_anchor:
             self._apply_resize(event.pos())
             return
-        if self._dragging:
-            self._apply_drag(event.scenePos())
-            event.accept()
-            return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:  # noqa: D401 - Qt API
@@ -251,9 +242,8 @@ class GraphicsElementItem(QGraphicsObject):
             self.setCursor(Qt.OpenHandCursor)
         self._rotating = False
         self._resize_anchor = None
-        if self._dragging:
+        if not self._locked:
             self.setCursor(Qt.OpenHandCursor)
-        self._dragging = False
         if self._initial_state is not None:
             new_state = self.current_state()
             if self.scene():
@@ -304,14 +294,6 @@ class GraphicsElementItem(QGraphicsObject):
         self._rect.moveTo(0, 0)
         self._update_element_geometry()
         self._update_pixmap()
-        self.changed.emit()
-
-    # ------------------------------------------------------------------
-    def _apply_drag(self, scene_pos: QPointF) -> None:
-        if self._locked:
-            return
-        target = scene_pos - self._drag_offset
-        self.setPos(target)
         self.changed.emit()
 
     # ------------------------------------------------------------------

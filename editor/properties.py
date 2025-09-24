@@ -22,7 +22,7 @@ from qt_compat import (
     QWidget,
 )
 
-from .items import GraphicsElementItem
+from .items import GraphicsElementItem, TextGraphicsItem
 from .scene import LabelScene
 
 
@@ -32,7 +32,7 @@ class PropertyPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._scene: LabelScene | None = None
-        self._item: GraphicsElementItem | None = None
+        self._item: GraphicsElementItem | TextGraphicsItem | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
@@ -232,7 +232,9 @@ class PropertyPanel(QWidget):
         self._item = selected[0]
         self._populate_from_item(self._item)
 
-    def _populate_from_item(self, item: GraphicsElementItem) -> None:
+    def _populate_from_item(
+        self, item: GraphicsElementItem | TextGraphicsItem
+    ) -> None:
         data = item.to_dict()
         self.x_spin.blockSignals(True)
         self.y_spin.blockSignals(True)
