@@ -1,793 +1,630 @@
-# printing.py
-# -*- coding: utf-8 -*-
-"""
-Rotinas relacionadas à impressão das etiquetas.
+"""High level printing helpers built on top of :mod:`compile` backends."""
 
-Destaques:
-- Alternância de templates por nome (ex.: "60x80", "100x30").
-- Tamanho/direction a partir de templates.json.
-- (Novo) Se o templates.json trouxer também posições dos campos (titulo/saida/...),
-  essas posições serão usadas. Se não houver, usa o fallback embutido em LAYOUTS.
-- Envio via spool do Windows (win32print). Salva logs úteis.
-
-Estrutura esperada em assets/templates.json (exemplo):
-{
-  "60x80": {
-    "largura_mm": 60, "altura_mm": 80, "gap_mm": 2, "direction": 1,
-    "titulo": {"x":20,"y":20,"font":"5","xm":3,"ym":3},
-    ...
-    "logo_y": 360, "logo_largura": 280
-  },
-  "100x30": { ... }
-}
-Se as posições não estiverem no JSON, o código usa LAYOUTS abaixo.
-"""
 from __future__ import annotations
 
 import copy
 import importlib
 import json
 import logging
+import socket
 import time
 import unicodedata
-from dataclasses import dataclass
-from functools import lru_cache
-from typing import Mapping, TypedDict
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Iterable, Mapping, Protocol
 
-from printing_utils import (
-    FONT_BASE_W,
-    adjust_logo_position,
-    sanitize_text,
-    text_width_dots,
-)
+from compile import Calibration, CompilationError, get_backend
+from model.template import TemplateDocument, TemplateValidationError
+from utils import recurso_caminho
 
+# Retained for backwards compatibility with legacy code/tests that relied on
+# the constant when performing manual conversions.
+DOTS_MM: int = 8
 
-def _get_win32print():
-    mod = globals().get("win32print")
-    if mod is None:
-        mod = importlib.import_module("win32print")
-        globals()["win32print"] = mod
-    return mod
-
-
-def __getattr__(name: str):
-    if name == "win32print":
-        return _get_win32print()
-    raise AttributeError(f"module {__name__} has no attribute {name}")
-
-
-def melhorar_logo(*args, **kwargs):
-    utils = importlib.import_module("utils")
-    return utils.melhorar_logo(*args, **kwargs)
-
-
-def recurso_caminho(*args, **kwargs):
-    utils = importlib.import_module("utils")
-    return utils.recurso_caminho(*args, **kwargs)
-
-
-@lru_cache(maxsize=1)
-def _load_templates_json() -> dict[str, dict]:
-    path = recurso_caminho("templates.json")
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _logger():
-    return importlib.import_module("log").logger
-
-
-def carregar_config():
-    return importlib.import_module("persistence").carregar_config()
-
-
-def salvar_config(cfg):
-    return importlib.import_module("persistence").salvar_config(cfg)
-
-
-def listar_impressoras() -> list[str]:
-    """Lista as impressoras disponíveis no sistema."""
-
-    try:
-        config = carregar_config()
-    except Exception:
-        config = {}
-
-    ultima = str(config.get("ultima_impressora") or "").strip()
-
-    try:
-        win32print = _get_win32print()
-        flags = int(getattr(win32print, "PRINTER_ENUM_LOCAL", 0)) | int(
-            getattr(win32print, "PRINTER_ENUM_CONNECTIONS", 0)
-        )
-        enum = win32print.EnumPrinters  # type: ignore[attr-defined]
-        impressoras_info = None
-        try:
-            impressoras_info = enum(flags)
-        except TypeError:
-            for args in ((flags, None, 2), (2, None, flags)):
-                try:
-                    impressoras_info = enum(*args)
-                    break
-                except TypeError:
-                    continue
-        if impressoras_info is None:
-            impressoras_info = []
-    except Exception:
-        return [ultima] if ultima else []
-
-    nomes: list[str] = []
-    vistos: set[str] = set()
-
-    for info in impressoras_info or []:
-        nome: str | None = None
-        if isinstance(info, dict):
-            nome = info.get("pPrinterName") or info.get("Name")
-        elif isinstance(info, (list, tuple)):
-            if len(info) >= 3 and isinstance(info[2], str):
-                nome = info[2]
-            else:
-                for valor in info:
-                    if isinstance(valor, str) and valor:
-                        nome = valor
-                        break
-        elif isinstance(info, bytes):
-            nome = info.decode("utf-8", errors="ignore")
-        elif isinstance(info, str):
-            nome = info
-
-        if not nome:
-            continue
-
-        nome = nome.strip()
-        if not nome or nome in vistos:
-            continue
-
-        vistos.add(nome)
-        nomes.append(nome)
-
-    if ultima and ultima not in vistos:
-        nomes.append(ultima)
-
-    return nomes
-
-
-DOTS_MM: int = 8   # ~203 dpi
-ENCODING: str = "cp1252"  # TSPL espera 8-bit (latin-1/cp1252)
-
-# Textos padrão utilizados nos campos das etiquetas.
-DEFAULT_LABEL_TEXTS: dict[str, str] = {
+DEFAULT_VARIABLES: dict[str, Any] = {
     "titulo": "CONIMS",
-    "saida": "Saida: {saida}",
-    "categoria": "Categoria: {categoria}",
-    "emissor": "Emissor: {emissor}",
-    "municipio": "Municipio: {municipio}",
-    "data": "Impresso em: {data_hora}",
+    "saida": "",
+    "categoria": "",
+    "emissor": "",
+    "municipio": "",
+    "data": "",
+    "data_hora": "",
     "fracao": "[ ] Fracao",
     "fragil": "[ ] Fragil",
-    "numeracao": "{numero} DE {total}",
+    "numero": 1,
+    "total": 1,
 }
 
-# Campos obrigatórios presentes nos layouts de etiquetas, na ordem esperada.
-LABEL_FIELDS: tuple[str, ...] = (
-    "titulo",
-    "saida",
-    "categoria",
-    "emissor",
-    "municipio",
-    "data",
-    "fracao",
-    "fragil",
-    "numeracao",
-)
-
-
-class _SafeFormatDict(dict[str, str]):
-    def __missing__(self, key: str) -> str:
-        return ""
-
-
-def _build_label_context(**kwargs: object) -> _SafeFormatDict:
-    ctx: dict[str, object] = {k: ("" if v is None else v) for k, v in kwargs.items()}
-
-    numero_value = next(
-        (ctx[k] for k in ("numero", "numero_atual", "indice") if k in ctx),
-        None,
-    )
-    if numero_value is not None:
-        for alias in ("numero", "numero_atual", "indice"):
-            ctx.setdefault(alias, numero_value)
-
-    total_value = next(
-        (ctx[k] for k in ("total", "total_exibicao") if k in ctx),
-        None,
-    )
-    if total_value is not None:
-        for alias in ("total", "total_exibicao"):
-            ctx.setdefault(alias, total_value)
-
-    return _SafeFormatDict({k: str(v) for k, v in ctx.items()})
-
-
-def _render_label_text(chave: str, context: Mapping[str, str]) -> str:
-    texto = DEFAULT_LABEL_TEXTS.get(chave)
-    if texto is None:
-        return "X"
-    if not isinstance(context, _SafeFormatDict):
-        context = _SafeFormatDict({k: str(v) for k, v in context.items()})
-    return texto.format_map(context)
-
-# -------------------- templates (tamanho/direction) --------------------
-_DEFAULT_TEMPLATE_DIM = {
-    "100x30": {"largura_mm": 100, "altura_mm": 30, "gap_mm": 2, "direction": 1},
-    "60x80": {"largura_mm": 60, "altura_mm": 80, "gap_mm": 2, "direction": 0},
+DEFAULT_TEMPLATES: dict[str, dict[str, Any]] = {
+    "100x30": {
+        "backend": "tspl",
+        "width_mm": 100,
+        "height_mm": 30,
+        "gap_mm": 2,
+        "direction": 1,
+        "elements": [
+            {"type": "text", "x_mm": 4, "y_mm": 4, "font": {"name": "3", "x": 1, "y": 1}, "content": "{titulo}"},
+            {"type": "text", "x_mm": 4, "y_mm": 9, "font": {"name": "2", "x": 1, "y": 1}, "content": "Saida: {saida}"},
+            {"type": "text", "x_mm": 4, "y_mm": 13, "font": {"name": "2", "x": 1, "y": 1}, "content": "Categoria: {categoria}"},
+            {"type": "text", "x_mm": 4, "y_mm": 17, "font": {"name": "2", "x": 1, "y": 1}, "content": "Emissor: {emissor}"},
+            {"type": "text", "x_mm": 4, "y_mm": 21, "font": {"name": "2", "x": 1, "y": 1}, "content": "Municipio: {municipio}"},
+            {"type": "text", "x_mm": 4, "y_mm": 25, "font": {"name": "2", "x": 1, "y": 1}, "content": "Impresso em: {data_hora}"},
+            {"type": "text", "x_mm": 4, "y_mm": 27.5, "font": {"name": "2", "x": 1, "y": 1}, "content": "{fracao}"},
+            {"type": "text", "x_mm": 60, "y_mm": 27.5, "font": {"name": "2", "x": 1, "y": 1}, "content": "{fragil}"},
+            {"type": "text", "x_mm": 68, "y_mm": 6, "font": {"name": "5", "x": 1, "y": 1}, "content": "{numero} DE {total}"},
+            {"type": "image", "x_mm": 70, "y_mm": 16, "key": "logo", "max_width_mm": 24, "max_height_mm": 12},
+        ],
+    },
+    "60x80": {
+        "backend": "tspl",
+        "width_mm": 60,
+        "height_mm": 80,
+        "gap_mm": 2,
+        "direction": 0,
+        "elements": [
+            {"type": "text", "x_mm": 4, "y_mm": 6, "font": {"name": "3", "x": 1, "y": 1}, "content": "{titulo}"},
+            {"type": "text", "x_mm": 4, "y_mm": 14, "font": {"name": "2", "x": 1, "y": 1}, "content": "Saida: {saida}"},
+            {"type": "text", "x_mm": 4, "y_mm": 19, "font": {"name": "2", "x": 1, "y": 1}, "content": "Categoria: {categoria}"},
+            {"type": "text", "x_mm": 4, "y_mm": 24, "font": {"name": "2", "x": 1, "y": 1}, "content": "Emissor: {emissor}"},
+            {"type": "text", "x_mm": 4, "y_mm": 29, "font": {"name": "2", "x": 1, "y": 1}, "content": "Municipio: {municipio}"},
+            {"type": "text", "x_mm": 4, "y_mm": 34, "font": {"name": "2", "x": 1, "y": 1}, "content": "Impresso em: {data_hora}"},
+            {"type": "text", "x_mm": 4, "y_mm": 39, "font": {"name": "2", "x": 1, "y": 1}, "content": "{fracao}"},
+            {"type": "text", "x_mm": 28, "y_mm": 39, "font": {"name": "2", "x": 1, "y": 1}, "content": "{fragil}"},
+            {"type": "text", "x_mm": 18, "y_mm": 46, "font": {"name": "5", "x": 1, "y": 1}, "content": "{numero} DE {total}"},
+            {"type": "image", "x_mm": 10, "y_mm": 58, "key": "logo", "max_width_mm": 40, "max_height_mm": 18},
+        ],
+    },
 }
+
+ALIASES: dict[str, str] = {"padrao": "100x30", "padrão": "100x30"}
+CALIBRATION_SQUARE_MM = 50.0
+
+
+def _norm_key(value: str) -> str:
+    value = unicodedata.normalize("NFKD", value or "")
+    value = "".join(ch for ch in value if not unicodedata.combining(ch))
+    return value.strip().lower()
+
+
+def _default_logo() -> str | None:
+    try:
+        return recurso_caminho("logo.png")
+    except Exception:
+        return None
+
+
+def combine_calibrations(*calibrations: Calibration | None) -> Calibration:
+    scale_x = 1.0
+    scale_y = 1.0
+    for cal in calibrations:
+        if not cal:
+            continue
+        scale_x *= cal.scale_x
+        scale_y *= cal.scale_y
+    return Calibration(scale_x=scale_x, scale_y=scale_y)
 
 
 @dataclass
 class Template:
-    largura_mm: int
-    altura_mm: int
-    gap_mm: int
-    direction: int
-    layout: Layout
+    """Wrapper around :class:`model.template.TemplateDocument`."""
+
+    document: TemplateDocument
+    calibration: Calibration = field(default_factory=Calibration)
+
+    @property
+    def name(self) -> str:
+        return self.document.name
+
+    @property
+    def data(self) -> dict[str, Any]:
+        return self.document.as_backend_dict()
+
+    def clone(self) -> "Template":
+        return Template(self.document.copy(), self.calibration)
+
+    @property
+    def backend(self) -> str:
+        return self.document.backend
+
+    @property
+    def width_mm(self) -> float:
+        return float(self.document.page.get("width_mm", 0))
+
+    @property
+    def height_mm(self) -> float:
+        return float(self.document.page.get("height_mm", 0))
+
+    @property
+    def gap_mm(self) -> float:
+        return float(self.document.page.get("gap_mm", 0))
+
+    def with_calibration(self, calibration: Calibration) -> "Template":
+        return Template(self.document.copy(), calibration)
 
 
 class TemplateManager:
-    def _load_templates_dim(self) -> dict[str, dict]:
-        """Carrega templates.json. Aceita tanto dimensões quanto posições.
-        Se houver falha, retorna fallback somente com dimensões."""
+    def __init__(self, directory: Path | None = None) -> None:
+        self._directory = directory
+        self._cache: dict[str, Template] | None = None
+
+    @property
+    def directory(self) -> Path:
+        if self._directory is None:
+            self._directory = Path(recurso_caminho("templates"))
+        self._directory.mkdir(parents=True, exist_ok=True)
+        return self._directory
+
+    def reload(self) -> None:
+        self._cache = None
+
+    def list_names(self) -> list[str]:
+        return sorted(self._templates().keys())
+
+    def get_template(self, name: str) -> Template:
+        templates = self._templates()
+        if not templates:
+            raise RuntimeError("Nenhum template disponível")
+        resolved = self._resolve_name(name, templates)
+        return templates[resolved].clone()
+
+    # ------------------------------------------------------------------
+    def _templates(self) -> dict[str, Template]:
+        if self._cache is not None:
+            return self._cache
+
+        documents: dict[str, TemplateDocument] = {}
+        self._migrate_legacy()
+        logger = logging.getLogger("app")
+
+        for path in sorted(self.directory.glob("*.json")):
+            try:
+                document = TemplateDocument.from_file(path)
+            except Exception:  # pragma: no cover - defensive
+                logger.exception("Falha ao carregar template: %s", path)
+                continue
+            documents[document.name] = document
+
+        if not documents:
+            for name, legacy in DEFAULT_TEMPLATES.items():
+                documents[name] = TemplateDocument.from_legacy(name, legacy, defaults=DEFAULT_VARIABLES)
+
+        self._cache = {name: Template(doc) for name, doc in documents.items()}
+        return self._cache
+
+    def _migrate_legacy(self) -> None:
+        legacy_path = Path(recurso_caminho("templates.json"))
+        if not legacy_path.exists():
+            return
+
         try:
-            templates = _load_templates_json()
-            _logger().info(
-                "Templates carregados de %s: %s",
-                recurso_caminho("templates.json"),
-                ", ".join(templates.keys()),
-            )
-            return templates
-        except Exception:
-            _logger().exception(
-                "Falha ao carregar templates.json; usando dimensões padrão."
-            )
-            return _DEFAULT_TEMPLATE_DIM.copy()
+            with legacy_path.open("r", encoding="utf-8") as fh:
+                raw = json.load(fh)
+        except Exception:  # pragma: no cover - defensive
+            logging.getLogger("app").exception("Falha ao migrar templates.json")
+            return
 
-    def recarregar_templates(self) -> None:
-        """Força recarga do templates.json (dimensões e, se existir, posições)."""
-        _load_templates_json.cache_clear()
-        self._load_templates_dim()
+        if not isinstance(raw, dict):
+            return
 
-    def _resolver_nome_template(
-        self, nome: str, d: dict[str, dict]
-    ) -> tuple[str, dict]:
-        """Resolve nome considerando normalização e aliases."""
-        modelo = d.get(nome)
-        if modelo:
-            return nome, modelo
-        n_alvo = _norm_key(nome)
-        for k, v in d.items():
-            if _norm_key(k) == n_alvo:
-                return k, v
-        if n_alvo in ALIASES:
-            alvo = ALIASES[n_alvo]
-            modelo = d.get(alvo)
-            if modelo:
-                return alvo, modelo
-            for k, v in d.items():
-                if _norm_key(k) == _norm_key(alvo):
-                    return k, v
-        if _DEFAULT_LAYOUT_KEY in d:
-            return _DEFAULT_LAYOUT_KEY, d[_DEFAULT_LAYOUT_KEY]
-        k = next(iter(d))
-        return k, d[k]
+        for name, spec in raw.items():
+            if not isinstance(spec, Mapping):
+                continue
+            document = TemplateDocument.from_legacy(name, spec, defaults=DEFAULT_VARIABLES)
+            target = self.directory / f"{document.slug}.json"
+            if target.exists():
+                continue
+            try:
+                document.dump(target)
+            except OSError:  # pragma: no cover - depends on filesystem
+                logging.getLogger("app").exception("Falha ao gravar template migrado: %s", target)
 
-    def _extrair_layout_do_json(self, modelo: dict) -> Layout | None:
-        """
-        Se o dicionário do template no JSON tiver os campos de
-        posição, retorna Layout.
-        """
-        if not any(k in modelo for k in LABEL_FIELDS):
-            return None
-        layout: Layout = {}
-        for k in LABEL_FIELDS:
-            if k in modelo:
-                layout[k] = modelo[k]  # type: ignore[assignment]
-        for k in ("logo_y", "logo_largura", "logo_x", "logo_x_mm"):
-            if k in modelo:
-                layout[k] = modelo[k]  # type: ignore[assignment]
-        return layout
-
-    def get_template(self, nome: str) -> Template:
-        templates_dim = self._load_templates_dim()
-        nome_dim, modelo_dim = self._resolver_nome_template(nome, templates_dim)
-
-        largura_mm = int(modelo_dim.get("largura_mm", 60))
-        altura_mm = int(modelo_dim.get("altura_mm", 80))
-        gap_mm = int(modelo_dim.get("gap_mm", 2))
-        direction = int(modelo_dim.get("direction", 1))
-
-        layout_json = self._extrair_layout_do_json(modelo_dim)
-        if layout_json is not None:
-            layout_escolhido = layout_json
-        else:
-            _, layout_escolhido = self._resolver_nome_template(nome_dim, LAYOUTS)
-
-        layout_escolhido = copy.deepcopy(layout_escolhido)
-
-        for req in LABEL_FIELDS:
-            if req not in layout_escolhido:
-                raise ValueError(
-                    f"Layout '{nome_dim}' incorreto: campo '{req}' ausente."
-                )
-
-        _ajustar_altura_layout(layout_escolhido, altura_mm)
-        _ajustar_largura_layout(layout_escolhido, largura_mm)
-
-        tpl = Template(
-            largura_mm=largura_mm,
-            altura_mm=altura_mm,
-            gap_mm=gap_mm,
-            direction=direction,
-            layout=layout_escolhido,
-        )
-        return tpl
+    def _resolve_name(self, name: str, templates: Mapping[str, Template]) -> str:
+        if name in templates:
+            return name
+        norm = _norm_key(name)
+        for key in templates:
+            if _norm_key(key) == norm:
+                return key
+        if norm in ALIASES:
+            alias = ALIASES[norm]
+            if alias in templates:
+                return alias
+        return next(iter(templates))
 
 
 template_manager = TemplateManager()
 
 
-def _get_templates() -> dict[str, dict]:
-    """Retorna o dicionário de templates carregado."""
-    return template_manager._load_templates_dim()
-
-# -------------------- layout (posições) --------------------
-class TextoLayout(TypedDict):
-    x: int
-    y: int
-    font: str
-    xm: int
-    ym: int
-
-class Layout(TypedDict, total=False):
-    titulo: TextoLayout
-    saida: TextoLayout
-    categoria: TextoLayout
-    emissor: TextoLayout
-    municipio: TextoLayout
-    data: TextoLayout
-    fracao: TextoLayout
-    fragil: TextoLayout
-    numeracao: TextoLayout
-    logo_y: int
-    logo_largura: int
-    logo_x: int
-    logo_x_mm: float
-
-# Fallback embutido para posições
-LAYOUTS: dict[str, Layout] = {
-    "60x80": {
-        "titulo": {"x": 20, "y": 10, "font": "3", "xm": 2, "ym": 2},
-        "saida": {"x": 20, "y": 70, "font": "2", "xm": 1, "ym": 1},
-        "categoria": {"x": 20, "y": 100, "font": "2", "xm": 1, "ym": 1},
-        "emissor": {"x": 20, "y": 130, "font": "2", "xm": 1, "ym": 1},
-        "municipio": {"x": 20, "y": 180, "font": "2", "xm": 1, "ym": 1},
-        "data": {"x": 20, "y": 230, "font": "2", "xm": 1, "ym": 1},
-        "fracao": {"x": 20, "y": 270, "font": "2", "xm": 1, "ym": 1},
-        "fragil": {"x": 280, "y": 270, "font": "2", "xm": 1, "ym": 1},
-        "numeracao": {"x": 180, "y": 360, "font": "5", "xm": 2, "ym": 2},
-        "logo_y": 700,
-        "logo_largura": 220,
-    },
-
-    "100x30": {
-        "titulo":    {"x": 20,  "y": 20,  "font": "3", "xm": 1, "ym": 1},
-        "saida":     {"x": 20,  "y": 60,  "font": "2", "xm": 1, "ym": 1},
-        "categoria": {"x": 20,  "y": 90,  "font": "2", "xm": 1, "ym": 1},
-        "emissor":   {"x": 20,  "y": 120, "font": "2", "xm": 1, "ym": 1},
-        "municipio": {"x": 20,  "y": 150, "font": "2", "xm": 1, "ym": 1},
-        "data":      {"x": 20,  "y": 180, "font": "2", "xm": 1, "ym": 1},
-        "fracao":    {"x": 20,  "y": 220, "font": "2", "xm": 1, "ym": 1},
-        "fragil":    {"x": 200, "y": 220, "font": "2", "xm": 1, "ym": 1},
-        "numeracao": {"x": 450, "y": 36,  "font": "3", "xm": 2, "ym": 2},
-        "logo_y": 75,
-        "logo_largura": 120,
-        "logo_x": 550
-    }
-}
-
-# -------------------- Aliases (compatibilidade) --------------------
-ALIASES = {
-    "padrao": "100x30",
-    "padrão": "100x30",
-}
-
-# -------------------- Defaults de dimensões --------------------
-_DEFAULT_LAYOUT_KEY = "100x30"
-
-def _norm_key(s: str) -> str:
-    s = unicodedata.normalize("NFKD", s) if s else ""
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    return s.strip().lower()
-
-
 def listar_templates() -> list[str]:
-    """Lista (união) dos nomes presentes no templates.json e nos fallbacks."""
-    nomes = set(LAYOUTS.keys())
-    try:
-        for k in template_manager._load_templates_dim().keys():
-            nomes.add(k)
-    except Exception:
-        pass
-    return sorted(nomes)
+    return template_manager.list_names()
 
 
-def _ajustar_altura_layout(layout: Layout, altura_mm: int) -> None:
-    limite = altura_mm * DOTS_MM
-    for chave, espec in layout.items():
-        if not isinstance(espec, dict) or "y" not in espec:
-            continue
-        base = FONT_BASE_W.get(str(espec.get("font", "2")), 12)
-        ym = max(int(espec.get("ym", 1)), 1)
-        altura = base * ym
-        if espec["y"] + altura <= limite:
-            continue
+def recarregar_templates() -> None:
+    template_manager.reload()
 
-        orig_y = espec["y"]
-        orig_ym = ym
-
-        if chave in {"fracao", "fragil"}:
-            novo_y = limite - altura
-            if novo_y < 0:
-                max_ym = max(1, limite // base)
-                if max_ym != orig_ym:
-                    _logger().debug("Ajuste '%s.ym': %s -> %s", chave, orig_ym, max_ym)
-                espec["ym"] = max_ym
-                altura = base * max_ym
-                novo_y = max(0, limite - altura)
-            if novo_y != orig_y:
-                _logger().debug("Ajuste '%s.y': %s -> %s", chave, orig_y, novo_y)
-                espec["y"] = novo_y
-                outro = "fragil" if chave == "fracao" else "fracao"
-                if outro in layout and isinstance(layout[outro], dict):
-                    outro_y = layout[outro].get("y")
-                    if outro_y != novo_y:
-                        _logger().debug(
-                            "Ajuste '%s.y': %s -> %s", outro, outro_y, novo_y
-                        )
-                layout[outro]["y"] = novo_y
-        else:
-            max_ym = max(1, (limite - espec["y"]) // base)
-            if max_ym != orig_ym:
-                _logger().debug("Ajuste '%s.ym': %s -> %s", chave, orig_ym, max_ym)
-            espec["ym"] = max_ym
-            altura = base * max_ym
-            if espec["y"] + altura > limite:
-                novo_y = max(0, limite - altura)
-                if novo_y != orig_y:
-                    _logger().debug("Ajuste '%s.y': %s -> %s", chave, orig_y, novo_y)
-                espec["y"] = novo_y
-
-def _ajustar_largura_layout(layout: Layout, largura_mm: int) -> None:
-    limite = largura_mm * DOTS_MM
-
-    textos_contexto = _build_label_context(
-        saida="000",
-        categoria="X",
-        emissor="X",
-        municipio="X",
-        data_hora="00/00/0000 00:00",
-        numero="9999",
-        total="9999",
-    )
-
-    for chave, espec in layout.items():
-        if not isinstance(espec, dict) or "x" not in espec:
-            continue
-
-        texto = _render_label_text(chave, textos_contexto)
-        font = str(espec.get("font", "2"))
-        xm = max(int(espec.get("xm", 1)), 1)
-        largura = text_width_dots(texto, font, xm)
-        if espec["x"] + largura <= limite:
-            continue
-
-        orig_x = espec["x"]
-        orig_xm = xm
-
-        largura_unit = text_width_dots(texto, font, 1)
-        max_xm = max(1, (limite - orig_x) // max(largura_unit, 1))
-        if max_xm < orig_xm:
-            _logger().debug("Ajuste '%s.xm': %s -> %s", chave, orig_xm, max_xm)
-            espec["xm"] = max_xm
-            xm = max_xm
-            largura = text_width_dots(texto, font, xm)
-
-        if espec["x"] + largura > limite:
-            novo_x = max(0, limite - largura)
-            if novo_x != orig_x:
-                _logger().debug("Ajuste '%s.x': %s -> %s", chave, orig_x, novo_x)
-            espec["x"] = novo_x
-
-    # Ajuste do logo
-    adjust_logo_position(layout, largura_mm, DOTS_MM)
 
 def aplicar_template(nome: str) -> Template:
-    """Carrega e ajusta o template solicitado."""
-    tpl = template_manager.get_template(nome)
-    _logger().info(
-        "Template aplicado: nome=%s largura_mm=%s altura_mm=%s gap_mm=%s direction=%s",
-        nome,
-        tpl.largura_mm,
-        tpl.altura_mm,
-        tpl.gap_mm,
-        tpl.direction,
-    )
-    return tpl
+    return template_manager.get_template(nome)
 
-class ErroImpressora(TypedDict):
-    code: int
-    message: str
+
+def build_label_series(
+    dados: Mapping[str, Any],
+    template: Template | TemplateDocument | None = None,
+) -> list[dict[str, Any]]:
+    volumes = max(1, int(dados.get("volumes", 1)))
+    inicio = int(dados.get("inicio_indice", 1))
+    total = int(dados.get("total_exibicao") or volumes)
+
+    defaults = dict(DEFAULT_VARIABLES)
+    if isinstance(template, TemplateDocument):
+        defaults.update(template.defaults(scope="item"))
+    elif isinstance(template, Template):
+        defaults.update(template.document.defaults(scope="item"))
+
+    base = dict(defaults)
+    base.update({k: dados.get(k, base.get(k)) for k in defaults})
+    base.update({k: dados.get(k) for k in dados if k not in base})
+
+    logo = dados.get("logo") or _default_logo()
+    if logo:
+        base["logo"] = logo
+
+    series: list[dict[str, Any]] = []
+    for offset in range(volumes):
+        numero = inicio + offset
+        ctx = dict(base)
+        ctx.update(
+            {
+                "numero": numero,
+                "indice": numero,
+                "volume": offset + 1,
+                "total": total,
+                "total_exibicao": total,
+            }
+        )
+        series.append(ctx)
+    return series
+
+
+def compile_template(
+    template: Template | TemplateDocument | Mapping[str, Any],
+    variables: Mapping[str, Any],
+    *,
+    backend_name: str | None = None,
+    calibration: Calibration | None = None,
+) -> tuple[str, str]:
+    try:
+        if isinstance(template, Template):
+            template.document.ensure_valid(variables)
+            combined = combine_calibrations(template.calibration, calibration)
+            backend = backend_name or template.backend
+            template_data = template.data
+        elif isinstance(template, TemplateDocument):
+            template.ensure_valid(variables)
+            combined = calibration or Calibration()
+            backend = backend_name or template.backend
+            template_data = template.as_backend_dict()
+        else:
+            combined = calibration or Calibration()
+            template_data = dict(template)
+            backend = backend_name or str(template_data.get("backend", "tspl"))
+    except TemplateValidationError as exc:
+        raise CompilationError(str(exc)) from exc
+    backend = backend or "tspl"
+    compiler = get_backend(backend, template_data, calibration=combined)
+    return backend, compiler.compile(variables)
+
+
+def montar_tspl(template: Template, dados: Mapping[str, Any]) -> str:
+    variables = template.document.defaults(scope="template")
+    variables["items"] = build_label_series(dados, template)
+    _, commands = compile_template(template, variables, backend_name="tspl")
+    return commands
+
+
+def montar_zpl(template: Template, dados: Mapping[str, Any]) -> str:
+    variables = template.document.defaults(scope="template")
+    variables["items"] = build_label_series(dados, template)
+    _, commands = compile_template(template, variables, backend_name="zpl")
+    return commands
+
+
+class Transport(Protocol):
+    def send(self, payload: bytes) -> None:  # pragma: no cover - protocol definition
+        ...
+
+
+class TransportError(RuntimeError):
+    def __init__(self, message: str, *, code: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code if code is not None else -1
+
+
+class WindowsSpoolerTransport:
+    def __init__(self, printer_name: str | None = None) -> None:
+        self.printer_name = printer_name
+
+    def _resolve_printer(self) -> str:
+        name = self.printer_name or descobrir_impressora_padrao()
+        if not name:
+            raise TransportError("Nenhuma impressora padrão configurada", code=0)
+        return name
+
+    def send(self, payload: bytes) -> None:  # pragma: no cover - requires Windows
+        name = self._resolve_printer()
+        try:
+            win32print = _get_win32print()
+            handle = win32print.OpenPrinter(name)
+            try:
+                win32print.StartDocPrinter(handle, 1, ("Etiqueta", None, "RAW"))
+                win32print.StartPagePrinter(handle)
+                win32print.WritePrinter(handle, payload)
+                win32print.EndPagePrinter(handle)
+                win32print.EndDocPrinter(handle)
+            finally:
+                win32print.ClosePrinter(handle)
+        except Exception as exc:  # pragma: no cover - Windows only
+            code = getattr(exc, "winerror", getattr(exc, "errno", -1))
+            raise TransportError(str(exc), code=code) from exc
+
+
+class TcpTransport:
+    def __init__(self, host: str, port: int = 9100, *, timeout: float = 10.0) -> None:
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+
+    def send(self, payload: bytes) -> None:
+        try:
+            with socket.create_connection((self.host, self.port), self.timeout) as sock:
+                sock.sendall(payload)
+        except OSError as exc:
+            raise TransportError(str(exc), code=getattr(exc, "errno", -1)) from exc
+
+
+class CUPSTransport:
+    def __init__(self, printer_name: str | None = None) -> None:
+        try:
+            import cups  # type: ignore
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise TransportError("Modulo CUPS indisponivel") from exc
+
+        self._conn = cups.Connection()
+        default = self._conn.getDefault()
+        self.printer_name = printer_name or default
+        if not self.printer_name:
+            raise TransportError("Nenhuma impressora CUPS configurada")
+
+    def send(self, payload: bytes) -> None:  # pragma: no cover - depends on CUPS
+        try:
+            self._conn.printData(self.printer_name, payload, "Etiqueta", {})
+        except RuntimeError as exc:
+            raise TransportError(str(exc)) from exc
+
+
+_win32_module: Any | None = None
+
+
+def _get_win32print():  # pragma: no cover - Windows only
+    global _win32_module
+    if _win32_module is None:
+        _win32_module = importlib.import_module("win32print")
+    return _win32_module
+
 
 def descobrir_impressora_padrao() -> str | None:
-    """Retorna o nome da impressora configurada ou a padrão do sistema."""
     try:
         win32print = _get_win32print()
-        nome = win32print.GetDefaultPrinter()
-        config = carregar_config()
-        config["ultima_impressora"] = nome
-        salvar_config(config)
-        return str(nome)
+    except Exception:  # pragma: no cover - not on Windows
+        return None
+    try:
+        return win32print.GetDefaultPrinter()  # type: ignore[attr-defined]
     except Exception:
-        try:
-            config = carregar_config()
-            nome = config.get("ultima_impressora")
-            if nome:
-                win32print = _get_win32print()
-                handle = win32print.OpenPrinter(nome)
-                win32print.ClosePrinter(handle)
-                return str(nome)
-        except Exception:
-            pass
         return None
 
-def _texto_layout(chave: str, texto: str, layout: Layout) -> str:
-    p = layout[chave]
-    v = sanitize_text(texto)
-    return f'TEXT {p["x"]},{p["y"]},"{p["font"]}",0,{p["xm"]},{p["ym"]},"{v}"\r\n'
 
-def _calc_logo_x(layout: Layout, dots_x: int, largura_bytes: int) -> int:
-    if "logo_x_mm" in layout:
-        x_logo = int(layout["logo_x_mm"] * DOTS_MM)  # type: ignore[index]
-    elif "logo_x" in layout:
-        x_logo = int(layout["logo_x"])  # type: ignore[index]
-    else:
-        x_logo = (dots_x - (largura_bytes * 8)) // 2  # centraliza
-    return max(0, min(x_logo, max(0, dots_x - (largura_bytes * 8))))
-
-
-class TsplBuilder:
-    """Gera comandos TSPL a partir de um ``Template``."""
-
-    def __init__(self, template: Template) -> None:
-        self.template = template
-        self.layout = template.layout
-
-        logo_path = recurso_caminho("logo.png")
-        largura_desejada = int(self.layout.get("logo_largura", 240))
-        self.bitmap, self.largura_bytes, self.altura_px = melhorar_logo(
-            logo_path, largura_desejada=largura_desejada
-        )
-
-        self.dots_x = template.largura_mm * DOTS_MM
-        self.dots_y = template.altura_mm * DOTS_MM
-
-        logo_y = int(self.layout.get("logo_y", 0))
-        if logo_y + self.altura_px > self.dots_y:
-            limite = self.dots_y
-            altura_logo = self.altura_px
-            novo_y = max(0, limite - altura_logo)
-            if novo_y != logo_y:
-                _logger().debug("Ajuste 'logo_y': %s -> %s", logo_y, novo_y)
-                self.layout["logo_y"] = novo_y
-                logo_y = novo_y
-            if altura_logo > limite:
-                max_largura = max(1, int(largura_desejada * limite / altura_logo))
-                if max_largura != largura_desejada:
-                    _logger().debug(
-                        "Ajuste 'logo_largura': %s -> %s", largura_desejada, max_largura
-                    )
-                self.layout["logo_largura"] = max_largura
-                largura_desejada = max_largura
-                importlib.import_module("utils").melhorar_logo.cache_clear()
-                self.bitmap, self.largura_bytes, self.altura_px = melhorar_logo(
-                    logo_path, largura_desejada=max_largura
-                )
-                if self.layout.get("logo_y", 0) + self.altura_px > limite:
-                    novo_y = max(0, limite - self.altura_px)
-                    self.layout["logo_y"] = novo_y
-
-        self.x_logo = _calc_logo_x(self.layout, self.dots_x, self.largura_bytes)
-
-        for chave in LABEL_FIELDS:
-            if chave not in self.layout:
-                raise ValueError(f"Layout incorreto: campo '{chave}' ausente.")
-
-    def _t(self, ch: str, txt: str) -> str:
-        return _texto_layout(ch, txt, self.layout)
-
-    def _render_header(self) -> str:
-        return (
-            f"SIZE {self.template.largura_mm} mm,{self.template.altura_mm} mm\r\n"
-            f"GAP {self.template.gap_mm} mm,0\r\n"
-            "DENSITY 8\r\n"
-            "SPEED 4\r\n"
-            f"DIRECTION {self.template.direction}\r\n"
-            "CLS\r\n"
-        )
-
-    def build(self, dados: dict) -> str:
-        """Monta etiquetas usando ``dados`` fornecidos."""
-
-        volumes = int(dados.get("volumes", 1))
-        inicio_indice = int(dados.get("inicio_indice", 1))
-        total_exibicao = dados.get("total_exibicao")
-        total_display = total_exibicao if total_exibicao is not None else volumes
-
-        saida = dados.get("saida", "")
-        categoria = dados.get("categoria", "")
-        emissor = dados.get("emissor", "")
-        municipio = dados.get("municipio", "")
-        data_hora = dados.get("data_hora", "")
-
-        partes: list[str] = []
-        for offset in range(volumes):
-            numero_atual = inicio_indice + offset
-            textos_contexto = _build_label_context(
-                saida=saida,
-                categoria=categoria,
-                emissor=emissor,
-                municipio=municipio,
-                data_hora=data_hora,
-                numero_atual=numero_atual,
-                total=total_display,
-                total_exibicao=total_display,
-                volumes=volumes,
-            )
-            cmd = self._render_header()
-            for chave in LABEL_FIELDS:
-                cmd += self._t(chave, _render_label_text(chave, textos_contexto))
-
-            cmd += (
-                f"BITMAP {self.x_logo},{self.layout['logo_y']},"
-                f"{self.largura_bytes},{self.altura_px},0,"
-            )
-            cmd += self.bitmap.decode(ENCODING, errors="replace") + "\r\n"
-            cmd += "PRINT 1\r\n"
-            partes.append(cmd)
-
-        tspl = "".join(partes)
-        _logger().debug("tspl_first_200=%r", tspl[:200])
-        return tspl
-
-    def build_pagina_teste(self) -> str:
-        """Gera comandos para página de teste."""
-
-        ruler_start = self.layout["titulo"]["x"]
-        ruler_y = self.dots_y - 40
-        ruler_len = min(50 * DOTS_MM, self.dots_x - ruler_start)
-        ruler_len -= ruler_len % (10 * DOTS_MM)
-        if (
-            ruler_len <= 0
-            or ruler_start + ruler_len > self.dots_x
-            or ruler_y + 4 > self.dots_y
-        ):
-            raise ValueError("Layout inválido p/ régua de calibração.")
-
-        cmd = self._render_header()
-        textos_contexto = _build_label_context(
-            saida="000",
-            categoria="TESTE",
-            emissor="TESTE",
-            municipio="TESTE",
-            data_hora="00/00/0000 00:00",
-            numero=1,
-            total=1,
-        )
-        for chave in LABEL_FIELDS:
-            cmd += self._t(chave, _render_label_text(chave, textos_contexto))
-
-        cmd += (
-            f"BITMAP {self.x_logo},{self.layout['logo_y']},"
-            f"{self.largura_bytes},{self.altura_px},0,"
-        )
-
-        barras = f"BAR {ruler_start},{ruler_y},{ruler_len},4\r\n"
-        marcas = ruler_len // (10 * DOTS_MM)
-        for i in range(marcas + 1):
-            altura = 20 if i in (0, marcas) else 12
-            x = ruler_start + i * 10 * DOTS_MM
-            y = ruler_y - altura
-            barras += f"BAR {x},{y},2,{altura}\r\n"
-
-        cmd += self.bitmap.decode(ENCODING, errors="replace")
-        cmd += f"\r\n{barras}PRINT 1\r\n"
-        _logger().debug("tspl_first_200=%r", cmd[:200])
-        return cmd
-
-def montar_tspl(template: Template, dados: dict) -> str:
-    """Monta o conteúdo TSPL a partir do template informado e dos dados."""
-    builder = TsplBuilder(template)
-    return builder.build(dados)
-
-
-class PrinterService:
-    """Serviço responsável por enviar comandos TSPL à impressora."""
-
-    def __init__(
-        self,
-        printer_name: str | None = None,
-        *,
-        logger: logging.Logger | None = None,
-    ) -> None:
-        self.printer_name = printer_name
-        self.logger = logger or _logger()
-
-    def send(
-        self, tspl: str, *, retry: int = 1
-    ) -> tuple[bool, ErroImpressora | None]:
-        nome_imp = self.printer_name
-        if not nome_imp:
-            nome_imp = descobrir_impressora_padrao()
-        if nome_imp is None:
-            return False, {"code": 0, "message": "Nenhuma impressora padrão encontrada"}
-        log = self.logger
-        if log:
-            log.debug("impressora=%s tspl_len=%d", nome_imp, len(tspl))
-
+def listar_impressoras() -> list[str]:
+    try:
         win32print = _get_win32print()
+    except Exception:  # pragma: no cover - not on Windows
+        return []
 
-        for tentativa in range(1, retry + 1):
-            if log:
-                log.info("Tentativa %s de impressão", tentativa)
-            try:
-                h_prn = win32print.OpenPrinter(nome_imp)
-                win32print.StartDocPrinter(h_prn, 1, ("Etiqueta CONIMS", None, "RAW"))
-                win32print.StartPagePrinter(h_prn)
-                win32print.WritePrinter(
-                    h_prn, tspl.encode(ENCODING, errors="replace")
-                )
-                win32print.EndPagePrinter(h_prn)
-                win32print.EndDocPrinter(h_prn)
-                win32print.ClosePrinter(h_prn)
-                if log:
-                    log.info("Impressão concluída na tentativa %s", tentativa)
-                return True, None
-            except Exception as e:  # pragma: no cover - usado em Windows
-                codigo = getattr(e, "winerror", -1)
-                mensagem = getattr(e, "strerror", str(e))
-                if log:
-                    log.warning(
-                        "Falha na tentativa %s de impressão: %s - %s",
-                        tentativa,
-                        codigo,
-                        mensagem,
-                    )
-                if tentativa == retry:
-                    return False, {"code": codigo, "message": mensagem}
-                atraso = 0.5 * (2 ** (tentativa - 1))
-                time.sleep(atraso)
+    try:
+        flags = getattr(win32print, "PRINTER_ENUM_LOCAL", 2) | getattr(
+            win32print, "PRINTER_ENUM_CONNECTIONS", 4
+        )
+        entries = win32print.EnumPrinters(flags)
+    except Exception:  # pragma: no cover - Windows specific failure
+        entries = []
+
+    nomes: list[str] = []
+    for entry in entries or []:
+        nome: str | None = None
+        if isinstance(entry, (list, tuple)) and len(entry) >= 3:
+            maybe = entry[2]
+            if isinstance(maybe, str):
+                nome = maybe
+        elif isinstance(entry, dict):
+            nome = entry.get("pPrinterName") or entry.get("Name")
+        elif isinstance(entry, str):
+            nome = entry
+        if nome:
+            nomes.append(nome)
+
+    padrao = descobrir_impressora_padrao()
+    if padrao and padrao not in nomes:
+        nomes.append(padrao)
+    # remove duplicatas mantendo ordem
+    vistos: set[str] = set()
+    resultado: list[str] = []
+    for nome in nomes:
+        if nome not in vistos:
+            resultado.append(nome)
+            vistos.add(nome)
+    return resultado
+
+
+@dataclass
+class PrinterConfig:
+    backend: str = "tspl"
+    transport: str = "win32"
+    printer_name: str | None = None
+    host: str | None = None
+    port: int = 9100
+    encoding: str | None = None
+    calibration: Calibration = field(default_factory=Calibration)
+    timeout: float = 10.0
+
+
+class Printer:
+    def __init__(self, config: PrinterConfig, *, logger: logging.Logger | None = None) -> None:
+        self.config = config
+        self.logger = logger or logging.getLogger("app")
+        self.transport = self._make_transport()
+
+    def _make_transport(self) -> Transport:
+        mode = self.config.transport.lower()
+        if mode == "win32":
+            return WindowsSpoolerTransport(self.config.printer_name)
+        if mode == "tcp":
+            if not self.config.host:
+                raise ValueError("TCP transport requer host")
+            return TcpTransport(self.config.host, self.config.port, timeout=self.config.timeout)
+        if mode == "cups":
+            return CUPSTransport(self.config.printer_name)
+        raise ValueError(f"Transporte desconhecido: {self.config.transport}")
+
+    def compile_job(
+        self, template: Template | Mapping[str, Any], variables: Mapping[str, Any]
+    ) -> tuple[str, str]:
+        backend_name, commands = compile_template(
+            template,
+            variables,
+            backend_name=self.config.backend,
+            calibration=self.config.calibration,
+        )
+        return backend_name, commands
+
+    def send_commands(self, commands: str, *, backend: str | None = None) -> None:
+        encoding = self.config.encoding
+        backend = backend or self.config.backend
+        if encoding is None:
+            encoding = "cp1252" if backend.lower() == "tspl" else "utf-8"
+        payload = commands.encode(encoding, errors="replace")
+        self.transport.send(payload)
+
+    def print_job(
+        self, template: Template | Mapping[str, Any], variables: Mapping[str, Any]
+    ) -> tuple[bool, dict | None]:
+        try:
+            backend_name, commands = self.compile_job(template, variables)
+            self.send_commands(commands, backend=backend_name)
+            return True, None
+        except TransportError as exc:
+            if self.logger:
+                self.logger.error("Falha ao enviar comandos para impressora: %s", exc)
+            return False, {"code": exc.code, "message": str(exc)}
+        except CompilationError as exc:
+            return False, {"code": -1, "message": str(exc)}
+
+    def print_template(self, template: Template, dados: Mapping[str, Any]) -> tuple[bool, dict | None]:
+        variables = template.document.defaults(scope="template")
+        variables["items"] = build_label_series(dados, template)
+        return self.print_job(template, variables)
+
+    def print_calibration(
+        self, *, backend: str | None = None, square_mm: float = CALIBRATION_SQUARE_MM
+    ) -> tuple[bool, dict | None]:
+        tpl = build_calibration_template(square_mm=square_mm, backend=backend or self.config.backend)
+        return self.print_job(tpl, {})
+
+    def apply_calibration(
+        self,
+        measured_width: float | None,
+        measured_height: float | None,
+        *,
+        square_mm: float = CALIBRATION_SQUARE_MM,
+    ) -> Calibration:
+        new_cal = apply_calibration_adjustment(
+            self.config.calibration, measured_width, measured_height, square_mm=square_mm
+        )
+        self.config.calibration = new_cal
+        return new_cal
+
+
+def build_calibration_template(
+    *, square_mm: float = CALIBRATION_SQUARE_MM, backend: str | None = None
+) -> Template:
+    margem = max(5.0, square_mm * 0.2)
+    page = {
+        "backend": backend or "tspl",
+        "width_mm": square_mm + margem * 2,
+        "height_mm": square_mm + margem * 2,
+        "gap_mm": 2,
+    }
+    elements = [
+        {
+            "type": "shape",
+            "kind": "rect",
+            "x_mm": margem,
+            "y_mm": margem,
+            "width_mm": square_mm,
+            "height_mm": square_mm,
+            "thickness_mm": 0.5,
+        },
+        {
+            "type": "text",
+            "x_mm": margem,
+            "y_mm": margem + square_mm + 4,
+            "font": {"name": "2", "x": 1, "y": 1},
+            "content": f"{square_mm:.0f} mm",
+        },
+    ]
+    document = TemplateDocument(
+        name=f"calibration_{page['backend']}",
+        page=page,
+        elements=elements,
+        variables={},
+    )
+    return Template(document)
+
+
+def apply_calibration_adjustment(
+    current: Calibration,
+    measured_width: float | None,
+    measured_height: float | None,
+    *,
+    square_mm: float = CALIBRATION_SQUARE_MM,
+) -> Calibration:
+    scale_x = current.scale_x
+    scale_y = current.scale_y
+    if measured_width and measured_width > 0:
+        scale_x *= square_mm / measured_width
+    if measured_height and measured_height > 0:
+        scale_y *= square_mm / measured_height
+    return Calibration(scale_x=scale_x, scale_y=scale_y)
+
 
 def imprimir_etiqueta(
-    tspl: str,
+    commands: str,
     repetir_em_falha: bool = False,
     *,
     nome_impressora: str | None = None,
     logger: logging.Logger | None = None,
-) -> tuple[bool, ErroImpressora | None]:
-    """Envia uma string TSPL já montada para a impressora padrão."""
-
-    service = PrinterService(nome_impressora, logger=logger)
-    retry = 3 if repetir_em_falha else 1
-    return service.send(tspl, retry=retry)
+) -> tuple[bool, dict | None]:
+    config = PrinterConfig(backend="tspl", transport="win32", printer_name=nome_impressora)
+    printer = Printer(config, logger=logger)
+    tentativas = 3 if repetir_em_falha else 1
+    for tentativa in range(1, tentativas + 1):
+        try:
+            printer.send_commands(commands, backend="tspl")
+            return True, None
+        except TransportError as exc:
+            if logger:
+                logger.warning("Falha na tentativa %s: %s", tentativa, exc)
+            if tentativa == tentativas:
+                return False, {"code": exc.code, "message": str(exc)}
+            time.sleep(0.5 * tentativa)
 
 
 def imprimir_pagina_teste(
@@ -796,17 +633,15 @@ def imprimir_pagina_teste(
     *,
     nome_impressora: str | None = None,
     logger: logging.Logger | None = None,
-) -> tuple[bool, ErroImpressora | None]:
-    """Imprime uma página de teste usando o template informado."""
-
-    try:
-        tspl = TsplBuilder(template).build_pagina_teste()
-    except ValueError as e:
-        return False, {"code": 0, "message": str(e)}
-
-    return imprimir_etiqueta(
-        tspl,
-        repetir_em_falha,
-        nome_impressora=nome_impressora,
-        logger=logger,
-    )
+) -> tuple[bool, dict | None]:
+    dados = {
+        "saida": "000",
+        "categoria": "TESTE",
+        "emissor": "SISTEMA",
+        "municipio": "TESTE",
+        "data_hora": "00/00/0000 00:00",
+        "volumes": 1,
+    }
+    config = PrinterConfig(backend="tspl", transport="win32", printer_name=nome_impressora)
+    printer = Printer(config, logger=logger)
+    return printer.print_template(template, dados)

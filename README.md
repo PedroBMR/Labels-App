@@ -26,7 +26,7 @@ reimprimir etiquetas e realizar backup automático dos dados.
 - Histórico completo das impressões com exportação para CSV.
 - Relatório mensal consolidado por categoria, município e emissor.
 - Backup automático diário dos arquivos de dados.
-- Personalização de layout através de templates definidos em `assets/templates.json`.
+- Personalização de layout através de templates individuais em `assets/templates/*.json`.
 
 ---
 
@@ -199,10 +199,11 @@ falhas críticas forem divulgadas.
 
 ## Estrutura de templates
 
-Os modelos de etiqueta são definidos em `assets/templates.json`. Cada entrada
-contém `largura_mm`, `altura_mm` e `gap_mm` em milímetros. Edite esse arquivo
-para ajustar layouts existentes ou adicionar novos modelos. Reinicie o
-aplicativo para aplicar as mudanças.
+Os modelos de etiqueta são definidos como arquivos JSON individuais em
+`assets/templates/`. Cada documento segue o esquema com os campos `name`,
+`version`, `page`, `elements` e `variables` — permitindo que editores validem e
+exportem layouts facilmente. Edite ou adicione arquivos nesse diretório e
+reinicie o aplicativo para aplicar as mudanças.
 
 Backups automáticos do histórico são gravados em `_backup/` e os registros de
 log ficam em `logs/app.log` com rotação automática de arquivos.
