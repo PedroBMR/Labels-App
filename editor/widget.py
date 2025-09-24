@@ -15,6 +15,7 @@ from qt_compat import (
     QPixmap,
     QPointF,
     QSplitter,
+    QTimer,
     Qt,
     QVBoxLayout,
     QWidget,
@@ -119,6 +120,10 @@ class LabelEditorWidget(QWidget):
         self.view = LabelView()
         self.view.setScene(self.scene)
         self.preview_variables: dict[str, Any] = {}
+        self._preview_delay_ms = 75
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.timeout.connect(self._perform_preview_update)
 
         self.property_panel = PropertyPanel()
         self.property_panel.set_scene(self.scene)
@@ -151,7 +156,7 @@ class LabelEditorWidget(QWidget):
         self.scene.undo_stack.indexChanged.connect(self.update_preview)
         self.scene.selectionChanged.connect(self.update_preview)
         self.view.viewportChanged.connect(self._update_rulers)
-        self.update_preview()
+        self.update_preview(immediate=True)
 
     # ------------------------------------------------------------------
     def _update_rulers(self) -> None:
@@ -161,15 +166,18 @@ class LabelEditorWidget(QWidget):
     def add_element(self, element: Mapping[str, Any]) -> GraphicsElementItem:
         item = self.scene.add_element(element)
         item.changed.connect(self.update_preview)
+        self.scene.clearSelection()
         item.setSelected(True)
-        self.update_preview()
+        self.view.ensureVisible(item, 50, 50)
+        self.update_preview(immediate=True)
         return item
 
     def load_document(self, document) -> None:
         self.scene.load_document(document)
         for item in iter_element_items(self.scene.items()):
             item.changed.connect(self.update_preview)
-        self.update_preview()
+        self.scene.clearSelection()
+        self.update_preview(immediate=True)
 
     def to_document(self, name: str, variables: Mapping[str, Any] | None = None):
         return self.scene.to_template(name, variables)
@@ -179,7 +187,17 @@ class LabelEditorWidget(QWidget):
         self.scene.set_preview_variables(data)
         self.update_preview()
 
-    def update_preview(self) -> None:
+    def update_preview(self, *_, immediate: bool = False) -> None:
+        if immediate:
+            if self._preview_timer.isActive():
+                self._preview_timer.stop()
+            self._perform_preview_update()
+            return
+        if self._preview_timer.isActive():
+            self._preview_timer.stop()
+        self._preview_timer.start(self._preview_delay_ms)
+
+    def _perform_preview_update(self) -> None:
         elements = [
             item.to_dict()
             for item in self.scene.items()
