@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from compile import Calibration
+from model.template import TemplateDocument, TemplateVariable
 
 from printing import (
     Printer,
@@ -24,24 +25,24 @@ class StubTransport:
 
 
 def _simple_template() -> Template:
-    return Template(
-        "demo",
-        {
-            "backend": "tspl",
-            "width_mm": 40,
-            "height_mm": 20,
-            "gap_mm": 2,
-            "elements": [
-                {
-                    "type": "text",
-                    "x_mm": 2,
-                    "y_mm": 2,
-                    "font": {"name": "3", "x": 1, "y": 1},
-                    "content": "Ola {nome}",
-                }
-            ],
+    document = TemplateDocument(
+        name="demo",
+        page={"backend": "tspl", "width_mm": 40, "height_mm": 20, "gap_mm": 2},
+        elements=[
+            {
+                "type": "text",
+                "x_mm": 2,
+                "y_mm": 2,
+                "font": {"name": "3", "x": 1, "y": 1},
+                "content": "Ola {nome}",
+            }
+        ],
+        variables={
+            "items": TemplateVariable(name="items", scope="template", required=True),
+            "nome": TemplateVariable(name="nome", default=""),
         },
     )
+    return Template(document)
 
 
 def test_build_label_series_generates_sequence():

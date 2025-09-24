@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Protocol
 
 from compile import Calibration, CompilationError, get_backend
+from model.template import TemplateDocument, TemplateValidationError
 from utils import recurso_caminho
 
 # Retained for backwards compatibility with legacy code/tests that relied on
@@ -105,45 +106,53 @@ def combine_calibrations(*calibrations: Calibration | None) -> Calibration:
 
 @dataclass
 class Template:
-    """Wrapper around a template dictionary."""
+    """Wrapper around :class:`model.template.TemplateDocument`."""
 
-    name: str
-    data: dict[str, Any]
+    document: TemplateDocument
     calibration: Calibration = field(default_factory=Calibration)
 
+    @property
+    def name(self) -> str:
+        return self.document.name
+
+    @property
+    def data(self) -> dict[str, Any]:
+        return self.document.as_backend_dict()
+
     def clone(self) -> "Template":
-        return Template(self.name, copy.deepcopy(self.data), self.calibration)
+        return Template(self.document.copy(), self.calibration)
 
     @property
     def backend(self) -> str:
-        return str(self.data.get("backend", "tspl"))
+        return self.document.backend
 
     @property
     def width_mm(self) -> float:
-        return float(self.data.get("width_mm", 0))
+        return float(self.document.page.get("width_mm", 0))
 
     @property
     def height_mm(self) -> float:
-        return float(self.data.get("height_mm", 0))
+        return float(self.document.page.get("height_mm", 0))
 
     @property
     def gap_mm(self) -> float:
-        return float(self.data.get("gap_mm", 0))
+        return float(self.document.page.get("gap_mm", 0))
 
     def with_calibration(self, calibration: Calibration) -> "Template":
-        return Template(self.name, copy.deepcopy(self.data), calibration)
+        return Template(self.document.copy(), calibration)
 
 
 class TemplateManager:
-    def __init__(self, path: Path | None = None) -> None:
-        self._path = path
-        self._cache: dict[str, dict[str, Any]] | None = None
+    def __init__(self, directory: Path | None = None) -> None:
+        self._directory = directory
+        self._cache: dict[str, Template] | None = None
 
     @property
-    def path(self) -> Path:
-        if self._path is None:
-            self._path = Path(recurso_caminho("templates.json"))
-        return self._path
+    def directory(self) -> Path:
+        if self._directory is None:
+            self._directory = Path(recurso_caminho("templates"))
+        self._directory.mkdir(parents=True, exist_ok=True)
+        return self._directory
 
     def reload(self) -> None:
         self._cache = None
@@ -156,47 +165,60 @@ class TemplateManager:
         if not templates:
             raise RuntimeError("Nenhum template disponível")
         resolved = self._resolve_name(name, templates)
-        data = copy.deepcopy(templates[resolved])
-        data.setdefault("backend", data.get("type", "tspl"))
-        if not isinstance(data.get("elements"), list):
-            data["elements"] = []
-        return Template(resolved, data)
+        return templates[resolved].clone()
 
     # ------------------------------------------------------------------
-    def _templates(self) -> dict[str, dict[str, Any]]:
+    def _templates(self) -> dict[str, Template]:
         if self._cache is not None:
             return self._cache
 
-        templates: dict[str, dict[str, Any]] = copy.deepcopy(DEFAULT_TEMPLATES)
-        try:
-            with open(self.path, "r", encoding="utf-8") as fh:
-                loaded = json.load(fh)
-        except FileNotFoundError:
-            loaded = {}
-        except Exception:  # pragma: no cover - only triggered with malformed files
-            logging.getLogger("app").exception("Falha ao carregar templates.json")
-            loaded = {}
+        documents: dict[str, TemplateDocument] = {}
+        self._migrate_legacy()
+        logger = logging.getLogger("app")
 
-        if isinstance(loaded, dict):
-            for name, spec in loaded.items():
-                if isinstance(spec, dict):
-                    templates[name] = spec
+        for path in sorted(self.directory.glob("*.json")):
+            try:
+                document = TemplateDocument.from_file(path)
+            except Exception:  # pragma: no cover - defensive
+                logger.exception("Falha ao carregar template: %s", path)
+                continue
+            documents[document.name] = document
 
-        self._cache = {name: self._normalise(name, spec) for name, spec in templates.items()}
+        if not documents:
+            for name, legacy in DEFAULT_TEMPLATES.items():
+                documents[name] = TemplateDocument.from_legacy(name, legacy, defaults=DEFAULT_VARIABLES)
+
+        self._cache = {name: Template(doc) for name, doc in documents.items()}
         return self._cache
 
-    def _normalise(self, name: str, data: dict[str, Any]) -> dict[str, Any]:
-        spec = copy.deepcopy(data)
-        spec.setdefault("backend", spec.get("type", "tspl"))
-        spec.setdefault("width_mm", 100)
-        spec.setdefault("height_mm", 30)
-        spec.setdefault("gap_mm", 2)
-        spec.setdefault("direction", 1)
-        elements = spec.get("elements")
-        spec["elements"] = list(elements) if isinstance(elements, list) else []
-        return spec
+    def _migrate_legacy(self) -> None:
+        legacy_path = Path(recurso_caminho("templates.json"))
+        if not legacy_path.exists():
+            return
 
-    def _resolve_name(self, name: str, templates: Mapping[str, dict[str, Any]]) -> str:
+        try:
+            with legacy_path.open("r", encoding="utf-8") as fh:
+                raw = json.load(fh)
+        except Exception:  # pragma: no cover - defensive
+            logging.getLogger("app").exception("Falha ao migrar templates.json")
+            return
+
+        if not isinstance(raw, dict):
+            return
+
+        for name, spec in raw.items():
+            if not isinstance(spec, Mapping):
+                continue
+            document = TemplateDocument.from_legacy(name, spec, defaults=DEFAULT_VARIABLES)
+            target = self.directory / f"{document.slug}.json"
+            if target.exists():
+                continue
+            try:
+                document.dump(target)
+            except OSError:  # pragma: no cover - depends on filesystem
+                logging.getLogger("app").exception("Falha ao gravar template migrado: %s", target)
+
+    def _resolve_name(self, name: str, templates: Mapping[str, Template]) -> str:
         if name in templates:
             return name
         norm = _norm_key(name)
@@ -225,13 +247,22 @@ def aplicar_template(nome: str) -> Template:
     return template_manager.get_template(nome)
 
 
-def build_label_series(dados: Mapping[str, Any]) -> list[dict[str, Any]]:
+def build_label_series(
+    dados: Mapping[str, Any],
+    template: Template | TemplateDocument | None = None,
+) -> list[dict[str, Any]]:
     volumes = max(1, int(dados.get("volumes", 1)))
     inicio = int(dados.get("inicio_indice", 1))
     total = int(dados.get("total_exibicao") or volumes)
 
-    base = dict(DEFAULT_VARIABLES)
-    base.update({k: dados.get(k, base.get(k)) for k in DEFAULT_VARIABLES})
+    defaults = dict(DEFAULT_VARIABLES)
+    if isinstance(template, TemplateDocument):
+        defaults.update(template.defaults(scope="item"))
+    elif isinstance(template, Template):
+        defaults.update(template.document.defaults(scope="item"))
+
+    base = dict(defaults)
+    base.update({k: dados.get(k, base.get(k)) for k in defaults})
     base.update({k: dados.get(k) for k in dados if k not in base})
 
     logo = dados.get("logo") or _default_logo()
@@ -256,33 +287,44 @@ def build_label_series(dados: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def compile_template(
-    template: Template | Mapping[str, Any],
+    template: Template | TemplateDocument | Mapping[str, Any],
     variables: Mapping[str, Any],
     *,
     backend_name: str | None = None,
     calibration: Calibration | None = None,
 ) -> tuple[str, str]:
-    if isinstance(template, Template):
-        combined = combine_calibrations(template.calibration, calibration)
-        backend = backend_name or template.backend
-        template_data = template.data
-    else:
-        combined = calibration or Calibration()
-        template_data = dict(template)
-        backend = backend_name or str(template_data.get("backend", "tspl"))
+    try:
+        if isinstance(template, Template):
+            template.document.ensure_valid(variables)
+            combined = combine_calibrations(template.calibration, calibration)
+            backend = backend_name or template.backend
+            template_data = template.data
+        elif isinstance(template, TemplateDocument):
+            template.ensure_valid(variables)
+            combined = calibration or Calibration()
+            backend = backend_name or template.backend
+            template_data = template.as_backend_dict()
+        else:
+            combined = calibration or Calibration()
+            template_data = dict(template)
+            backend = backend_name or str(template_data.get("backend", "tspl"))
+    except TemplateValidationError as exc:
+        raise CompilationError(str(exc)) from exc
     backend = backend or "tspl"
     compiler = get_backend(backend, template_data, calibration=combined)
     return backend, compiler.compile(variables)
 
 
 def montar_tspl(template: Template, dados: Mapping[str, Any]) -> str:
-    variables = {"items": build_label_series(dados)}
+    variables = template.document.defaults(scope="template")
+    variables["items"] = build_label_series(dados, template)
     _, commands = compile_template(template, variables, backend_name="tspl")
     return commands
 
 
 def montar_zpl(template: Template, dados: Mapping[str, Any]) -> str:
-    variables = {"items": build_label_series(dados)}
+    variables = template.document.defaults(scope="template")
+    variables["items"] = build_label_series(dados, template)
     _, commands = compile_template(template, variables, backend_name="zpl")
     return commands
 
@@ -486,7 +528,8 @@ class Printer:
             return False, {"code": -1, "message": str(exc)}
 
     def print_template(self, template: Template, dados: Mapping[str, Any]) -> tuple[bool, dict | None]:
-        variables = {"items": build_label_series(dados)}
+        variables = template.document.defaults(scope="template")
+        variables["items"] = build_label_series(dados, template)
         return self.print_job(template, variables)
 
     def print_calibration(
@@ -513,31 +556,37 @@ def build_calibration_template(
     *, square_mm: float = CALIBRATION_SQUARE_MM, backend: str | None = None
 ) -> Template:
     margem = max(5.0, square_mm * 0.2)
-    template = {
+    page = {
         "backend": backend or "tspl",
         "width_mm": square_mm + margem * 2,
         "height_mm": square_mm + margem * 2,
         "gap_mm": 2,
-        "elements": [
-            {
-                "type": "shape",
-                "kind": "rect",
-                "x_mm": margem,
-                "y_mm": margem,
-                "width_mm": square_mm,
-                "height_mm": square_mm,
-                "thickness_mm": 0.5,
-            },
-            {
-                "type": "text",
-                "x_mm": margem,
-                "y_mm": margem + square_mm + 4,
-                "font": {"name": "2", "x": 1, "y": 1},
-                "content": f"{square_mm:.0f} mm",
-            },
-        ],
     }
-    return Template(f"calibration_{template['backend']}", template)
+    elements = [
+        {
+            "type": "shape",
+            "kind": "rect",
+            "x_mm": margem,
+            "y_mm": margem,
+            "width_mm": square_mm,
+            "height_mm": square_mm,
+            "thickness_mm": 0.5,
+        },
+        {
+            "type": "text",
+            "x_mm": margem,
+            "y_mm": margem + square_mm + 4,
+            "font": {"name": "2", "x": 1, "y": 1},
+            "content": f"{square_mm:.0f} mm",
+        },
+    ]
+    document = TemplateDocument(
+        name=f"calibration_{page['backend']}",
+        page=page,
+        elements=elements,
+        variables={},
+    )
+    return Template(document)
 
 
 def apply_calibration_adjustment(

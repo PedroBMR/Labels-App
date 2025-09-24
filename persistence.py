@@ -19,8 +19,10 @@ import json
 import os
 import shutil
 from datetime import datetime
+from pathlib import Path
 from typing import Any, cast
 
+from model.template import TemplateDocument
 from utils import recurso_caminho
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -311,3 +313,63 @@ def gerar_relatorio_mensal(mes: str) -> str:
             writer.writerow([categoria, municipio, emissor, total])
 
     return relatorio_path
+
+
+# ---------------------------------------------------------------------------
+# Template helpers
+
+
+def _template_dir() -> Path:
+    caminho = Path(recurso_caminho("templates"))
+    caminho.mkdir(parents=True, exist_ok=True)
+    return caminho
+
+
+def salvar_template_documento(
+    documento: TemplateDocument,
+    *,
+    nome_arquivo: str | None = None,
+) -> str:
+    """Persiste ``documento`` no diretório de templates."""
+
+    diretorio = _template_dir()
+    if nome_arquivo:
+        arquivo = nome_arquivo if nome_arquivo.endswith(".json") else f"{nome_arquivo}.json"
+    else:
+        arquivo = f"{documento.slug}.json"
+    caminho = diretorio / arquivo
+    documento.dump(caminho)
+    return str(caminho)
+
+
+def carregar_template_documento(nome_arquivo: str) -> TemplateDocument:
+    """Carrega um template salvo no diretório padrão."""
+
+    caminho = _template_dir() / nome_arquivo
+    return TemplateDocument.from_file(caminho)
+
+
+def exportar_template_documento(documento: TemplateDocument, destino: str) -> str:
+    """Exporta ``documento`` para ``destino`` (arquivo ou diretório)."""
+
+    caminho = Path(destino)
+    if caminho.is_dir() or destino.endswith(os.sep):
+        caminho = caminho / f"{documento.slug}.json"
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    documento.dump(caminho)
+    return str(caminho)
+
+
+def importar_template_documento(caminho: str) -> TemplateDocument:
+    """Importa template a partir de ``caminho`` e salva no diretório padrão."""
+
+    documento = TemplateDocument.from_file(caminho)
+    salvar_template_documento(documento)
+    return documento
+
+
+def listar_arquivos_template() -> list[str]:
+    """Lista os arquivos de template disponíveis."""
+
+    diretorio = _template_dir()
+    return sorted(arquivo.name for arquivo in diretorio.glob("*.json"))
