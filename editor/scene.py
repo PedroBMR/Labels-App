@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import math
 from typing import Any, Mapping
 
 from compile import Calibration, SafeDict
@@ -15,6 +16,7 @@ from qt_compat import (
     QPen,
     QPointF,
     QRectF,
+    Qt,
     QUndoCommand,
     QUndoStack,
 )
@@ -266,20 +268,46 @@ class LabelScene(QGraphicsScene):
     # ------------------------------------------------------------------
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: D401 - Qt API
         super().drawBackground(painter, rect)
+
+        label_rect = self.sceneRect()
+        if label_rect.isNull():
+            return
+
+        painter.save()
+        shadow = label_rect.adjusted(3, 3, 6, 6)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 30))
+        painter.drawRoundedRect(shadow, 6, 6)
+        painter.restore()
+
+        painter.save()
+        painter.setPen(QPen(QColor(200, 200, 200)))
+        painter.setBrush(QColor(255, 255, 255))
+        painter.drawRoundedRect(label_rect, 6, 6)
+        painter.restore()
+
         grid = self.grid_pixels()
         if grid <= 0:
             return
-        left = int(rect.left()) - (int(rect.left()) % int(grid))
-        top = int(rect.top()) - (int(rect.top()) % int(grid))
+
+        target = rect.intersected(label_rect)
+        if target.isNull():
+            return
+
+        painter.save()
+        painter.setClipRect(label_rect)
         painter.setPen(self._grid_pen)
+        left = math.floor(target.left() / grid) * grid
+        top = math.floor(target.top() / grid) * grid
         x = left
-        while x < rect.right():
-            painter.drawLine(x, rect.top(), x, rect.bottom())
+        while x <= target.right():
+            painter.drawLine(x, target.top(), x, target.bottom())
             x += grid
         y = top
-        while y < rect.bottom():
-            painter.drawLine(rect.left(), y, rect.right(), y)
+        while y <= target.bottom():
+            painter.drawLine(target.left(), y, target.right(), y)
             y += grid
+        painter.restore()
 
     # ------------------------------------------------------------------
     def _on_geometry_committed(self, item: GraphicsElementItem, before, after) -> None:

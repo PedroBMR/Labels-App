@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
 from editor.widget import LabelEditorWidget
-from model.template import TemplateDocument, TemplateVariable
+from model.template import TemplateDocument, TemplateVariable, slugify
 from printing import (
     Template,
     compile_template,
@@ -15,20 +16,128 @@ from printing import (
 )
 from qt_compat import (
     QAction,
+    QColor,
+    QDialog,
+    QDialogButtonBox,
     QDockWidget,
     QFileDialog,
+    QInputDialog,
+    QLabel,
     QMainWindow,
     QMessageBox,
+    QPainter,
+    QPixmap,
     QStatusBar,
-    Qt,
     QTableWidget,
     QTableWidgetItem,
+    QTimer,
     QToolBar,
+    QVBoxLayout,
     QWidget,
+    Qt,
     pyqtSignal,
 )
 
 __all__ = ["LabelEditorWindow"]
+
+
+_SIZE_RE = re.compile(r"^\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*$")
+
+
+class TutorialDialog(QDialog):
+    """Dialog presenting a quick visual tour of the editor."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Bem-vindo ao editor de etiquetas")
+        self.setModal(True)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        illustration = QLabel()
+        illustration.setAlignment(Qt.AlignCenter)
+        illustration.setPixmap(self._build_pixmap())
+        layout.addWidget(illustration)
+
+        intro = QLabel(
+            """
+            <p><b>Crie novas etiquetas em poucos passos:</b></p>
+            <ul>
+              <li><span style="color:#2E86DE;">Create Label</span> gera uma base no tamanho desejado.</li>
+              <li>Arraste os elementos com o mouse para reposicioná-los.</li>
+              <li>Use as alças azuis para redimensionar e o círculo laranja para girar.</li>
+              <li>Salve o modelo e ele ficará disponível em <code>assets/templates</code>.</li>
+            </ul>
+            """
+        )
+        intro.setTextFormat(Qt.RichText)
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        tips = QLabel(
+            """
+            <p><b>Dicas rápidas</b></p>
+            <ul>
+              <li>Use a roda do mouse com <b>Ctrl</b> para ampliar/reduzir.</li>
+              <li>Mantenha <b>Espaço</b> pressionado para arrastar o painel.</li>
+              <li>Selecione vários elementos com arraste retangular e alinhe pelo menu Editar.</li>
+            </ul>
+            """
+        )
+        tips.setTextFormat(Qt.RichText)
+        tips.setWordWrap(True)
+        layout.addWidget(tips)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok)
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
+
+        self.resize(480, 500)
+
+    def _build_pixmap(self) -> QPixmap:
+        width, height = 440, 220
+        pixmap = QPixmap(width, height)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        base_rect = pixmap.rect().adjusted(60, 36, -60, -40)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 35))
+        shadow = base_rect.adjusted(10, 10, 18, 18)
+        painter.drawRoundedRect(shadow, 12, 12)
+
+        painter.setPen(QColor(200, 200, 200))
+        painter.setBrush(QColor(255, 255, 255))
+        painter.drawRoundedRect(base_rect, 10, 10)
+
+        painter.setPen(QColor(220, 220, 220))
+        grid_step_x = base_rect.width() / 8
+        grid_step_y = base_rect.height() / 5
+        x = base_rect.left() + grid_step_x
+        while x < base_rect.right():
+            painter.drawLine(x, base_rect.top() + 8, x, base_rect.bottom() - 8)
+            x += grid_step_x
+        y = base_rect.top() + grid_step_y
+        while y < base_rect.bottom():
+            painter.drawLine(base_rect.left() + 8, y, base_rect.right() - 8, y)
+            y += grid_step_y
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(76, 132, 255, 220))
+        painter.drawRoundedRect(base_rect.adjusted(20, 22, -210, -96), 8, 8)
+        painter.setBrush(QColor(255, 194, 102, 220))
+        painter.drawRoundedRect(base_rect.adjusted(24, 90, -260, -40), 6, 6)
+        painter.setBrush(QColor(120, 200, 160, 220))
+        painter.drawEllipse(base_rect.right() - 120, base_rect.top() + 30, 84, 84)
+
+        painter.setPen(QColor(66, 66, 66))
+        painter.drawText(base_rect.left() + 32, base_rect.top() + 46, "Texto")
+        painter.drawText(base_rect.left() + 32, base_rect.top() + 116, "Código")
+
+        painter.end()
+        return pixmap
 
 
 class VariablePanel(QWidget):
@@ -132,6 +241,8 @@ class LabelEditorWindow(QMainWindow):
         self.current_path: Path | None = None
         self._load_default_template()
         self._build_menus()
+        self._tutorial_shown = False
+        QTimer.singleShot(200, self._show_tutorial)
 
     # ------------------------------------------------------------------
     def _build_menus(self) -> None:
@@ -141,6 +252,10 @@ class LabelEditorWindow(QMainWindow):
         new_action = QAction("Novo", self)
         new_action.triggered.connect(self.new_template)
         file_bar.addAction(new_action)
+
+        create_action = QAction("Create Label", self)
+        create_action.triggered.connect(self.create_label)
+        file_bar.addAction(create_action)
 
         open_action = QAction("Abrir…", self)
         open_action.triggered.connect(self.open_template)
@@ -237,6 +352,55 @@ class LabelEditorWindow(QMainWindow):
         )
         self.load_document(document, path=None)
 
+    def create_label(self) -> None:
+        width = float(self.current_document.page.get("width_mm", 80) or 80)
+        height = float(self.current_document.page.get("height_mm", 60) or 60)
+        default_text = f"{width:g}x{height:g}"
+        text, ok = QInputDialog.getText(
+            self,
+            "Create Label",
+            "Informe o tamanho (Largura x Altura, em mm):",
+            text=default_text,
+        )
+        if not ok:
+            return
+        cleaned = text.strip()
+        match = _SIZE_RE.match(cleaned)
+        if not match:
+            QMessageBox.warning(
+                self,
+                "Tamanho inválido",
+                "Use o formato largura x altura, por exemplo 100x30.",
+            )
+            return
+        width_value = float(match.group(1).replace(",", "."))
+        height_value = float(match.group(2).replace(",", "."))
+        if width_value <= 0 or height_value <= 0:
+            QMessageBox.warning(
+                self,
+                "Tamanho inválido",
+                "As dimensões devem ser maiores que zero.",
+            )
+            return
+
+        base_page = dict(self.current_document.page)
+        base_page["width_mm"] = width_value
+        base_page["height_mm"] = height_value
+        base_page.setdefault("backend", base_page.get("type", "tspl"))
+        base_page.setdefault("dpi", 203)
+
+        name = f"{width_value:g}x{height_value:g}"
+        document = TemplateDocument(
+            name=name,
+            page=base_page,
+            elements=[],
+            variables={},
+        )
+        self.load_document(document, path=None)
+        self.status.showMessage(
+            f"Etiqueta {width_value:g}x{height_value:g} criada", 4000
+        )
+
     def open_template(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -257,28 +421,111 @@ class LabelEditorWindow(QMainWindow):
         if not self.current_path:
             self.save_template_as()
             return
-        self._write_template(self.current_path)
+        target = self._ensure_in_templates(self.current_path)
+        overwrite = target == self.current_path
+        if target.exists() and not overwrite:
+            reply = QMessageBox.question(
+                self,
+                "Sobrescrever modelo?",
+                "Já existe um modelo salvo com esse nome. Deseja substituí-lo?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return
+            overwrite = True
+        self._write_template(target, overwrite=overwrite)
 
     def save_template_as(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(
+        name, ok = QInputDialog.getText(
             self,
-            "Salvar template",
-            "",
-            "Templates (*.json)",
+            "Salvar modelo",
+            "Nome do modelo:",
+            text=self.current_document.name or "Novo",
         )
-        if not path:
+        if not ok:
             return
-        self._write_template(Path(path))
+        cleaned = name.strip()
+        if not cleaned:
+            QMessageBox.warning(
+                self,
+                "Nome inválido",
+                "Informe um nome para o modelo antes de salvar.",
+            )
+            return
+        self.current_document.name = cleaned
+        target = self._path_for_name(cleaned)
+        overwrite = target == self.current_path or not target.exists()
+        if target.exists() and target != self.current_path:
+            reply = QMessageBox.question(
+                self,
+                "Sobrescrever modelo?",
+                "Já existe um modelo salvo com esse nome. Deseja substituí-lo?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return
+            overwrite = True
+        self._write_template(target, overwrite=overwrite)
 
-    def _write_template(self, path: Path) -> None:
+    def _ensure_document_name(self) -> str:
+        name = (self.current_document.name or "").strip()
+        if not name:
+            name = "Modelo"
+            self.current_document.name = name
+        return name
+
+    def _path_for_name(self, name: str) -> Path:
+        directory = template_manager.directory
+        directory.mkdir(parents=True, exist_ok=True)
+        slug = slugify(name or "template") or "template"
+        return directory / f"{slug}.json"
+
+    def _ensure_in_templates(self, path: Path) -> Path:
+        directory = template_manager.directory
+        directory.mkdir(parents=True, exist_ok=True)
+        if path.parent == directory:
+            return path
+        fallback = (self.current_document.name or "").strip() or path.stem or "Modelo"
+        self.current_document.name = fallback
+        return self._path_for_name(fallback)
+
+    def _write_template(self, path: Path, *, overwrite: bool = False) -> None:
+        target = self._ensure_in_templates(path)
+        if target.exists() and target != self.current_path and not overwrite:
+            QMessageBox.warning(
+                self,
+                "Arquivo existente",
+                "Já existe um arquivo com esse nome. Escolha outro nome para o modelo.",
+            )
+            return
+        name = self._ensure_document_name()
         template = self.editor.to_document(
-            self.current_document.name,
+            name,
             self.current_document.variables,
         )
         self.current_document = template
-        template.dump(path)
-        self.current_path = path
-        self.status.showMessage(f"Template salvo em {path}", 3000)
+        try:
+            template.dump(target)
+        except OSError as exc:  # pragma: no cover - feedback ao usuário
+            QMessageBox.critical(
+                self,
+                "Erro",
+                f"Não foi possível salvar o modelo: {exc}",
+            )
+            return
+        self.current_path = target
+        template_manager.reload()
+        self.status.showMessage(f"Template salvo em {target}", 3000)
+
+    # ------------------------------------------------------------------
+    def _show_tutorial(self) -> None:
+        if self._tutorial_shown:
+            return
+        self._tutorial_shown = True
+        dialog = TutorialDialog(self)
+        dialog.exec()
 
     # ------------------------------------------------------------------
     def _add_element(self, kind: str) -> None:
