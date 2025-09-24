@@ -22,7 +22,7 @@ from qt_compat import (
 )
 from render.preview import render_template
 
-from .items import GraphicsElementItem, iter_element_items
+from .items import GraphicsElementItem, TextGraphicsItem
 from .properties import PropertyPanel
 from .scene import LabelScene
 from .view import LabelView
@@ -163,7 +163,9 @@ class LabelEditorWidget(QWidget):
         self.h_ruler.update()
         self.v_ruler.update()
 
-    def add_element(self, element: Mapping[str, Any]) -> GraphicsElementItem:
+    def add_element(
+        self, element: Mapping[str, Any]
+    ) -> GraphicsElementItem | TextGraphicsItem:
         item = self.scene.add_element(element)
         item.changed.connect(self.update_preview)
         self.scene.clearSelection()
@@ -174,7 +176,7 @@ class LabelEditorWidget(QWidget):
 
     def load_document(self, document) -> None:
         self.scene.load_document(document)
-        for item in iter_element_items(self.scene.items()):
+        for item in self.scene.editable_items():
             item.changed.connect(self.update_preview)
         self.scene.clearSelection()
         self.update_preview(immediate=True)
@@ -198,11 +200,7 @@ class LabelEditorWidget(QWidget):
         self._preview_timer.start(self._preview_delay_ms)
 
     def _perform_preview_update(self) -> None:
-        elements = [
-            item.to_dict()
-            for item in self.scene.items()
-            if isinstance(item, GraphicsElementItem)
-        ]
+        elements = [item.to_dict() for item in self.scene.editable_items()]
         template = {"page": self.scene.page, "elements": elements}
         context = dict(self.preview_variables)
         image = render_template(template, context, calibration=self.scene.calibration)
@@ -210,13 +208,17 @@ class LabelEditorWidget(QWidget):
 
     def create_default(self, kind: str) -> dict[str, Any]:
         if kind == "text":
+            page_width = float(self.scene.page.get("width_mm", 80.0) or 80.0)
+            page_height = float(self.scene.page.get("height_mm", 60.0) or 60.0)
+            width = 30.0
+            height = 10.0
             return {
                 "type": "text",
-                "x_mm": 5,
-                "y_mm": 5,
-                "width_mm": 30,
-                "height_mm": 10,
-                "content": "Novo texto",
+                "x_mm": max(0.0, (page_width - width) / 2),
+                "y_mm": max(0.0, (page_height - height) / 2),
+                "width_mm": width,
+                "height_mm": height,
+                "content": "New Text",
                 "font": {"size": 22},
             }
         if kind == "barcode":
