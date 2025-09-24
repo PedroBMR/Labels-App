@@ -4,7 +4,6 @@ import pytest
 
 from compile import Calibration
 from model.template import TemplateDocument, TemplateVariable
-
 from printing import (
     Printer,
     PrinterConfig,
@@ -100,6 +99,10 @@ def test_apply_calibration_adjustment_updates_scales():
 
 def test_compile_template_explicit_backend():
     template = _simple_template()
-    backend_name, commands = compile_template(template, {"items": [{"nome": "Joao"}]}, backend_name="tspl")
+    backend_name, commands = compile_template(
+        template,
+        {"items": [{"nome": "Joao"}]},
+        backend_name="tspl",
+    )
     assert backend_name == "tspl"
     assert "Joao" in commands

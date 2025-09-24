@@ -66,7 +66,11 @@ class ZPLBackend(Backend):
             header.append(f"^MD{int(darkness)}")
         return header
 
-    def _render_text(self, element: Mapping[str, Any], context: Mapping[str, Any]) -> str | None:
+    def _render_text(
+        self,
+        element: Mapping[str, Any],
+        context: Mapping[str, Any],
+    ) -> str | None:
         value = self.resolve(element.get("content"), context)
         if value is None:
             return None
@@ -112,7 +116,11 @@ class ZPLBackend(Backend):
             f"^FO{x},{y}^BC{orientation},{height},{human},N,N^FD{text}^FS"
         )
 
-    def _render_qr(self, element: Mapping[str, Any], context: Mapping[str, Any]) -> str | None:
+    def _render_qr(
+        self,
+        element: Mapping[str, Any],
+        context: Mapping[str, Any],
+    ) -> str | None:
         value = self.resolve(element.get("value"), context)
         if value in (None, ""):
             return None

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import importlib
 import json
 import logging
@@ -11,7 +10,7 @@ import time
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Protocol
+from typing import Any, Mapping, Protocol
 
 from compile import Calibration, CompilationError, get_backend
 from model.template import TemplateDocument, TemplateValidationError
@@ -43,16 +42,77 @@ DEFAULT_TEMPLATES: dict[str, dict[str, Any]] = {
         "gap_mm": 2,
         "direction": 1,
         "elements": [
-            {"type": "text", "x_mm": 4, "y_mm": 4, "font": {"name": "3", "x": 1, "y": 1}, "content": "{titulo}"},
-            {"type": "text", "x_mm": 4, "y_mm": 9, "font": {"name": "2", "x": 1, "y": 1}, "content": "Saida: {saida}"},
-            {"type": "text", "x_mm": 4, "y_mm": 13, "font": {"name": "2", "x": 1, "y": 1}, "content": "Categoria: {categoria}"},
-            {"type": "text", "x_mm": 4, "y_mm": 17, "font": {"name": "2", "x": 1, "y": 1}, "content": "Emissor: {emissor}"},
-            {"type": "text", "x_mm": 4, "y_mm": 21, "font": {"name": "2", "x": 1, "y": 1}, "content": "Municipio: {municipio}"},
-            {"type": "text", "x_mm": 4, "y_mm": 25, "font": {"name": "2", "x": 1, "y": 1}, "content": "Impresso em: {data_hora}"},
-            {"type": "text", "x_mm": 4, "y_mm": 27.5, "font": {"name": "2", "x": 1, "y": 1}, "content": "{fracao}"},
-            {"type": "text", "x_mm": 60, "y_mm": 27.5, "font": {"name": "2", "x": 1, "y": 1}, "content": "{fragil}"},
-            {"type": "text", "x_mm": 68, "y_mm": 6, "font": {"name": "5", "x": 1, "y": 1}, "content": "{numero} DE {total}"},
-            {"type": "image", "x_mm": 70, "y_mm": 16, "key": "logo", "max_width_mm": 24, "max_height_mm": 12},
+            {
+                "type": "text",
+                "x_mm": 4,
+                "y_mm": 4,
+                "font": {"name": "3", "x": 1, "y": 1},
+                "content": "{titulo}",
+            },
+            {
+                "type": "text",
+                "x_mm": 4,
+                "y_mm": 9,
+                "font": {"name": "2", "x": 1, "y": 1},
+                "content": "Saida: {saida}",
+            },
+            {
+                "type": "text",
+                "x_mm": 4,
+                "y_mm": 13,
+                "font": {"name": "2", "x": 1, "y": 1},
+                "content": "Categoria: {categoria}",
+            },
+            {
+                "type": "text",
+                "x_mm": 4,
+                "y_mm": 17,
+                "font": {"name": "2", "x": 1, "y": 1},
+                "content": "Emissor: {emissor}",
+            },
+            {
+                "type": "text",
+                "x_mm": 4,
+                "y_mm": 21,
+                "font": {"name": "2", "x": 1, "y": 1},
+                "content": "Municipio: {municipio}",
+            },
+            {
+                "type": "text",
+                "x_mm": 4,
+                "y_mm": 25,
+                "font": {"name": "2", "x": 1, "y": 1},
+                "content": "Impresso em: {data_hora}",
+            },
+            {
+                "type": "text",
+                "x_mm": 4,
+                "y_mm": 27.5,
+                "font": {"name": "2", "x": 1, "y": 1},
+                "content": "{fracao}",
+            },
+            {
+                "type": "text",
+                "x_mm": 60,
+                "y_mm": 27.5,
+                "font": {"name": "2", "x": 1, "y": 1},
+                "content": "{fragil}",
+            },
+            {
+                "type": "text",
+                "x_mm": 68,
+                "y_mm": 6,
+                "font": {"name": "5", "x": 1, "y": 1},
+                "content": "{numero} DE {total}",
+            },
+            {
+                "type": "image",
+                "x_mm": 70,
+                "y_mm": 16,
+                "key": "logo",
+                "max_width_mm": 24,
+                "max_height_mm": 12,
+            },
         ],
     },
     "60x80": {
@@ -62,16 +122,77 @@ DEFAULT_TEMPLATES: dict[str, dict[str, Any]] = {
         "gap_mm": 2,
         "direction": 0,
         "elements": [
-            {"type": "text", "x_mm": 4, "y_mm": 6, "font": {"name": "3", "x": 1, "y": 1}, "content": "{titulo}"},
-            {"type": "text", "x_mm": 4, "y_mm": 14, "font": {"name": "2", "x": 1, "y": 1}, "content": "Saida: {saida}"},
-            {"type": "text", "x_mm": 4, "y_mm": 19, "font": {"name": "2", "x": 1, "y": 1}, "content": "Categoria: {categoria}"},
-            {"type": "text", "x_mm": 4, "y_mm": 24, "font": {"name": "2", "x": 1, "y": 1}, "content": "Emissor: {emissor}"},
-            {"type": "text", "x_mm": 4, "y_mm": 29, "font": {"name": "2", "x": 1, "y": 1}, "content": "Municipio: {municipio}"},
-            {"type": "text", "x_mm": 4, "y_mm": 34, "font": {"name": "2", "x": 1, "y": 1}, "content": "Impresso em: {data_hora}"},
-            {"type": "text", "x_mm": 4, "y_mm": 39, "font": {"name": "2", "x": 1, "y": 1}, "content": "{fracao}"},
-            {"type": "text", "x_mm": 28, "y_mm": 39, "font": {"name": "2", "x": 1, "y": 1}, "content": "{fragil}"},
-            {"type": "text", "x_mm": 18, "y_mm": 46, "font": {"name": "5", "x": 1, "y": 1}, "content": "{numero} DE {total}"},
-            {"type": "image", "x_mm": 10, "y_mm": 58, "key": "logo", "max_width_mm": 40, "max_height_mm": 18},
+            {
+                "type": "text",
+                "x_mm": 4,
+                "y_mm": 6,
+                "font": {"name": "3", "x": 1, "y": 1},
+                "content": "{titulo}",
+            },
+            {
+                "type": "text",
+                "x_mm": 4,
+                "y_mm": 14,
+                "font": {"name": "2", "x": 1, "y": 1},
+                "content": "Saida: {saida}",
+            },
+            {
+                "type": "text",
+                "x_mm": 4,
+                "y_mm": 19,
+                "font": {"name": "2", "x": 1, "y": 1},
+                "content": "Categoria: {categoria}",
+            },
+            {
+                "type": "text",
+                "x_mm": 4,
+                "y_mm": 24,
+                "font": {"name": "2", "x": 1, "y": 1},
+                "content": "Emissor: {emissor}",
+            },
+            {
+                "type": "text",
+                "x_mm": 4,
+                "y_mm": 29,
+                "font": {"name": "2", "x": 1, "y": 1},
+                "content": "Municipio: {municipio}",
+            },
+            {
+                "type": "text",
+                "x_mm": 4,
+                "y_mm": 34,
+                "font": {"name": "2", "x": 1, "y": 1},
+                "content": "Impresso em: {data_hora}",
+            },
+            {
+                "type": "text",
+                "x_mm": 4,
+                "y_mm": 39,
+                "font": {"name": "2", "x": 1, "y": 1},
+                "content": "{fracao}",
+            },
+            {
+                "type": "text",
+                "x_mm": 28,
+                "y_mm": 39,
+                "font": {"name": "2", "x": 1, "y": 1},
+                "content": "{fragil}",
+            },
+            {
+                "type": "text",
+                "x_mm": 18,
+                "y_mm": 46,
+                "font": {"name": "5", "x": 1, "y": 1},
+                "content": "{numero} DE {total}",
+            },
+            {
+                "type": "image",
+                "x_mm": 10,
+                "y_mm": 58,
+                "key": "logo",
+                "max_width_mm": 40,
+                "max_height_mm": 18,
+            },
         ],
     },
 }
@@ -186,7 +307,11 @@ class TemplateManager:
 
         if not documents:
             for name, legacy in DEFAULT_TEMPLATES.items():
-                documents[name] = TemplateDocument.from_legacy(name, legacy, defaults=DEFAULT_VARIABLES)
+                documents[name] = TemplateDocument.from_legacy(
+                    name,
+                    legacy,
+                    defaults=DEFAULT_VARIABLES,
+                )
 
         self._cache = {name: Template(doc) for name, doc in documents.items()}
         return self._cache
@@ -209,14 +334,21 @@ class TemplateManager:
         for name, spec in raw.items():
             if not isinstance(spec, Mapping):
                 continue
-            document = TemplateDocument.from_legacy(name, spec, defaults=DEFAULT_VARIABLES)
+            document = TemplateDocument.from_legacy(
+                name,
+                spec,
+                defaults=DEFAULT_VARIABLES,
+            )
             target = self.directory / f"{document.slug}.json"
             if target.exists():
                 continue
             try:
                 document.dump(target)
             except OSError:  # pragma: no cover - depends on filesystem
-                logging.getLogger("app").exception("Falha ao gravar template migrado: %s", target)
+                logging.getLogger("app").exception(
+                    "Falha ao gravar template migrado: %s",
+                    target,
+                )
 
     def _resolve_name(self, name: str, templates: Mapping[str, Template]) -> str:
         if name in templates:
@@ -477,7 +609,12 @@ class PrinterConfig:
 
 
 class Printer:
-    def __init__(self, config: PrinterConfig, *, logger: logging.Logger | None = None) -> None:
+    def __init__(
+        self,
+        config: PrinterConfig,
+        *,
+        logger: logging.Logger | None = None,
+    ) -> None:
         self.config = config
         self.logger = logger or logging.getLogger("app")
         self.transport = self._make_transport()
@@ -489,7 +626,11 @@ class Printer:
         if mode == "tcp":
             if not self.config.host:
                 raise ValueError("TCP transport requer host")
-            return TcpTransport(self.config.host, self.config.port, timeout=self.config.timeout)
+            return TcpTransport(
+                self.config.host,
+                self.config.port,
+                timeout=self.config.timeout,
+            )
         if mode == "cups":
             return CUPSTransport(self.config.printer_name)
         raise ValueError(f"Transporte desconhecido: {self.config.transport}")
@@ -527,15 +668,25 @@ class Printer:
         except CompilationError as exc:
             return False, {"code": -1, "message": str(exc)}
 
-    def print_template(self, template: Template, dados: Mapping[str, Any]) -> tuple[bool, dict | None]:
+    def print_template(
+        self,
+        template: Template,
+        dados: Mapping[str, Any],
+    ) -> tuple[bool, dict | None]:
         variables = template.document.defaults(scope="template")
         variables["items"] = build_label_series(dados, template)
         return self.print_job(template, variables)
 
     def print_calibration(
-        self, *, backend: str | None = None, square_mm: float = CALIBRATION_SQUARE_MM
+        self,
+        *,
+        backend: str | None = None,
+        square_mm: float = CALIBRATION_SQUARE_MM,
     ) -> tuple[bool, dict | None]:
-        tpl = build_calibration_template(square_mm=square_mm, backend=backend or self.config.backend)
+        tpl = build_calibration_template(
+            square_mm=square_mm,
+            backend=backend or self.config.backend,
+        )
         return self.print_job(tpl, {})
 
     def apply_calibration(
@@ -546,7 +697,10 @@ class Printer:
         square_mm: float = CALIBRATION_SQUARE_MM,
     ) -> Calibration:
         new_cal = apply_calibration_adjustment(
-            self.config.calibration, measured_width, measured_height, square_mm=square_mm
+            self.config.calibration,
+            measured_width,
+            measured_height,
+            square_mm=square_mm,
         )
         self.config.calibration = new_cal
         return new_cal
@@ -612,7 +766,11 @@ def imprimir_etiqueta(
     nome_impressora: str | None = None,
     logger: logging.Logger | None = None,
 ) -> tuple[bool, dict | None]:
-    config = PrinterConfig(backend="tspl", transport="win32", printer_name=nome_impressora)
+    config = PrinterConfig(
+        backend="tspl",
+        transport="win32",
+        printer_name=nome_impressora,
+    )
     printer = Printer(config, logger=logger)
     tentativas = 3 if repetir_em_falha else 1
     for tentativa in range(1, tentativas + 1):
@@ -642,6 +800,10 @@ def imprimir_pagina_teste(
         "data_hora": "00/00/0000 00:00",
         "volumes": 1,
     }
-    config = PrinterConfig(backend="tspl", transport="win32", printer_name=nome_impressora)
+    config = PrinterConfig(
+        backend="tspl",
+        transport="win32",
+        printer_name=nome_impressora,
+    )
     printer = Printer(config, logger=logger)
     return printer.print_template(template, dados)

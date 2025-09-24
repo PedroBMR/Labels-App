@@ -1,8 +1,8 @@
 from hashlib import sha256
 
 from model.template import TemplateDocument, TemplateVariable
-from render.preview import render_template
 from printing import compile_template
+from render.preview import render_template
 
 
 def _sample_template() -> TemplateDocument:
@@ -40,7 +40,11 @@ def test_preview_renders_text(tmp_path):
 
 def test_compile_tspl_snapshot():
     document = _sample_template()
-    backend, commands = compile_template(document, {"items": [{"nome": "Teste"}]}, backend_name="tspl")
+    backend, commands = compile_template(
+        document,
+        {"items": [{"nome": "Teste"}]},
+        backend_name="tspl",
+    )
     assert backend == "tspl"
     lines = [line.strip() for line in commands.strip().splitlines() if line.strip()]
     assert lines[0].startswith("SIZE")

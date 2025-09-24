@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import copy
+from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
 from PIL.ImageQt import ImageQt
@@ -14,16 +14,15 @@ from qt_compat import (
     QGraphicsObject,
     QGraphicsSceneMouseEvent,
     QKeyEvent,
+    QLineF,
     QPainter,
     QPen,
+    QPixmap,
     QPointF,
-    QLineF,
     QRectF,
     Qt,
-    QPixmap,
     pyqtSignal,
 )
-
 from render.preview import render_element_image
 
 if False:  # pragma: no cover - typing only
@@ -103,7 +102,12 @@ class GraphicsElementItem(QGraphicsObject):
         context = scene.preview_context()
         page = scene.page
         calibration = scene.calibration
-        result = render_element_image(self._element, context, page, calibration=calibration)
+        result = render_element_image(
+            self._element,
+            context,
+            page,
+            calibration=calibration,
+        )
         if result:
             image, width_px, height_px = result
             if width_px <= 0 or height_px <= 0:
@@ -124,7 +128,11 @@ class GraphicsElementItem(QGraphicsObject):
 
     def paint(self, painter: QPainter, option, widget=None) -> None:  # noqa: D401 - Qt API
         if not self._pixmap.isNull():
-            painter.drawPixmap(self._rect, self._pixmap, QRectF(0, 0, self._pixmap.width(), self._pixmap.height()))
+            painter.drawPixmap(
+                self._rect,
+                self._pixmap,
+                QRectF(0, 0, self._pixmap.width(), self._pixmap.height()),
+            )
         if self.isSelected():
             pen = QPen(QColor(0, 120, 215))
             pen.setStyle(Qt.DashLine)
@@ -353,7 +361,9 @@ class GraphicsElementItem(QGraphicsObject):
         self._element["rotation"] = float(self.rotation())
 
 
-def iter_element_items(items: Iterable[QGraphicsObject]) -> Iterable[GraphicsElementItem]:
+def iter_element_items(
+    items: Iterable[QGraphicsObject],
+) -> Iterable[GraphicsElementItem]:
     for item in items:
         if isinstance(item, GraphicsElementItem):
             yield item

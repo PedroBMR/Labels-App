@@ -5,25 +5,28 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from editor.widget import LabelEditorWidget
+from model.template import TemplateDocument, TemplateVariable
+from printing import (
+    Template,
+    compile_template,
+    recarregar_templates,
+    template_manager,
+)
 from qt_compat import (
     QAction,
-    QFileDialog,
     QDockWidget,
+    QFileDialog,
     QMainWindow,
     QMessageBox,
     QStatusBar,
+    Qt,
     QTableWidget,
     QTableWidgetItem,
     QToolBar,
     QWidget,
     pyqtSignal,
-    Qt,
 )
-
-from model.template import TemplateDocument, TemplateVariable
-from printing import Template, compile_template, recarregar_templates, template_manager
-
-from editor.widget import LabelEditorWidget
 
 
 class VariablePanel(QWidget):
@@ -233,7 +236,12 @@ class EtiquetaApp(QMainWindow):
         self.load_document(document, path=None)
 
     def open_template(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Abrir template", "", "Templates (*.json)")
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Abrir template",
+            "",
+            "Templates (*.json)",
+        )
         if not path:
             return
         try:
@@ -250,13 +258,21 @@ class EtiquetaApp(QMainWindow):
         self._write_template(self.current_path)
 
     def save_template_as(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "Salvar template", "", "Templates (*.json)")
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Salvar template",
+            "",
+            "Templates (*.json)",
+        )
         if not path:
             return
         self._write_template(Path(path))
 
     def _write_template(self, path: Path) -> None:
-        template = self.editor.to_document(self.current_document.name, self.current_document.variables)
+        template = self.editor.to_document(
+            self.current_document.name,
+            self.current_document.variables,
+        )
         self.current_document = template
         template.dump(path)
         self.current_path = path
@@ -272,7 +288,10 @@ class EtiquetaApp(QMainWindow):
 
     # ------------------------------------------------------------------
     def _compile(self, backend: str = "tspl") -> tuple[str, str]:
-        template = self.editor.to_document(self.current_document.name, self.current_document.variables)
+        template = self.editor.to_document(
+            self.current_document.name,
+            self.current_document.variables,
+        )
         tpl = Template(template)
         template_values = self.variable_panel.template_values()
         item_values = self.variable_panel.item_values()

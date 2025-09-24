@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
 import re
+import unicodedata
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Mapping
-import unicodedata
 
 __all__ = [
     "CURRENT_TEMPLATE_VERSION",
@@ -228,7 +228,9 @@ class TemplateDocument:
                 if not _value_provided(item.get(name))
             ]
             if missing:
-                raise TemplateValidationError(sorted(missing), scope="item", index=index)
+                raise TemplateValidationError(
+                    sorted(missing), scope="item", index=index
+                )
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "TemplateDocument":
@@ -239,7 +241,13 @@ class TemplateDocument:
         page = _normalise_page(data.get("page"))
         elements = _normalise_elements(data.get("elements"))
         variables = _normalise_variables(data.get("variables"))
-        return cls(name=name, page=page, elements=elements, variables=variables, version=version)
+        return cls(
+            name=name,
+            page=page,
+            elements=elements,
+            variables=variables,
+            version=version,
+        )
 
     @classmethod
     def from_json(cls, payload: str) -> "TemplateDocument":
@@ -270,6 +278,11 @@ class TemplateDocument:
                 variables[str(key)] = TemplateVariable(name=str(key), default=value)
         variables.setdefault(
             "items",
-            TemplateVariable(name="items", scope="template", required=True, description="Lista de itens"),
+            TemplateVariable(
+                name="items",
+                scope="template",
+                required=True,
+                description="Lista de itens",
+            ),
         )
         return cls(name=name, page=page, elements=elements, variables=variables)

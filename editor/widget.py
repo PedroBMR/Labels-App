@@ -19,7 +19,6 @@ from qt_compat import (
     QVBoxLayout,
     QWidget,
 )
-
 from render.preview import render_template
 
 from .items import GraphicsElementItem, iter_element_items
@@ -31,14 +30,22 @@ from .view import LabelView
 class RulerWidget(QWidget):
     """Simple millimetre ruler aligned to the scene."""
 
-    def __init__(self, orientation: Qt.Orientation, scene: LabelScene, view: LabelView) -> None:
+    def __init__(
+        self,
+        orientation: Qt.Orientation,
+        scene: LabelScene,
+        view: LabelView,
+    ) -> None:
         super().__init__()
         self.orientation = orientation
         self.scene = scene
         self.view = view
         self.background = QColor(245, 245, 245)
         self.pen = QColor(120, 120, 120)
-        self.setFixedHeight(24) if orientation == Qt.Horizontal else self.setFixedWidth(24)
+        if orientation == Qt.Horizontal:
+            self.setFixedHeight(24)
+        else:
+            self.setFixedWidth(24)
         self.view.viewportChanged.connect(self.update)
 
     def paintEvent(self, event) -> None:  # noqa: D401 - Qt API
@@ -173,7 +180,11 @@ class LabelEditorWidget(QWidget):
         self.update_preview()
 
     def update_preview(self) -> None:
-        elements = [item.to_dict() for item in self.scene.items() if isinstance(item, GraphicsElementItem)]
+        elements = [
+            item.to_dict()
+            for item in self.scene.items()
+            if isinstance(item, GraphicsElementItem)
+        ]
         template = {"page": self.scene.page, "elements": elements}
         context = dict(self.preview_variables)
         image = render_template(template, context, calibration=self.scene.calibration)

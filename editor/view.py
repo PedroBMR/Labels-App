@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from qt_compat import QGraphicsView, QMouseEvent, QPointF, Qt, QPainter, pyqtSignal
+from qt_compat import QGraphicsView, QMouseEvent, QPainter, QPointF, Qt, pyqtSignal
 
 
 class LabelView(QGraphicsView):
@@ -16,8 +16,13 @@ class LabelView(QGraphicsView):
         self.setDragMode(QGraphicsView.RubberBandDrag)
         self._panning = False
         self._last_pan_pos: QPointF | None = None
-        self.horizontalScrollBar().valueChanged.connect(lambda _: self.viewportChanged.emit())
-        self.verticalScrollBar().valueChanged.connect(lambda _: self.viewportChanged.emit())
+        self.horizontalScrollBar().valueChanged.connect(
+            self._notify_viewport_change
+        )
+        self.verticalScrollBar().valueChanged.connect(self._notify_viewport_change)
+
+    def _notify_viewport_change(self, _value: int) -> None:
+        self.viewportChanged.emit()
 
     # ------------------------------------------------------------------
     def wheelEvent(self, event) -> None:  # noqa: D401 - Qt API
@@ -45,8 +50,12 @@ class LabelView(QGraphicsView):
         if self._panning and self._last_pan_pos is not None:
             delta = event.pos() - self._last_pan_pos
             self._last_pan_pos = event.pos()
-            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
-            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
+            self.horizontalScrollBar().setValue(
+                self.horizontalScrollBar().value() - delta.x()
+            )
+            self.verticalScrollBar().setValue(
+                self.verticalScrollBar().value() - delta.y()
+            )
             event.accept()
             self.viewportChanged.emit()
             return

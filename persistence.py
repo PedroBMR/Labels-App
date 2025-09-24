@@ -334,7 +334,10 @@ def salvar_template_documento(
 
     diretorio = _template_dir()
     if nome_arquivo:
-        arquivo = nome_arquivo if nome_arquivo.endswith(".json") else f"{nome_arquivo}.json"
+        if nome_arquivo.endswith(".json"):
+            arquivo = nome_arquivo
+        else:
+            arquivo = f"{nome_arquivo}.json"
     else:
         arquivo = f"{documento.slug}.json"
     caminho = diretorio / arquivo
