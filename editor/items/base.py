@@ -11,6 +11,7 @@ from PIL.ImageQt import ImageQt
 from qt_compat import (
     QColor,
     QCursor,
+    QGraphicsItem,
     QGraphicsObject,
     QGraphicsSceneMouseEvent,
     QKeyEvent,
@@ -89,6 +90,8 @@ class GraphicsElementItem(QGraphicsObject):
     # ------------------------------------------------------------------
     def _update_geometry_from_element(self) -> None:
         scene = self.scene()
+        if not scene:
+            return
         rect = scene.element_rect(self._element)
         self.prepareGeometryChange()
         self._rect = QRectF(0.0, 0.0, rect.width(), rect.height())
@@ -99,6 +102,8 @@ class GraphicsElementItem(QGraphicsObject):
 
     def _update_pixmap(self) -> None:
         scene = self.scene()
+        if not scene:
+            return
         context = scene.preview_context()
         page = scene.page
         calibration = scene.calibration
@@ -298,6 +303,9 @@ class GraphicsElementItem(QGraphicsObject):
 
     # ------------------------------------------------------------------
     def itemChange(self, change, value):  # noqa: D401 - Qt API
+        if change == QGraphicsItem.ItemSceneHasChanged and self.scene():
+            self._update_geometry_from_element()
+            self._update_pixmap()
         if change == QGraphicsObject.ItemPositionChange and self.scene():
             new_pos: QPointF = value
             snapped = self.scene().snap_point(self, new_pos)
@@ -305,7 +313,7 @@ class GraphicsElementItem(QGraphicsObject):
             self._element["y_mm"] = self.scene().to_mm_y(snapped.y())
             return snapped
         if change == QGraphicsObject.ItemSelectedChange:
-            if not value:
+            if not value and self.scene():
                 self.scene().clear_guides()
         return super().itemChange(change, value)
 
