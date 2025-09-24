@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import copy
-from typing import Any, Iterable, Mapping
+from typing import Any, Mapping
 
+from compile import Calibration, SafeDict
+from model.template import TemplateDocument
 from qt_compat import (
     QColor,
     QGraphicsLineItem,
@@ -13,13 +15,10 @@ from qt_compat import (
     QPen,
     QPointF,
     QRectF,
-    Qt,
     QUndoCommand,
     QUndoStack,
 )
 
-from compile import Calibration, SafeDict
-from model.template import TemplateDocument
 from .items import GraphicsElementItem, create_item, iter_element_items
 
 
@@ -41,7 +40,13 @@ class _StateChange(QUndoCommand):
     before: Any
     after: Any
 
-    def __init__(self, item: GraphicsElementItem, before: Any, after: Any, text: str) -> None:
+    def __init__(
+        self,
+        item: GraphicsElementItem,
+        before: Any,
+        after: Any,
+        text: str,
+    ) -> None:
         super().__init__(text)
         self.item = item
         self.before = before
@@ -65,7 +70,9 @@ class LabelScene(QGraphicsScene):
         parent=None,
     ) -> None:
         super().__init__(parent)
-        self.page: dict[str, Any] = dict(page or {"width_mm": 80.0, "height_mm": 60.0, "dpi": 203})
+        self.page: dict[str, Any] = dict(
+            page or {"width_mm": 80.0, "height_mm": 60.0, "dpi": 203}
+        )
         self.grid_mm = max(0.1, float(grid_mm))
         self.calibration = Calibration()
         self.undo_stack = QUndoStack(self)
@@ -163,7 +170,12 @@ class LabelScene(QGraphicsScene):
             top = round(snapped.top() / grid) * grid
             right = round(snapped.right() / grid) * grid
             bottom = round(snapped.bottom() / grid) * grid
-            snapped = QRectF(left, top, max(grid, right - left), max(grid, bottom - top))
+            snapped = QRectF(
+                left,
+                top,
+                max(grid, right - left),
+                max(grid, bottom - top),
+            )
         return self._align_rect(item, snapped)
 
     def snap_rotation(self, angle: float) -> float:
@@ -229,12 +241,24 @@ class LabelScene(QGraphicsScene):
         self.clear_guides()
         if vertical_guides:
             for x in vertical_guides:
-                guide = self.addLine(x, 0, x, self.sceneRect().height(), self._guide_pen)
+                guide = self.addLine(
+                    x,
+                    0,
+                    x,
+                    self.sceneRect().height(),
+                    self._guide_pen,
+                )
                 guide.setZValue(9999)
                 self._guides.append(guide)
         if horizontal_guides:
             for y in horizontal_guides:
-                guide = self.addLine(0, y, self.sceneRect().width(), y, self._guide_pen)
+                guide = self.addLine(
+                    0,
+                    y,
+                    self.sceneRect().width(),
+                    y,
+                    self._guide_pen,
+                )
                 guide.setZValue(9999)
                 self._guides.append(guide)
         return best_rect
@@ -272,10 +296,21 @@ class LabelScene(QGraphicsScene):
         self.undo_stack.push(command)
 
     # ------------------------------------------------------------------
-    def to_template(self, name: str, variables: Mapping[str, Any] | None = None) -> TemplateDocument:
-        elements = [item.to_dict() for item in iter_element_items(self.items())]
+    def to_template(
+        self,
+        name: str,
+        variables: Mapping[str, Any] | None = None,
+    ) -> TemplateDocument:
+        elements = [
+            item.to_dict() for item in iter_element_items(self.items())
+        ]
         page = dict(self.page)
-        document = TemplateDocument(name=name, page=page, elements=elements, variables=dict(variables or {}))
+        document = TemplateDocument(
+            name=name,
+            page=page,
+            elements=elements,
+            variables=dict(variables or {}),
+        )
         return document
 
     def load_document(self, document: TemplateDocument) -> None:
@@ -326,7 +361,9 @@ class LabelScene(QGraphicsScene):
         selected = self.selected_items()
         if not selected:
             return
-        max_bottom = max(item.pos().y() + item.shapeRect().height() for item in selected)
+        max_bottom = max(
+            item.pos().y() + item.shapeRect().height() for item in selected
+        )
         for item in selected:
             item.setY(max_bottom - item.shapeRect().height())
 
@@ -355,8 +392,16 @@ class LabelScene(QGraphicsScene):
         for item in selected:
             item.setY(cursor)
             cursor += item.shapeRect().height() + spacing
+
+
 class _PropertyChange(QUndoCommand):
-    def __init__(self, item: GraphicsElementItem, name: str, before: Any, after: Any) -> None:
+    def __init__(
+        self,
+        item: GraphicsElementItem,
+        name: str,
+        before: Any,
+        after: Any,
+    ) -> None:
         super().__init__(f"Alterar {name}")
         self.item = item
         self.name = name

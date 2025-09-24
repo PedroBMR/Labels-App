@@ -23,9 +23,9 @@ backends can be registered through :func:`register_backend`.
 
 from __future__ import annotations
 
+import io
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-import io
 from typing import Any, Mapping
 
 from PIL import Image, ImageDraw, ImageFont
@@ -201,12 +201,20 @@ class Backend(ABC):
         key_dots = f"{axis}_dots"
         if key_dots in element:
             value = float(element[key_dots])
-            scale = self.calibration.scale_x if axis == "x" else self.calibration.scale_y
+            scale = (
+                self.calibration.scale_x
+                if axis == "x"
+                else self.calibration.scale_y
+            )
             return int(round(value * scale))
         key_mm = f"{axis}_mm"
         if key_mm in element:
             value = float(element[key_mm])
-            return self.mm_to_dots_x(value) if axis == "x" else self.mm_to_dots_y(value)
+            return (
+                self.mm_to_dots_x(value)
+                if axis == "x"
+                else self.mm_to_dots_y(value)
+            )
         return 0
 
     def dimension(
@@ -224,7 +232,11 @@ class Backend(ABC):
             key_mm = f"{name}_mm"
             if key_mm in element:
                 raw = float(element[key_mm])
-                value = self.mm_to_dots_x(raw) if axis == "x" else self.mm_to_dots_y(raw)
+                value = (
+                    self.mm_to_dots_x(raw)
+                    if axis == "x"
+                    else self.mm_to_dots_y(raw)
+                )
             else:
                 value = 0
         return max(minimum, value)

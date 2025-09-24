@@ -8,8 +8,8 @@ from PIL import Image
 
 from . import (
     Backend,
-    CompilationError,
     Calibration,
+    CompilationError,
     image_from_source,
     register_backend,
     render_text_bitmap,
@@ -72,7 +72,11 @@ class TSPLBackend(Backend):
         header.append("CLS")
         return header
 
-    def _render_text(self, element: Mapping[str, Any], context: Mapping[str, Any]) -> str | None:
+    def _render_text(
+        self,
+        element: Mapping[str, Any],
+        context: Mapping[str, Any],
+    ) -> str | None:
         value = self.resolve(element.get("content"), context)
         if value is None:
             return None
@@ -90,8 +94,8 @@ class TSPLBackend(Backend):
 
         if font_name in self.builtin_fonts:
             return (
-                f'TEXT {x},{y},"{font_name}",{rotation},{max(1, x_mul)},{max(1, y_mul)},'
-                f'"{text}"'
+                f'TEXT {x},{y},"{font_name}",{rotation},'
+                f'{max(1, x_mul)},{max(1, y_mul)},"{text}"'
             )
 
         bitmap = render_text_bitmap(text, font_spec)
@@ -117,7 +121,11 @@ class TSPLBackend(Backend):
             f'{max(1, ratio)},"{text}"'
         )
 
-    def _render_qr(self, element: Mapping[str, Any], context: Mapping[str, Any]) -> str | None:
+    def _render_qr(
+        self,
+        element: Mapping[str, Any],
+        context: Mapping[str, Any],
+    ) -> str | None:
         value = self.resolve(element.get("value"), context)
         if value in (None, ""):
             return None

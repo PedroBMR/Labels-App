@@ -145,7 +145,12 @@ def _text_alignment(element: Mapping[str, Any]) -> tuple[str, str]:
     return align, valign
 
 
-def _simulate_bold(draw: ImageDraw.ImageDraw, position: tuple[float, float], text: str, font: ImageFont.ImageFont) -> None:
+def _simulate_bold(
+    draw: ImageDraw.ImageDraw,
+    position: tuple[float, float],
+    text: str,
+    font: ImageFont.ImageFont,
+) -> None:
     x, y = position
     draw.text((x, y), text, font=font, fill=0)
     draw.text((x + 1, y), text, font=font, fill=0)
@@ -172,7 +177,11 @@ def _render_text(
     if not text and not element.get("allow_empty", False):
         return None
 
-    font_spec = element.get("font", {}) if isinstance(element.get("font"), Mapping) else {}
+    font_spec = (
+        element.get("font", {})
+        if isinstance(element.get("font"), Mapping)
+        else {}
+    )
     point_size = int(font_spec.get("size", element.get("size", 20)))
     font = _load_font(font_spec, point_size)
     bold = bool(font_spec.get("bold"))
@@ -293,7 +302,10 @@ def _render_qrcode(
         "q": qrcode.constants.ERROR_CORRECT_Q,
         "h": qrcode.constants.ERROR_CORRECT_H,
     }
-    error = error_map.get(str(element.get("error", "m")).lower(), qrcode.constants.ERROR_CORRECT_M)
+    error = error_map.get(
+        str(element.get("error", "m")).lower(),
+        qrcode.constants.ERROR_CORRECT_M,
+    )
     qr = qrcode.QRCode(error_correction=error, box_size=1, border=0)
     qr.add_data(value)
     qr.make(fit=True)
@@ -363,7 +375,10 @@ def _render_shape(
         thickness = 0.25
     if element.get("kind") == "line" or kind == "line":
         pen = max(1, int(round(thickness * dots_per_mm)))
-        draw.rectangle((0, height // 2 - pen // 2, width, height // 2 + pen // 2), fill=0)
+        draw.rectangle(
+            (0, height // 2 - pen // 2, width, height // 2 + pen // 2),
+            fill=0,
+        )
     else:
         pen = max(1, int(round(thickness * dots_per_mm)))
         draw.rectangle((0, 0, width - 1, height - 1), outline=0, width=pen)
@@ -423,7 +438,6 @@ def render_element_image(
     if content is None:
         return None
 
-    rotation = float(element.get("rotation", 0))
     return content, width_px, height_px
 
 
