@@ -1,5 +1,5 @@
 """Rendering helpers used by the preview interface."""
 
-from .preview import render_preview
+from .preview import PreviewRenderer, render_element, render_template
 
-__all__ = ["render_preview"]
+__all__ = ["PreviewRenderer", "render_template", "render_element"]
