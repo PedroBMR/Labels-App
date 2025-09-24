@@ -28,13 +28,13 @@ from qt_compat import (
     QPainter,
     QPixmap,
     QStatusBar,
+    Qt,
     QTableWidget,
     QTableWidgetItem,
     QTimer,
     QToolBar,
     QVBoxLayout,
     QWidget,
-    Qt,
     pyqtSignal,
 )
 
@@ -61,29 +61,34 @@ class TutorialDialog(QDialog):
         layout.addWidget(illustration)
 
         intro = QLabel(
-            """
-            <p><b>Crie novas etiquetas em poucos passos:</b></p>
-            <ul>
-              <li><span style="color:#2E86DE;">Create Label</span> gera uma base no tamanho desejado.</li>
-              <li>Arraste os elementos com o mouse para reposicioná-los.</li>
-              <li>Use as alças azuis para redimensionar e o círculo laranja para girar.</li>
-              <li>Salve o modelo e ele ficará disponível em <code>assets/templates</code>.</li>
-            </ul>
-            """
+            (
+                "<p><b>Crie novas etiquetas em poucos passos:</b></p>\n"
+                "<ul>\n"
+                "  <li><span style=\"color:#2E86DE;\">Create Label</span> "
+                "gera uma base no tamanho desejado.</li>\n"
+                "  <li>Arraste os elementos com o mouse para reposicioná-los.</li>\n"
+                "  <li>Use as alças azuis para redimensionar e o círculo laranja para "
+                "girar.</li>\n"
+                "  <li>Salve o modelo e ele ficará disponível em <code>assets/templates"
+                "</code>.</li>\n"
+                "</ul>"
+            )
         )
         intro.setTextFormat(Qt.RichText)
         intro.setWordWrap(True)
         layout.addWidget(intro)
 
         tips = QLabel(
-            """
-            <p><b>Dicas rápidas</b></p>
-            <ul>
-              <li>Use a roda do mouse com <b>Ctrl</b> para ampliar/reduzir.</li>
-              <li>Mantenha <b>Espaço</b> pressionado para arrastar o painel.</li>
-              <li>Selecione vários elementos com arraste retangular e alinhe pelo menu Editar.</li>
-            </ul>
-            """
+            (
+                "<p><b>Dicas rápidas</b></p>\n"
+                "<ul>\n"
+                "  <li>Use a roda do mouse com <b>Ctrl</b> para ampliar/reduzir.</li>\n"
+                "  <li>Mantenha <b>Espaço</b> pressionado para arrastar o "
+                "painel.</li>\n"
+                "  <li>Selecione vários elementos com arraste retangular e alinhe pelo "
+                "menu Editar.</li>\n"
+                "</ul>"
+            )
         )
         tips.setTextFormat(Qt.RichText)
         tips.setWordWrap(True)

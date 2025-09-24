@@ -15,8 +15,8 @@ from qt_compat import (
     QPixmap,
     QPointF,
     QSplitter,
-    QTimer,
     Qt,
+    QTimer,
     QVBoxLayout,
     QWidget,
 )
