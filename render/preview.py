@@ -19,7 +19,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-import qrcode
+try:  # pragma: no cover - optional dependency during runtime
+    import qrcode
+except Exception:  # pragma: no cover - optional dependency missing
+    qrcode = None  # type: ignore[assignment]
+
 from PIL import Image, ImageDraw, ImageFont
 
 try:  # pragma: no cover - optional dependency during runtime
@@ -280,6 +284,9 @@ def _render_qrcode(
     value = _resolve_text(element.get("value"), context)
     if not value:
         return None
+    if qrcode is None:  # pragma: no cover - optional dependency missing
+        return None
+
     error_map = {
         "l": qrcode.constants.ERROR_CORRECT_L,
         "m": qrcode.constants.ERROR_CORRECT_M,
