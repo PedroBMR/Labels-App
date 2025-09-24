@@ -1,0 +1,41 @@
+{
+  "name": "60x80",
+  "version": 1,
+  "page": {
+    "backend": "tspl",
+    "width_mm": 60,
+    "height_mm": 80,
+    "gap_mm": 2,
+    "direction": 0
+  },
+  "elements": [
+    {"type": "text", "x_mm": 4, "y_mm": 6, "font": {"name": "3", "x": 1, "y": 1}, "content": "{titulo}"},
+    {"type": "text", "x_mm": 4, "y_mm": 14, "font": {"name": "2", "x": 1, "y": 1}, "content": "Saida: {saida}"},
+    {"type": "text", "x_mm": 4, "y_mm": 19, "font": {"name": "2", "x": 1, "y": 1}, "content": "Categoria: {categoria}"},
+    {"type": "text", "x_mm": 4, "y_mm": 24, "font": {"name": "2", "x": 1, "y": 1}, "content": "Emissor: {emissor}"},
+    {"type": "text", "x_mm": 4, "y_mm": 29, "font": {"name": "2", "x": 1, "y": 1}, "content": "Municipio: {municipio}"},
+    {"type": "text", "x_mm": 4, "y_mm": 34, "font": {"name": "2", "x": 1, "y": 1}, "content": "Impresso em: {data_hora}"},
+    {"type": "text", "x_mm": 4, "y_mm": 39, "font": {"name": "2", "x": 1, "y": 1}, "content": "{fracao}"},
+    {"type": "text", "x_mm": 28, "y_mm": 39, "font": {"name": "2", "x": 1, "y": 1}, "content": "{fragil}"},
+    {"type": "text", "x_mm": 18, "y_mm": 46, "font": {"name": "5", "x": 1, "y": 1}, "content": "{numero} DE {total}"},
+    {"type": "image", "x_mm": 10, "y_mm": 58, "key": "logo", "max_width_mm": 40, "max_height_mm": 18}
+  ],
+  "variables": {
+    "items": {
+      "scope": "template",
+      "required": true,
+      "description": "Lista de itens a serem impressos"
+    },
+    "titulo": {"default": "CONIMS"},
+    "saida": {"default": ""},
+    "categoria": {"default": ""},
+    "emissor": {"default": ""},
+    "municipio": {"default": ""},
+    "data": {"default": ""},
+    "data_hora": {"default": ""},
+    "fracao": {"default": "[ ] Fracao"},
+    "fragil": {"default": "[ ] Fragil"},
+    "numero": {"default": 1},
+    "total": {"default": 1}
+  }
+}
