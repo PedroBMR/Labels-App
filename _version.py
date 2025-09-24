@@ -9,7 +9,7 @@ Dependências:
 Exemplo:
     >>> from _version import __version__
     >>> __version__
-    '8.0'
+    '9.0'
 """
 
-__version__ = "8.0"
+__version__ = "9.0"
