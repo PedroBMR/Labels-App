@@ -251,17 +251,23 @@ if __name__ == "__main__":
 
             # 3) Janela principal
             def _patch_printer():
-                _orig_verificar = EtiquetaApp._verificar_impressora
+                _orig_verificar = getattr(EtiquetaApp, "_verificar_impressora", None)
+                if not callable(_orig_verificar):
+                    return
+
                 _printer_logged = False
-                def _verificar_wrapper(self):
+
+                def _verificar_wrapper(self, *args, **kwargs):
                     nonlocal _printer_logged
-                    _orig_verificar(self)
+                    result = _orig_verificar(self, *args, **kwargs)
                     if not _printer_logged:
                         logger.info(
                             "Boot: após verificar impressora %.3fs",
                             time.perf_counter() - BOOT_START,
                         )
                         _printer_logged = True
+                    return result
+
                 EtiquetaApp._verificar_impressora = _verificar_wrapper
             _patch_printer()
 
