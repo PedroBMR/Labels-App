@@ -183,7 +183,9 @@ class LabelScene(QGraphicsScene):
         return list(self._iter_editable_items())
 
     # ------------------------------------------------------------------
-    def add_element(self, element: Mapping[str, Any]) -> GraphicsElementItem | TextGraphicsItem:
+    def add_element(
+        self, element: Mapping[str, Any]
+    ) -> GraphicsElementItem | TextGraphicsItem:
         element_type = str(element.get("type", "")).lower()
         if element_type == "text":
             item = create_text_item(element)

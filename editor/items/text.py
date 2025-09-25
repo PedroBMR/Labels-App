@@ -60,7 +60,11 @@ class EditableTextItem(QGraphicsTextItem):
         super().mouseDoubleClickEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: D401 - Qt API
-        if self._editing and event.key() in {Qt.Key_Return, Qt.Key_Enter, Qt.Key_Escape}:
+        if self._editing and event.key() in {
+            Qt.Key_Return,
+            Qt.Key_Enter,
+            Qt.Key_Escape,
+        }:
             self.clearFocus()
             event.accept()
             return
@@ -197,7 +201,11 @@ class TextGraphicsItem(EditableTextItem):
 
     # ------------------------------------------------------------------
     def current_state(self) -> GeometryState:
-        return GeometryState(self.pos(), QRectF(self.boundingRect()), float(self.rotation()))
+        return GeometryState(
+            self.pos(),
+            QRectF(self.boundingRect()),
+            float(self.rotation()),
+        )
 
     def restore_state(self, state: GeometryState) -> None:
         self.prepareGeometryChange()
