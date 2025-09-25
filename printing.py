@@ -424,15 +424,18 @@ def compile_template(
     *,
     backend_name: str | None = None,
     calibration: Calibration | None = None,
+    strict: bool = True,
 ) -> tuple[str, str]:
     try:
         if isinstance(template, Template):
-            template.document.ensure_valid(variables)
+            if strict:
+                template.document.ensure_valid(variables)
             combined = combine_calibrations(template.calibration, calibration)
             backend = backend_name or template.backend
             template_data = template.data
         elif isinstance(template, TemplateDocument):
-            template.ensure_valid(variables)
+            if strict:
+                template.ensure_valid(variables)
             combined = calibration or Calibration()
             backend = backend_name or template.backend
             template_data = template.as_backend_dict()
@@ -445,6 +448,81 @@ def compile_template(
     backend = backend or "tspl"
     compiler = get_backend(backend, template_data, calibration=combined)
     return backend, compiler.compile(variables)
+
+
+def _prepare_quick_variables(
+    template: Template,
+    overrides: Mapping[str, Any] | None,
+    *,
+    silent: bool,
+) -> dict[str, Any]:
+    base = template.document.defaults(scope="template")
+    variables: dict[str, Any] = dict(base)
+
+    data = dict(overrides or {})
+    items_override = data.pop("items", None)
+    variables.update(data)
+
+    raw_copies = variables.get("copies")
+    try:
+        copies = int(raw_copies)
+    except (TypeError, ValueError):
+        copies = 1
+    if copies < 1:
+        copies = 1
+    variables["copies"] = copies
+
+    if isinstance(items_override, list) and items_override:
+        defaults_item = template.document.defaults(scope="item")
+        variables["items"] = [
+            {
+                **defaults_item,
+                **entry,
+            }
+            if isinstance(entry, Mapping)
+            else dict(defaults_item)
+            for entry in items_override
+        ]
+    elif isinstance(items_override, Mapping):
+        defaults_item = template.document.defaults(scope="item")
+        merged = dict(defaults_item)
+        merged.update(items_override)
+        variables["items"] = [merged]
+    elif silent:
+        defaults_item = template.document.defaults(scope="item")
+        if defaults_item:
+            variables["items"] = [dict(defaults_item)]
+        else:
+            variables["items"] = [{}]
+
+    return variables
+
+
+def prepare_quick_job(
+    model_name: str,
+    overrides: Mapping[str, Any] | None = None,
+    *,
+    silent: bool = True,
+) -> tuple[Template, dict[str, Any]]:
+    template = aplicar_template(model_name)
+    variables = _prepare_quick_variables(template, overrides, silent=silent)
+    return template, variables
+
+
+def compile_model_silent(
+    model_name: str,
+    overrides: Mapping[str, Any] | None = None,
+    *,
+    silent: bool = True,
+) -> bytes:
+    template, variables = prepare_quick_job(model_name, overrides, silent=silent)
+    backend, commands = compile_template(
+        template,
+        variables,
+        strict=not silent,
+    )
+    encoding = "cp1252" if backend.lower() == "tspl" else "utf-8"
+    return commands.encode(encoding, errors="replace")
 
 
 def montar_tspl(template: Template, dados: Mapping[str, Any]) -> str:
@@ -783,6 +861,11 @@ def imprimir_etiqueta(
             if tentativa == tentativas:
                 return False, {"code": exc.code, "message": str(exc)}
             time.sleep(0.5 * tentativa)
+
+
+def send(printer_name: str | None, payload: bytes) -> None:
+    transport = WindowsSpoolerTransport(printer_name)
+    transport.send(payload)
 
 
 def imprimir_pagina_teste(
