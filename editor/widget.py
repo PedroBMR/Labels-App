@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from typing import Any, Mapping
 
@@ -31,6 +32,9 @@ from .view import LabelView
 class RulerWidget(QWidget):
     """Simple millimetre ruler aligned to the scene."""
 
+    _MAJOR_TICK_INTERVAL = 10
+    _MEDIUM_TICK_INTERVAL = 5
+
     def __init__(
         self,
         orientation: Qt.Orientation,
@@ -49,6 +53,7 @@ class RulerWidget(QWidget):
             self.setFixedWidth(24)
         self.view.viewportChanged.connect(self.update)
 
+    # ------------------------------------------------------------------
     def paintEvent(self, event) -> None:  # noqa: D401 - Qt API
         painter = QPainter(self)
         painter.fillRect(event.rect(), self.background)
@@ -56,37 +61,96 @@ class RulerWidget(QWidget):
 
         visible = self.view.mapToScene(self.view.viewport().rect()).boundingRect()
         if self.orientation == Qt.Horizontal:
-            start_mm = math.floor(self.scene.to_mm_x(visible.left()))
-            end_mm = math.ceil(self.scene.to_mm_x(visible.right()))
-            for mm in range(start_mm, end_mm + 1):
-                scene_point = QPointF(self.scene.mm_to_pixels_x(mm), visible.top())
-                view_point = self.view.mapFromScene(scene_point)
-                x = view_point.x()
-                if mm % 10 == 0:
-                    painter.drawLine(int(x), self.height(), int(x), 0)
-                    painter.drawText(int(x) + 2, self.height() - 2, f"{mm}")
-                elif mm % 5 == 0:
-                    painter.drawLine(int(x), self.height(), int(x), self.height() // 2)
-                else:
-                    painter.drawLine(int(x), self.height(), int(x), self.height() - 6)
+            self._draw_horizontal_ticks(painter, visible)
         else:
-            start_mm = math.floor(self.scene.to_mm_y(visible.top()))
-            end_mm = math.ceil(self.scene.to_mm_y(visible.bottom()))
-            for mm in range(start_mm, end_mm + 1):
-                scene_point = QPointF(visible.left(), self.scene.mm_to_pixels_y(mm))
-                view_point = self.view.mapFromScene(scene_point)
-                y = view_point.y()
-                if mm % 10 == 0:
-                    painter.drawLine(self.width(), int(y), 0, int(y))
-                    painter.save()
-                    painter.translate(2, int(y) - 2)
-                    painter.rotate(-90)
-                    painter.drawText(0, 0, f"{mm}")
-                    painter.restore()
-                elif mm % 5 == 0:
-                    painter.drawLine(self.width(), int(y), self.width() // 2, int(y))
-                else:
-                    painter.drawLine(self.width(), int(y), self.width() - 6, int(y))
+            self._draw_vertical_ticks(painter, visible)
+
+    # ------------------------------------------------------------------
+    def _iter_visible_mm(self, start: float, end: float) -> range:
+        start_mm = math.floor(start)
+        end_mm = math.ceil(end)
+        return range(start_mm, end_mm + 1)
+
+    def _draw_horizontal_ticks(self, painter: QPainter, visible) -> None:
+        to_scene_x = self.scene.mm_to_pixels_x
+        to_view = self.view.mapFromScene
+        height = self.height()
+        for mm in self._iter_visible_mm(
+            self.scene.to_mm_x(visible.left()), self.scene.to_mm_x(visible.right())
+        ):
+            scene_point = QPointF(to_scene_x(mm), visible.top())
+            x = to_view(scene_point).x()
+            self._draw_tick(painter, mm, int(x), height, orientation=Qt.Horizontal)
+
+    def _draw_vertical_ticks(self, painter: QPainter, visible) -> None:
+        to_scene_y = self.scene.mm_to_pixels_y
+        to_view = self.view.mapFromScene
+        width = self.width()
+        for mm in self._iter_visible_mm(
+            self.scene.to_mm_y(visible.top()), self.scene.to_mm_y(visible.bottom())
+        ):
+            scene_point = QPointF(visible.left(), to_scene_y(mm))
+            y = to_view(scene_point).y()
+            self._draw_tick(painter, mm, int(y), width, orientation=Qt.Vertical)
+
+    def _draw_tick(
+        self,
+        painter: QPainter,
+        mm: int,
+        position: int,
+        length: int,
+        *,
+        orientation: Qt.Orientation,
+    ) -> None:
+        if mm % self._MAJOR_TICK_INTERVAL == 0:
+            self._draw_major_tick(painter, mm, position, length, orientation)
+        elif mm % self._MEDIUM_TICK_INTERVAL == 0:
+            self._draw_medium_tick(painter, position, length, orientation)
+        else:
+            self._draw_minor_tick(painter, position, length, orientation)
+
+    def _draw_major_tick(
+        self,
+        painter: QPainter,
+        mm: int,
+        position: int,
+        length: int,
+        orientation: Qt.Orientation,
+    ) -> None:
+        if orientation == Qt.Horizontal:
+            painter.drawLine(position, length, position, 0)
+            painter.drawText(position + 2, length - 2, f"{mm}")
+        else:
+            painter.drawLine(length, position, 0, position)
+            painter.save()
+            painter.translate(2, position - 2)
+            painter.rotate(-90)
+            painter.drawText(0, 0, f"{mm}")
+            painter.restore()
+
+    def _draw_medium_tick(
+        self,
+        painter: QPainter,
+        position: int,
+        length: int,
+        orientation: Qt.Orientation,
+    ) -> None:
+        if orientation == Qt.Horizontal:
+            painter.drawLine(position, length, position, length // 2)
+        else:
+            painter.drawLine(length, position, length // 2, position)
+
+    def _draw_minor_tick(
+        self,
+        painter: QPainter,
+        position: int,
+        length: int,
+        orientation: Qt.Orientation,
+    ) -> None:
+        if orientation == Qt.Horizontal:
+            painter.drawLine(position, length, position, length - 6)
+        else:
+            painter.drawLine(length, position, length - 6, position)
 
 
 class PreviewWidget(QWidget):
@@ -120,6 +184,7 @@ class LabelEditorWidget(QWidget):
         self.view = LabelView()
         self.view.setScene(self.scene)
         self.preview_variables: dict[str, Any] = {}
+        self._last_preview_payload: tuple[str, str] | None = None
         self._preview_delay_ms = 75
         self._preview_timer = QTimer(self)
         self._preview_timer.setSingleShot(True)
@@ -179,6 +244,7 @@ class LabelEditorWidget(QWidget):
         for item in self.scene.editable_items():
             item.changed.connect(self.update_preview)
         self.scene.clearSelection()
+        self._last_preview_payload = None
         self.update_preview(immediate=True)
 
     def to_document(self, name: str, variables: Mapping[str, Any] | None = None):
@@ -187,16 +253,14 @@ class LabelEditorWidget(QWidget):
     def set_preview_data(self, data: Mapping[str, Any]) -> None:
         self.preview_variables = dict(data)
         self.scene.set_preview_variables(data)
+        self._last_preview_payload = None
         self.update_preview()
 
     def update_preview(self, *_, immediate: bool = False) -> None:
         if immediate:
-            if self._preview_timer.isActive():
-                self._preview_timer.stop()
+            self._preview_timer.stop()
             self._perform_preview_update()
             return
-        if self._preview_timer.isActive():
-            self._preview_timer.stop()
         self._preview_timer.start(self._preview_delay_ms)
 
     def _perform_preview_update(self) -> None:
@@ -204,12 +268,21 @@ class LabelEditorWidget(QWidget):
             self.scene,
             str(self.scene.page.get("name", "Preview")),
         )
+        backend_dict = model.as_backend_dict()
         context = dict(self.preview_variables)
+        payload_signature = (
+            json.dumps(backend_dict, sort_keys=True, ensure_ascii=False),
+            json.dumps(context, sort_keys=True, ensure_ascii=False),
+        )
+        if payload_signature == self._last_preview_payload:
+            return
+
         image = render_template(
-            model.as_backend_dict(),
+            backend_dict,
             context,
             calibration=self.scene.calibration,
         )
+        self._last_preview_payload = payload_signature
         self.preview_widget.set_image(image)
 
     def create_default(self, kind: str) -> dict[str, Any]:
