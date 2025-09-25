@@ -7,6 +7,7 @@ from typing import Any, Iterable, Mapping
 from PIL import Image
 
 from imaging.raster import fingerprint_image, prepare_bitmap_for_tspl
+from printing_utils import ZPLMediaParams, emit_zpl_footer, emit_zpl_media_setup
 
 from . import (
     Backend,
@@ -34,7 +35,7 @@ class ZPLBackend(Backend):
         super().__init__(template, calibration=calibration)
 
     def render(self, context: Mapping[str, Any]) -> bytes:
-        parts: list[bytes] = [self._line("^XA")]
+        parts: list[bytes] = []
         parts.extend(self._encode_lines(self._header()))
         for element in self.elements:
             handler = getattr(self, f"_render_{element.get('type')}", None)
@@ -48,9 +49,7 @@ class ZPLBackend(Backend):
             else:
                 parts.append(self._ensure_bytes(result))
         copies = int(context.get("copies", self.template.get("print_copies", 1)) or 1)
-        if copies > 1:
-            parts.append(self._line(f"^PQ{copies}"))
-        parts.append(self._line("^XZ"))
+        parts.extend(self._encode_lines(emit_zpl_footer(max(1, copies))))
         return b"".join(parts)
 
     # ------------------------------------------------------------------
@@ -72,15 +71,20 @@ class ZPLBackend(Backend):
     def _header(self) -> list[str]:
         width = self.mm_to_dots_x(float(self.template.get("width_mm", 0)))
         height = self.mm_to_dots_y(float(self.template.get("height_mm", 0)))
-        header = []
-        if width:
-            header.append(f"^PW{width}")
-        if height:
-            header.append(f"^LL{height}")
         darkness = self.template.get("darkness")
-        if darkness is not None:
-            header.append(f"^MD{int(darkness)}")
-        return header
+        print_rate = self.template.get("print_rate", self.template.get("print_speed"))
+        media_type = str(self.template.get("media_type", "gap")).lower()
+        calibrate = bool(self.template.get("calibrate_next_print"))
+
+        params = ZPLMediaParams(
+            width_dots=width or None,
+            height_dots=height or None,
+            darkness=int(darkness) if darkness is not None else None,
+            print_rate=str(print_rate) if print_rate not in (None, "") else None,
+            media_type=media_type,
+            calibrate=calibrate,
+        )
+        return emit_zpl_media_setup(params)
 
     def _render_text(
         self,

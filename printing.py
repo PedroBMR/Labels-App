@@ -14,6 +14,7 @@ from typing import Any, Mapping, Protocol
 
 from compile import Calibration, CompilationError, get_backend
 from model.template import TemplateDocument, TemplateValidationError
+from persistence import carregar_config, salvar_config
 from utils import recurso_caminho
 
 # Retained for backwards compatibility with legacy code/tests that relied on
@@ -259,8 +260,84 @@ class Template:
     def gap_mm(self) -> float:
         return float(self.document.page.get("gap_mm", 0))
 
+    def with_page_overrides(self, overrides: Mapping[str, Any]) -> "Template":
+        document = self.document.copy()
+        document.page.update(dict(overrides))
+        return Template(document, self.calibration)
+
     def with_calibration(self, calibration: Calibration) -> "Template":
         return Template(self.document.copy(), calibration)
+
+
+def resolve_media_settings(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Extract media related settings from ``config`` with sane defaults."""
+
+    media_raw = str(config.get("media_type", "gap") or "gap").strip().lower()
+    if media_raw in {"mark", "black", "black_mark", "black-mark", "blackmark"}:
+        media_type = "black_mark"
+    else:
+        media_type = "gap"
+
+    def _float(value: Any, fallback: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return fallback
+
+    gap_mm = _float(config.get("media_gap_mm", config.get("gap_mm", 0.0)))
+    gap_offset = _float(config.get("media_gap_offset_mm", config.get("media_offset_mm", 0.0)))
+    mark_mm = _float(config.get("media_mark_mm", gap_mm))
+    mark_offset = _float(config.get("media_mark_offset_mm", gap_offset))
+    fine_offset = _float(config.get("media_fine_offset_mm", 0.0))
+    calibrate = bool(config.get("media_calibrate_next"))
+
+    return {
+        "media_type": media_type,
+        "gap_mm": gap_mm,
+        "gap_offset_mm": gap_offset,
+        "mark_mm": mark_mm,
+        "mark_offset_mm": mark_offset,
+        "fine_offset_mm": fine_offset,
+        "calibrate_next_print": calibrate,
+    }
+
+
+def apply_media_settings(template: Template, settings: Mapping[str, Any]) -> Template:
+    """Return a copy of ``template`` with ``settings`` applied to the page."""
+
+    document = template.document.copy()
+    page = document.page
+
+    media_type = str(settings.get("media_type", page.get("media_type", "gap"))).lower()
+    media_type = "black_mark" if media_type in {"black_mark", "blackmark", "mark"} else "gap"
+    page["media_type"] = media_type
+
+    def _coerce(key: str, default: float = 0.0) -> float:
+        value = settings.get(key, page.get(key, default))
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    gap_mm = _coerce("gap_mm", float(page.get("gap_mm", 0.0)))
+    gap_offset = _coerce("gap_offset_mm", float(page.get("gap_offset_mm", 0.0)))
+    mark_mm = _coerce("mark_mm", float(page.get("mark_mm", page.get("black_mark_mm", gap_mm))))
+    mark_offset = _coerce(
+        "mark_offset_mm",
+        float(page.get("mark_offset_mm", page.get("black_mark_offset_mm", gap_offset))),
+    )
+    fine_offset = _coerce("fine_offset_mm", float(page.get("fine_offset_mm", 0.0)))
+
+    page["gap_mm"] = gap_mm
+    page["gap_offset_mm"] = gap_offset
+    page["mark_mm"] = mark_mm
+    page["mark_offset_mm"] = mark_offset
+    page["black_mark_mm"] = mark_mm
+    page["black_mark_offset_mm"] = mark_offset
+    page["fine_offset_mm"] = fine_offset
+    page["calibrate_next_print"] = bool(settings.get("calibrate_next_print"))
+
+    return Template(document, template.calibration)
 
 
 class TemplateManager:
@@ -508,8 +585,14 @@ def prepare_quick_job(
     overrides: Mapping[str, Any] | None = None,
     *,
     silent: bool = True,
+    config: Mapping[str, Any] | None = None,
 ) -> tuple[Template, dict[str, Any]]:
+    cfg = config or carregar_config()
     template = aplicar_template(model_name)
+    media_settings = resolve_media_settings(cfg)
+    base_settings = dict(media_settings)
+    base_settings["calibrate_next_print"] = False
+    template = apply_media_settings(template, base_settings)
     variables = _prepare_quick_variables(template, overrides, silent=silent)
     return template, variables
 
@@ -520,7 +603,19 @@ def compile_model_silent(
     *,
     silent: bool = True,
 ) -> bytes:
-    template, variables = prepare_quick_job(model_name, overrides, silent=silent)
+    cfg = carregar_config()
+    template, variables = prepare_quick_job(
+        model_name,
+        overrides,
+        silent=silent,
+        config=cfg,
+    )
+    media_settings = resolve_media_settings(cfg)
+    if media_settings.get("calibrate_next_print"):
+        cfg = dict(cfg)
+        cfg["media_calibrate_next"] = False
+        salvar_config(cfg)
+    template = apply_media_settings(template, media_settings)
     backend, commands = compile_template(
         template,
         variables,
@@ -529,17 +624,31 @@ def compile_model_silent(
     return commands
 
 
-def montar_tspl(template: Template, dados: Mapping[str, Any]) -> bytes:
-    variables = template.document.defaults(scope="template")
-    variables["items"] = build_label_series(dados, template)
-    _, commands = compile_template(template, variables, backend_name="tspl")
+def montar_tspl(
+    template: Template,
+    dados: Mapping[str, Any],
+    media_settings: Mapping[str, Any] | None = None,
+) -> bytes:
+    working_template = template
+    if media_settings:
+        working_template = apply_media_settings(template, media_settings)
+    variables = working_template.document.defaults(scope="template")
+    variables["items"] = build_label_series(dados, working_template)
+    _, commands = compile_template(working_template, variables, backend_name="tspl")
     return commands
 
 
-def montar_zpl(template: Template, dados: Mapping[str, Any]) -> bytes:
-    variables = template.document.defaults(scope="template")
-    variables["items"] = build_label_series(dados, template)
-    _, commands = compile_template(template, variables, backend_name="zpl")
+def montar_zpl(
+    template: Template,
+    dados: Mapping[str, Any],
+    media_settings: Mapping[str, Any] | None = None,
+) -> bytes:
+    working_template = template
+    if media_settings:
+        working_template = apply_media_settings(template, media_settings)
+    variables = working_template.document.defaults(scope="template")
+    variables["items"] = build_label_series(dados, working_template)
+    _, commands = compile_template(working_template, variables, backend_name="zpl")
     return commands
 
 

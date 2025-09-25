@@ -11,6 +11,11 @@ from imaging.raster import (
     prepare_bitmap_for_tspl,
     tspl_bitmap_command,
 )
+from printing_utils import (
+    TSPLMediaParams,
+    emit_tspl_media_setup,
+    emit_tspl_print_footer,
+)
 
 from . import (
     Backend,
@@ -53,7 +58,7 @@ class TSPLBackend(Backend):
             else:
                 parts.append(self._ensure_bytes(result))
         copies = int(context.get("copies", self.template.get("print_copies", 1)) or 1)
-        parts.append(self._line(f"PRINT {max(1, copies)}"))
+        parts.extend(self._encode_lines(emit_tspl_print_footer(max(1, copies))))
         return b"".join(parts)
 
     # ------------------------------------------------------------------
@@ -75,22 +80,39 @@ class TSPLBackend(Backend):
     def _header(self) -> list[str]:
         width = float(self.template.get("width_mm", 0))
         height = float(self.template.get("height_mm", 0))
-        gap = float(self.template.get("gap_mm", 0))
-        direction = int(self.template.get("direction", 1))
-
-        header = [
-            f"SIZE {width:g} mm,{height:g} mm",
-            f"GAP {gap:g} mm,0",
-        ]
         speed = self.template.get("speed")
-        if speed is not None:
-            header.append(f"SPEED {int(speed)}")
         density = self.template.get("density")
-        if density is not None:
-            header.append(f"DENSITY {int(density)}")
-        header.append(f"DIRECTION {direction}")
-        header.append("CLS")
-        return header
+        direction = int(self.template.get("direction", 1))
+        reference_x = int(self.template.get("reference_x", 0))
+        reference_y = int(self.template.get("reference_y", 0))
+
+        media_type = str(self.template.get("media_type", "gap")).lower()
+        gap_mm = self.template.get("gap_mm")
+        gap_offset = float(self.template.get("gap_offset_mm", 0.0))
+        mark_mm = self.template.get("mark_mm", self.template.get("black_mark_mm"))
+        mark_offset = float(
+            self.template.get("mark_offset_mm", self.template.get("black_mark_offset_mm", 0.0))
+        )
+        fine_offset = float(self.template.get("fine_offset_mm", 0.0))
+        calibrate = bool(self.template.get("calibrate_next_print"))
+
+        params = TSPLMediaParams(
+            width_mm=width,
+            height_mm=height,
+            speed=int(speed) if speed is not None else None,
+            density=int(density) if density is not None else None,
+            direction=direction,
+            reference_x=reference_x,
+            reference_y=reference_y,
+            media_type=media_type,
+            gap_mm=float(gap_mm) if gap_mm is not None else None,
+            gap_offset_mm=gap_offset,
+            mark_mm=float(mark_mm) if mark_mm is not None else None,
+            mark_offset_mm=mark_offset,
+            fine_offset_mm=fine_offset,
+            calibrate=calibrate,
+        )
+        return emit_tspl_media_setup(params)
 
     def _render_text(
         self,
