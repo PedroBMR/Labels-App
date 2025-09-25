@@ -24,7 +24,7 @@ from render.preview import render_template
 
 from .items import GraphicsElementItem, TextGraphicsItem
 from .properties import PropertyPanel
-from .scene import LabelScene
+from .scene import LabelScene, build_model_from_scene
 from .view import LabelView
 
 
@@ -200,10 +200,16 @@ class LabelEditorWidget(QWidget):
         self._preview_timer.start(self._preview_delay_ms)
 
     def _perform_preview_update(self) -> None:
-        elements = [item.to_dict() for item in self.scene.editable_items()]
-        template = {"page": self.scene.page, "elements": elements}
+        model = build_model_from_scene(
+            self.scene,
+            str(self.scene.page.get("name", "Preview")),
+        )
         context = dict(self.preview_variables)
-        image = render_template(template, context, calibration=self.scene.calibration)
+        image = render_template(
+            model.as_backend_dict(),
+            context,
+            calibration=self.scene.calibration,
+        )
         self.preview_widget.set_image(image)
 
     def create_default(self, kind: str) -> dict[str, Any]:

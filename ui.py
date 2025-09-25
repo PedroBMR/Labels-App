@@ -23,10 +23,12 @@ import subprocess
 import sys
 import threading
 from datetime import datetime
+from pathlib import Path
 from typing import Any, TypedDict
 
 from _version import __version__
 from editor.window import LabelEditorWindow
+from model.template import TemplateDocument
 from log import LOG_FILE, logger, register_status_callback
 from persistence import (
     atualizar_recentes,
@@ -90,6 +92,7 @@ from qt_compat import (
     pyqtSignal,
     pyqtSlot,
 )
+from template_store import template_store
 from utils import backup_automatico, normalize_text, recurso_caminho
 
 CATEGORIAS_PADRAO = [
@@ -325,6 +328,8 @@ class EtiquetaApp(QWidget):
         self._atualizar_status("🟢 Pronto")
         QTimer.singleShot(0, self._agendar_backup_diario)
         QTimer.singleShot(0, self._verificar_impressora)
+
+        template_store.templateSaved.connect(self._on_template_saved)
 
         self._printer_refresh_timer = QTimer(self)
         self._printer_refresh_timer.setInterval(60000)
@@ -684,6 +689,19 @@ class EtiquetaApp(QWidget):
                 idx_tpl = 0
         if idx_tpl >= 0:
             self.template_input.setCurrentIndex(idx_tpl)
+
+    def _on_template_saved(self, path: str) -> None:
+        self._carregar_templates()
+        try:
+            document = TemplateDocument.from_file(path)
+            name = document.name
+        except Exception:
+            name = Path(path).stem
+        if not name:
+            return
+        idx = self.template_input.findText(name)
+        if idx >= 0:
+            self.template_input.setCurrentIndex(idx)
 
     def _popular_combo(
         self, combo: QComboBox, recentes: list[str], padroes: list[str]

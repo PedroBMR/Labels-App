@@ -4,12 +4,87 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from qt_compat import QColor, QGraphicsItem, QGraphicsSceneMouseEvent, QGraphicsTextItem, QPointF, QRectF, Qt, pyqtSignal
+from qt_compat import (
+    QColor,
+    QFocusEvent,
+    QGraphicsItem,
+    QGraphicsSceneMouseEvent,
+    QGraphicsTextItem,
+    QKeyEvent,
+    QPointF,
+    QRectF,
+    Qt,
+    pyqtSignal,
+)
 
 from .base import GeometryState
 
+__all__ = ["EditableTextItem", "TextGraphicsItem"]
 
-class TextGraphicsItem(QGraphicsTextItem):
+
+class EditableTextItem(QGraphicsTextItem):
+    """Text item that toggles edit mode on demand."""
+
+    editingStarted = pyqtSignal()
+    editingFinished = pyqtSignal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._locked = False
+        self._editing = False
+        self.setFlags(
+            QGraphicsItem.ItemIsMovable
+            | QGraphicsItem.ItemIsSelectable
+            | QGraphicsItem.ItemSendsGeometryChanges
+        )
+        self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
+        self.setTextInteractionFlags(Qt.NoTextInteraction)
+
+    # ------------------------------------------------------------------
+    def is_editing(self) -> bool:
+        return self._editing
+
+    def set_locked(self, locked: bool) -> None:
+        self._locked = locked
+        self.setFlag(QGraphicsItem.ItemIsMovable, not locked)
+        if locked and self._editing:
+            self.clearFocus()
+
+    # ------------------------------------------------------------------
+    def mouseDoubleClickEvent(self, event):  # noqa: D401 - Qt API
+        if self._locked:
+            event.ignore()
+            return
+        if not self._editing:
+            self._begin_editing()
+        super().mouseDoubleClickEvent(event)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: D401 - Qt API
+        if self._editing and event.key() in {Qt.Key_Return, Qt.Key_Enter, Qt.Key_Escape}:
+            self.clearFocus()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def focusOutEvent(self, event: QFocusEvent) -> None:  # noqa: D401 - Qt API
+        super().focusOutEvent(event)
+        if self._editing:
+            self._finish_editing()
+
+    # ------------------------------------------------------------------
+    def _begin_editing(self) -> None:
+        self._editing = True
+        self.setTextInteractionFlags(Qt.TextEditorInteraction)
+        self.setFocus(Qt.MouseFocusReason)
+        self.editingStarted.emit()
+
+    def _finish_editing(self) -> None:
+        self._editing = False
+        self.setTextInteractionFlags(Qt.NoTextInteraction)
+        self.editingFinished.emit()
+
+
+class TextGraphicsItem(EditableTextItem):
     """Interactive text item mirroring the :class:`GraphicsElementItem` API."""
 
     changed = pyqtSignal()
@@ -19,16 +94,8 @@ class TextGraphicsItem(QGraphicsTextItem):
     def __init__(self, element: Mapping[str, Any] | None = None, parent=None) -> None:
         super().__init__(parent)
         self._element: dict[str, Any] = {"type": "text", "content": "New Text"}
-        self._locked = False
         self._initial_state: GeometryState | None = None
         self.setDefaultTextColor(QColor(0, 0, 0))
-        self.setFlags(
-            QGraphicsItem.ItemIsMovable
-            | QGraphicsItem.ItemIsSelectable
-            | QGraphicsItem.ItemSendsGeometryChanges
-        )
-        self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
-        self.setTextInteractionFlags(Qt.TextEditorInteraction)
         self.document().contentsChanged.connect(self._on_content_changed)
         if element:
             self.apply_element(element)
@@ -50,9 +117,8 @@ class TextGraphicsItem(QGraphicsTextItem):
         data.setdefault("type", "text")
         data.setdefault("content", "New Text")
         self._element = data
-        self._locked = bool(data.get("locked", False))
+        self.set_locked(bool(data.get("locked", False)))
         self.setVisible(not bool(data.get("hidden", False)))
-        self.setFlag(QGraphicsItem.ItemIsMovable, not self._locked)
         self.setPlainText(str(data.get("content", "New Text")))
         font_raw = data.get("font", {})
         font_data = dict(font_raw) if isinstance(font_raw, Mapping) else {}
@@ -188,9 +254,8 @@ class TextGraphicsItem(QGraphicsTextItem):
         self.setFont(font)
 
     def lock(self, state: bool) -> None:
-        self._locked = state
         self._element["locked"] = state
-        self.setFlag(QGraphicsItem.ItemIsMovable, not state)
+        self.set_locked(state)
 
     def set_hidden(self, hidden: bool) -> None:
         self._element["hidden"] = hidden

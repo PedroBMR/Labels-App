@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
-from qt_compat import QGraphicsView, QMouseEvent, QPainter, QPointF, Qt, pyqtSignal
+from qt_compat import (
+    QAction,
+    QGraphicsView,
+    QMenu,
+    QMouseEvent,
+    QPainter,
+    QPointF,
+    Qt,
+    pyqtSignal,
+)
+
+from .items import EditableTextItem
 
 
 class LabelView(QGraphicsView):
@@ -44,6 +55,10 @@ class LabelView(QGraphicsView):
         super().wheelEvent(event)
 
     def keyPressEvent(self, event) -> None:  # noqa: D401 - Qt API
+        if event.key() in {Qt.Key_Delete, Qt.Key_Backspace}:
+            if self._handle_delete_request():
+                event.accept()
+                return
         if event.key() == Qt.Key_Space and not event.isAutoRepeat():
             self._space_panning = True
             self.setDragMode(QGraphicsView.ScrollHandDrag)
@@ -61,6 +76,14 @@ class LabelView(QGraphicsView):
             event.accept()
             return
         super().keyReleaseEvent(event)
+
+    def contextMenuEvent(self, event) -> None:  # noqa: D401 - Qt API
+        menu = QMenu(self)
+        delete_action = QAction("Delete", menu)
+        delete_action.triggered.connect(self._handle_delete_request)
+        delete_action.setEnabled(self._can_delete_selection())
+        menu.addAction(delete_action)
+        menu.exec(event.globalPos())
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: D401 - Qt API
         if event.button() == Qt.MiddleButton:
@@ -103,3 +126,31 @@ class LabelView(QGraphicsView):
     def resizeEvent(self, event) -> None:  # noqa: D401 - Qt API
         super().resizeEvent(event)
         self.viewportChanged.emit()
+
+    # ------------------------------------------------------------------
+    def _focused_text_item(self) -> EditableTextItem | None:
+        scene = self.scene()
+        if not scene:
+            return None
+        focus_item = scene.focusItem()
+        if isinstance(focus_item, EditableTextItem):
+            return focus_item
+        return None
+
+    def _handle_delete_request(self) -> bool:
+        scene = self.scene()
+        if scene is None:
+            return False
+        focused = self._focused_text_item()
+        if focused and focused.is_editing():
+            return False
+        removed = scene.remove_selected_items()
+        if removed:
+            self.viewportChanged.emit()
+        return removed
+
+    def _can_delete_selection(self) -> bool:
+        scene = self.scene()
+        if scene is None:
+            return False
+        return scene.can_remove_selected_items()
