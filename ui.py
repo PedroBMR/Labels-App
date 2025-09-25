@@ -229,6 +229,34 @@ class ConfigDialog(QDialog):
         self.media_offset_spin.setDecimals(2)
         self.media_offset_spin.setSingleStep(0.1)
 
+        self.media_speed_spin = QSpinBox()
+        self.media_speed_spin.setRange(0, 20)
+        self.media_speed_spin.setSpecialValueText("Padrão")
+        try:
+            self.media_speed_spin.setValue(
+                int(float(settings.get("media_speed", 0) or 0))
+            )
+        except (TypeError, ValueError):
+            self.media_speed_spin.setValue(0)
+
+        self.media_darkness_spin = QSpinBox()
+        self.media_darkness_spin.setRange(0, 30)
+        self.media_darkness_spin.setSpecialValueText("Padrão")
+        try:
+            self.media_darkness_spin.setValue(
+                int(
+                    float(
+                        settings.get(
+                            "media_darkness",
+                            settings.get("density", settings.get("darkness", 0)),
+                        )
+                        or 0
+                    )
+                )
+            )
+        except (TypeError, ValueError):
+            self.media_darkness_spin.setValue(0)
+
         self.media_fine_offset_spin = QDoubleSpinBox()
         self.media_fine_offset_spin.setRange(-20.0, 20.0)
         self.media_fine_offset_spin.setDecimals(2)
@@ -250,6 +278,8 @@ class ConfigDialog(QDialog):
         media_form.addRow("Tipo de mídia:", self.media_type_combo)
         media_form.addRow(self.media_size_label, self.media_size_spin)
         media_form.addRow(self.media_offset_label, self.media_offset_spin)
+        media_form.addRow("Velocidade (ips):", self.media_speed_spin)
+        media_form.addRow("Escuridão/densidade:", self.media_darkness_spin)
         media_form.addRow("Ajuste fino (mm):", self.media_fine_offset_spin)
         media_form.addRow(self.media_calibrate_check)
 
@@ -344,6 +374,8 @@ class ConfigDialog(QDialog):
             "media_gap_offset_mm": float(self._gap_offset),
             "media_mark_mm": float(self._mark_size),
             "media_mark_offset_mm": float(self._mark_offset),
+            "media_speed": int(self.media_speed_spin.value()),
+            "media_darkness": int(self.media_darkness_spin.value()),
             "media_fine_offset_mm": float(self.media_fine_offset_spin.value()),
             "media_calibrate_next": self.media_calibrate_check.isChecked(),
         }

@@ -72,6 +72,8 @@ class ZPLBackend(Backend):
         width = self.mm_to_dots_x(float(self.template.get("width_mm", 0)))
         height = self.mm_to_dots_y(float(self.template.get("height_mm", 0)))
         darkness = self.template.get("darkness")
+        if darkness is None:
+            darkness = self.template.get("density")
         print_rate = self.template.get("print_rate", self.template.get("print_speed"))
         media_type = str(self.template.get("media_type", "gap")).lower()
         calibrate = bool(self.template.get("calibrate_next_print"))

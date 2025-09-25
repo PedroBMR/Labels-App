@@ -38,6 +38,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "media_mark_offset_mm": 0.0,
     "media_fine_offset_mm": 0.0,
     "media_calibrate_next": False,
+    "media_speed": 0,
+    "media_darkness": 0,
 }
 
 # Cache em memória para o conteúdo de ``recentes.json``.

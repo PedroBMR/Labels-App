@@ -284,12 +284,34 @@ def resolve_media_settings(config: Mapping[str, Any]) -> dict[str, Any]:
         except (TypeError, ValueError):
             return fallback
 
+    def _int(value: Any) -> int | None:
+        try:
+            if value in (None, "", False):
+                return None
+            number = int(float(value))
+        except (TypeError, ValueError):
+            return None
+        return number if number > 0 else None
+
     gap_mm = _float(config.get("media_gap_mm", config.get("gap_mm", 0.0)))
     gap_offset = _float(config.get("media_gap_offset_mm", config.get("media_offset_mm", 0.0)))
     mark_mm = _float(config.get("media_mark_mm", gap_mm))
     mark_offset = _float(config.get("media_mark_offset_mm", gap_offset))
     fine_offset = _float(config.get("media_fine_offset_mm", 0.0))
     calibrate = bool(config.get("media_calibrate_next"))
+
+    speed = _int(config.get("media_speed", config.get("speed")))
+    darkness_source = config.get(
+        "media_darkness", config.get("density", config.get("darkness"))
+    )
+    darkness = _int(darkness_source)
+
+    raw_print_rate = config.get(
+        "media_print_rate", config.get("print_rate", config.get("print_speed")))
+    if raw_print_rate in (None, "", 0, 0.0):
+        print_rate = str(speed) if speed is not None else None
+    else:
+        print_rate = str(raw_print_rate)
 
     return {
         "media_type": media_type,
@@ -299,6 +321,10 @@ def resolve_media_settings(config: Mapping[str, Any]) -> dict[str, Any]:
         "mark_offset_mm": mark_offset,
         "fine_offset_mm": fine_offset,
         "calibrate_next_print": calibrate,
+        "speed": speed,
+        "density": darkness,
+        "darkness": darkness,
+        "print_rate": print_rate,
     }
 
 
@@ -335,6 +361,56 @@ def apply_media_settings(template: Template, settings: Mapping[str, Any]) -> Tem
     page["black_mark_mm"] = mark_mm
     page["black_mark_offset_mm"] = mark_offset
     page["fine_offset_mm"] = fine_offset
+
+    def _coerce_int(key: str) -> int | None:
+        value = settings.get(key, page.get(key))
+        try:
+            if value in (None, "", False):
+                return None
+            number = int(float(value))
+        except (TypeError, ValueError):
+            return None
+        return number if number > 0 else None
+
+    speed = _coerce_int("speed")
+    if speed is None:
+        speed = _coerce_int("media_speed")
+    if speed is not None:
+        page["speed"] = speed
+    else:
+        page.pop("speed", None)
+
+    density = _coerce_int("density")
+    if density is None:
+        density = _coerce_int("darkness")
+    if density is None:
+        density = _coerce_int("media_darkness")
+    if density is not None:
+        page["density"] = density
+        page["darkness"] = density
+    else:
+        page.pop("density", None)
+        page.pop("darkness", None)
+
+    print_rate = settings.get("print_rate") or page.get("print_rate")
+    if not print_rate:
+        print_rate = settings.get("media_print_rate")
+    if not print_rate and speed is not None:
+        print_rate = str(speed)
+    if isinstance(print_rate, (int, float)):
+        print_rate = str(int(print_rate))
+    elif isinstance(print_rate, str):
+        print_rate = print_rate.strip()
+    else:
+        print_rate = None
+
+    if print_rate:
+        page["print_rate"] = print_rate
+        page["print_speed"] = print_rate
+    else:
+        page.pop("print_rate", None)
+        page.pop("print_speed", None)
+
     page["calibrate_next_print"] = bool(settings.get("calibrate_next_print"))
 
     return Template(document, template.calibration)
