@@ -37,6 +37,7 @@ class PropertyPanel(QWidget):
         self._scene: LabelScene | None = None
         self._item: GraphicsElementItem | TextGraphicsItem | None = None
         self._current_element_type: str | None = None
+        self._connected_item: GraphicsElementItem | TextGraphicsItem | None = None
 
         self._required_rules: list[dict[str, Any]] = []
         self._tab_sections: dict[str, QWidget] = {}
@@ -64,6 +65,11 @@ class PropertyPanel(QWidget):
         self.general_form.setContentsMargins(4, 4, 4, 4)
         self.general_form.setSpacing(4)
         self.general_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("Nome exibido na paleta de camadas")
+        self.name_edit.editingFinished.connect(self._commit_name_edit)
+        self.general_form.addRow("Nome", self.name_edit)
 
         self.x_spin = QDoubleSpinBox()
         self.x_spin.setRange(-1000, 1000)
@@ -459,6 +465,7 @@ class PropertyPanel(QWidget):
     def set_scene(self, scene: LabelScene | None) -> None:
         if self._scene is not None:
             self._scene.selectionChanged.disconnect(self._on_selection_changed)
+        self._disconnect_current_item()
         self._scene = scene
         if scene is not None:
             scene.selectionChanged.connect(self._on_selection_changed)
@@ -469,6 +476,7 @@ class PropertyPanel(QWidget):
         if scene is None:
             self.setDisabled(True)
             self._item = None
+            self._disconnect_current_item()
             self._update_tabs(None)
             self._validate_required_fields()
             return
@@ -476,17 +484,29 @@ class PropertyPanel(QWidget):
         if not selected:
             self.setDisabled(True)
             self._item = None
+            self._disconnect_current_item()
             self._update_tabs(None)
             self._validate_required_fields()
             return
         self.setDisabled(False)
         self._item = selected[0]
+        self._disconnect_current_item()
+        self._connected_item = self._item
+        self._item.propertyChanged.connect(self._on_item_property_changed)
         self._populate_from_item(self._item)
 
     def _populate_from_item(
         self, item: GraphicsElementItem | TextGraphicsItem
     ) -> None:
         data = item.to_dict()
+        element_type = str(data.get("type", "text")).lower()
+        name_value = str(data.get("name", ""))
+        if not name_value and self._scene is not None:
+            name_value = self._scene.default_name(element_type)
+        self.name_edit.blockSignals(True)
+        self.name_edit.setText(name_value)
+        self.name_edit.blockSignals(False)
+
         self.x_spin.blockSignals(True)
         self.y_spin.blockSignals(True)
         self.width_spin.blockSignals(True)
@@ -511,7 +531,6 @@ class PropertyPanel(QWidget):
         self.lock_check.blockSignals(False)
         self.hidden_check.blockSignals(False)
 
-        element_type = str(data.get("type", "text")).lower()
         self._update_tabs(element_type)
 
         if element_type == "text":
@@ -592,6 +611,24 @@ class PropertyPanel(QWidget):
         if self._item and self._scene:
             self._scene.change_property(self._item, name, float(value))
 
+    def _commit_name_edit(self) -> None:
+        if not self._item or not self._scene:
+            return
+        proposed = self.name_edit.text().strip()
+        element_type = str(self._item.element.get("type", "")).lower()
+        unique = self._scene.unique_name(
+            proposed,
+            element_type=element_type,
+            exclude=self._item,
+        )
+        current = str(self._item.element.get("name", ""))
+        if unique != current:
+            self._scene.change_property(self._item, "name", unique)
+        if unique != self.name_edit.text():
+            self.name_edit.blockSignals(True)
+            self.name_edit.setText(unique)
+            self.name_edit.blockSignals(False)
+
     def _apply_property(self, name: str, value: Any) -> None:
         if self._item and self._scene:
             self._scene.change_property(self._item, name, value)
@@ -632,6 +669,34 @@ class PropertyPanel(QWidget):
     def _update_image_source(self, text: str) -> None:
         self._apply_property("source", text or None)
         self._validate_required_fields()
+
+    def _on_item_property_changed(
+        self, item: GraphicsElementItem | TextGraphicsItem, name: str, value: Any
+    ) -> None:
+        if item is not self._item:
+            return
+        if name == "name":
+            self.name_edit.blockSignals(True)
+            self.name_edit.setText(str(value) if value is not None else "")
+            self.name_edit.blockSignals(False)
+        elif name == "locked":
+            self.lock_check.blockSignals(True)
+            self.lock_check.setChecked(bool(value))
+            self.lock_check.blockSignals(False)
+        elif name == "hidden":
+            self.hidden_check.blockSignals(True)
+            self.hidden_check.setChecked(bool(value))
+            self.hidden_check.blockSignals(False)
+
+    def _disconnect_current_item(self) -> None:
+        if self._connected_item is not None:
+            try:
+                self._connected_item.propertyChanged.disconnect(
+                    self._on_item_property_changed
+                )
+            except Exception:  # pragma: no cover - defensive
+                pass
+            self._connected_item = None
 
     def _choose_font(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

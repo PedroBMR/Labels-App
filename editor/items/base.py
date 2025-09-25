@@ -340,6 +340,12 @@ class GraphicsElementItem(QGraphicsObject):
 
     # ------------------------------------------------------------------
     def update_property(self, name: str, value: Any) -> None:
+        if name == "hidden":
+            self.set_hidden(bool(value))
+            return
+        if name == "locked":
+            self.lock(bool(value))
+            return
         self._element[name] = copy.deepcopy(value)
         if name in {"x_mm", "y_mm", "width_mm", "height_mm", "rotation"}:
             self._update_geometry_from_element()
@@ -348,13 +354,23 @@ class GraphicsElementItem(QGraphicsObject):
         self.changed.emit()
 
     def lock(self, state: bool) -> None:
+        state = bool(state)
+        if self._locked == state:
+            return
         self._locked = state
         self._element["locked"] = state
         self.setFlag(QGraphicsObject.ItemIsMovable, not state)
+        self.propertyChanged.emit(self, "locked", state)
+        self.changed.emit()
 
     def set_hidden(self, hidden: bool) -> None:
+        hidden = bool(hidden)
+        if self._element.get("hidden") == hidden:
+            return
         self._element["hidden"] = hidden
         self.setVisible(not hidden)
+        self.propertyChanged.emit(self, "hidden", hidden)
+        self.changed.emit()
 
     # ------------------------------------------------------------------
     def to_dict(self) -> dict[str, Any]:

@@ -53,9 +53,14 @@ class EditableTextItem(QGraphicsTextItem):
             self._finish_editing()
 
     def lock(self, state: bool) -> None:
+        state = bool(state)
+        if self._locked == state:
+            return
         self.set_locked(state)
         if hasattr(self, "_element"):
             self._element["locked"] = state
+        self.propertyChanged.emit(self, "locked", state)
+        self.changed.emit()
 
     # ------------------------------------------------------------------
     def mouseDoubleClickEvent(self, event):  # noqa: D401 - Qt API
@@ -239,6 +244,12 @@ class TextGraphicsItem(EditableTextItem):
 
     # ------------------------------------------------------------------
     def update_property(self, name: str, value: Any) -> None:
+        if name == "hidden":
+            self.set_hidden(bool(value))
+            return
+        if name == "locked":
+            self.lock(bool(value))
+            return
         self._element[name] = value
         if name == "content":
             self.setPlainText(str(value))
@@ -271,12 +282,22 @@ class TextGraphicsItem(EditableTextItem):
         self.setFont(font)
 
     def lock(self, state: bool) -> None:
+        state = bool(state)
+        if self._element.get("locked") == state:
+            return
         self._element["locked"] = state
         self.set_locked(state)
+        self.propertyChanged.emit(self, "locked", state)
+        self.changed.emit()
 
     def set_hidden(self, hidden: bool) -> None:
+        hidden = bool(hidden)
+        if self._element.get("hidden") == hidden:
+            return
         self._element["hidden"] = hidden
         self.setVisible(not hidden)
+        self.propertyChanged.emit(self, "hidden", hidden)
+        self.changed.emit()
 
     # ------------------------------------------------------------------
     def _on_content_changed(self) -> None:
