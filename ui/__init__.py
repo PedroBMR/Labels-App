@@ -46,14 +46,15 @@ from persistence import (
 from printing import (
     Template,
     aplicar_template,
+    apply_media_settings,
     descobrir_impressora_padrao,
+    export_labels,
     imprimir_etiqueta,
     imprimir_pagina_teste,
     listar_impressoras,
     listar_templates,
     montar_tspl,
     resolve_media_settings,
-    apply_media_settings,
 )
 from qt_compat import (
     QCheckBox,
@@ -67,6 +68,7 @@ from qt_compat import (
     QDoubleSpinBox,
     QFont,
     QFormLayout,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QGroupBox,
@@ -655,6 +657,29 @@ class EtiquetaApp(QWidget):
         self.editor_btn = QPushButton("Edição de\nEtiqueta")
         self.editor_btn.clicked.connect(self._abrir_editor_etiqueta)
 
+        self.exportar_btn = QPushButton("Exportar\nEtiqueta")
+        export_menu = QMenu(self.exportar_btn)
+        export_menu.addAction(
+            "Como PNG…", lambda: self._exportar_etiqueta("png", batch=False)
+        )
+        export_menu.addAction(
+            "Como PDF…", lambda: self._exportar_etiqueta("pdf", batch=False)
+        )
+        export_menu.addAction(
+            "Como SVG…", lambda: self._exportar_etiqueta("svg", batch=False)
+        )
+        lote_menu = export_menu.addMenu("Exportar lote")
+        lote_menu.addAction(
+            "PNG…", lambda: self._exportar_etiqueta("png", batch=True)
+        )
+        lote_menu.addAction(
+            "PDF…", lambda: self._exportar_etiqueta("pdf", batch=True)
+        )
+        lote_menu.addAction(
+            "SVG…", lambda: self._exportar_etiqueta("svg", batch=True)
+        )
+        self.exportar_btn.setMenu(export_menu)
+
         self.menu_btn = QToolButton()
         self.menu_btn.setIcon(QIcon(recurso_caminho("menu-aberto.png")))
         self.menu_btn.setAutoRaise(True)  # remove relevo
@@ -700,6 +725,7 @@ class EtiquetaApp(QWidget):
             self.reimprimir_btn,
             self.cancelar_btn,
             self.editor_btn,
+            self.exportar_btn,
         ):
             b.setStyleSheet(
                 "background:#24292e;color:#eeeeee;padding:8px 18px;border-radius:6px;"
@@ -713,9 +739,10 @@ class EtiquetaApp(QWidget):
 
         botoes.addWidget(self.imprimir_btn, 0, 0)
         botoes.addWidget(self.reimprimir_btn, 0, 1)
+        botoes.addWidget(self.exportar_btn, 0, 2)
         botoes.addWidget(self.cancelar_btn, 1, 0)
         botoes.addWidget(self.menu_btn, 1, 1)
-        botoes.addWidget(self.editor_btn, 2, 0, 1, 2)
+        botoes.addWidget(self.editor_btn, 2, 0, 1, 3)
 
         layout_quadro.addLayout(botoes)
 
@@ -1109,6 +1136,106 @@ class EtiquetaApp(QWidget):
         self._worker.finished.connect(self._thread.quit)
         self._thread.finished.connect(self._cleanup_thread)
         self._thread.start()
+
+    def _exportar_etiqueta(self, formato: str, *, batch: bool) -> None:
+        self._update_print_button_state()
+        ok, msg = self._is_form_valid()
+        if not ok:
+            QMessageBox.warning(self, "Campos obrigatórios", msg)
+            return
+
+        if self._template is None:
+            QMessageBox.warning(self, "Modelo", "Selecione um modelo de etiqueta.")
+            return
+
+        (
+            saida,
+            categoria,
+            emissor,
+            municipio,
+            volumes,
+            data_hora,
+        ) = self._coletar_campos()
+
+        dados = {
+            "saida": str(saida),
+            "categoria": categoria,
+            "emissor": emissor,
+            "municipio": municipio,
+            "volumes": volumes,
+            "data_hora": data_hora,
+        }
+
+        filtros = {
+            "png": "Imagem PNG (*.png)",
+            "pdf": "Documento PDF (*.pdf)",
+            "svg": "Imagem SVG (*.svg)",
+        }
+        formato_norm = formato.lower()
+        filtro = filtros.get(formato_norm, "Todos os arquivos (*)")
+
+        sufixo = {
+            "png": ".png",
+            "pdf": ".pdf",
+            "svg": ".svg",
+        }.get(formato_norm, ".dat")
+
+        sugestao = f"etiqueta-{saida or datetime.now().strftime('%Y%m%d-%H%M%S')}{sufixo}"
+        caminho, _ = QFileDialog.getSaveFileName(
+            self,
+            "Exportar etiquetas",
+            sugestao,
+            filtro,
+        )
+        if not caminho:
+            return
+
+        try:
+            media_settings = self._media_settings(consume=False)
+            caminhos, total = export_labels(
+                self._template,
+                dados,
+                caminho,
+                formato_norm,
+                media_settings=media_settings,
+                batch=batch,
+            )
+        except Exception as exc:
+            logger.exception("Erro na exportação de etiquetas")
+            self._atualizar_status("⚠️ Erro na exportação", "orange")
+            QMessageBox.critical(
+                self,
+                "Exportação",
+                f"Não foi possível exportar a etiqueta:\n{exc}",
+            )
+            return
+
+        exportados = len(caminhos)
+        destino = Path(caminhos[0])
+        if batch:
+            if formato_norm == "pdf" and total > 1:
+                mensagem = (
+                    f"Lote com {total} etiquetas exportado para:\n{destino}"
+                )
+            elif exportados > 1:
+                pasta = destino.parent
+                mensagem = (
+                    f"{exportados} etiquetas exportadas para a pasta:\n{pasta}"
+                )
+            else:
+                mensagem = f"Etiqueta exportada para:\n{destino}"
+        else:
+            if total > 1:
+                mensagem = (
+                    f"Etiqueta exportada para:\n{destino}\n\n"
+                    "Apenas a primeira etiqueta do lote foi salva."
+                    " Use Exportar lote para gerar todas."
+                )
+            else:
+                mensagem = f"Etiqueta exportada para:\n{destino}"
+
+        self._atualizar_status("💾 Exportação concluída", "lightblue")
+        QMessageBox.information(self, "Exportação", mensagem)
 
     def _cancelar_impressao(self) -> None:
         self.cancel_event.set()

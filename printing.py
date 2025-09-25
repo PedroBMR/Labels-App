@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import importlib
+import io
 import json
 import logging
 import socket
@@ -12,9 +14,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Protocol
 
-from compile import Calibration, CompilationError, get_backend
+from PIL import Image
+
+from compile import Calibration, CompilationError, SafeDict, get_backend
 from model.template import TemplateDocument, TemplateValidationError
 from persistence import carregar_config, salvar_config
+from render import PreviewRenderer
 from utils import recurso_caminho
 
 # Retained for backwards compatibility with legacy code/tests that relied on
@@ -569,6 +574,119 @@ def build_label_series(
         )
         series.append(ctx)
     return series
+
+
+def _prepare_preview_contexts(
+    template: Template,
+    dados: Mapping[str, Any],
+) -> list[SafeDict]:
+    base = template.document.defaults(scope="template")
+    base.update({k: dados.get(k, base.get(k)) for k in dados})
+    items = build_label_series(dados, template)
+    if not items:
+        return [SafeDict(dict(base))]
+    contexts: list[SafeDict] = []
+    for item in items:
+        ctx = SafeDict(dict(base))
+        ctx.update(item)
+        contexts.append(ctx)
+    return contexts
+
+
+def render_label_images(
+    template: Template,
+    dados: Mapping[str, Any],
+    *,
+    media_settings: Mapping[str, Any] | None = None,
+) -> list[Image.Image]:
+    working = template
+    if media_settings:
+        working = apply_media_settings(template, media_settings)
+    contexts = _prepare_preview_contexts(working, dados)
+    renderer = PreviewRenderer(
+        working.document.page,
+        calibration=combine_calibrations(working.calibration),
+    )
+    return [renderer.render(working.document.elements, ctx) for ctx in contexts]
+
+
+def _write_png(image: Image.Image, destino: Path) -> Path:
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    image.convert("L").save(destino, format="PNG")
+    return destino
+
+
+def _write_pdf(images: list[Image.Image], destino: Path) -> Path:
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    primary = images[0].convert("RGB")
+    extras = [img.convert("RGB") for img in images[1:]]
+    primary.save(destino, format="PDF", save_all=bool(extras), append_images=extras)
+    return destino
+
+
+def _write_svg(image: Image.Image, destino: Path) -> Path:
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    payload = base64.b64encode(buffer.getvalue()).decode("ascii")
+    width, height = image.size
+    svg = (
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" "
+        "xmlns:xlink=\"http://www.w3.org/1999/xlink\" "
+        f"width=\"{width}\" height=\"{height}\" "
+        f"viewBox=\"0 0 {width} {height}\">"
+        f"<image width=\"{width}\" height=\"{height}\" "
+        f"preserveAspectRatio=\"none\" xlink:href=\"data:image/png;base64,{payload}\"/>"
+        "</svg>"
+    )
+    destino.write_text(svg, encoding="utf-8")
+    return destino
+
+
+def export_labels(
+    template: Template,
+    dados: Mapping[str, Any],
+    destino: str | Path,
+    formato: str,
+    *,
+    media_settings: Mapping[str, Any] | None = None,
+    batch: bool = False,
+) -> tuple[list[Path], int]:
+    images = render_label_images(template, dados, media_settings=media_settings)
+    if not images:
+        raise ValueError("Nenhuma etiqueta foi gerada para exportação")
+
+    formato_normalizado = formato.lower()
+    if formato_normalizado not in {"png", "pdf", "svg"}:
+        raise ValueError(f"Formato de exportação inválido: {formato}")
+
+    destino_path = Path(destino)
+    if destino_path.suffix.lower() != f".{formato_normalizado}":
+        destino_path = destino_path.with_suffix(f".{formato_normalizado}")
+
+    saved: list[Path] = []
+    total = len(images)
+
+    if batch and total > 1 and formato_normalizado in {"png", "svg"}:
+        for indice, imagem in enumerate(images, start=1):
+            sufixo = f"-{indice:03d}"
+            target = destino_path.with_name(destino_path.stem + sufixo + destino_path.suffix)
+            if formato_normalizado == "png":
+                saved.append(_write_png(imagem, target))
+            else:
+                saved.append(_write_svg(imagem, target))
+    elif formato_normalizado == "pdf" and (batch and total > 1):
+        saved.append(_write_pdf(images, destino_path))
+    else:
+        image = images[0]
+        if formato_normalizado == "png":
+            saved.append(_write_png(image, destino_path))
+        elif formato_normalizado == "pdf":
+            saved.append(_write_pdf([image], destino_path))
+        else:
+            saved.append(_write_svg(image, destino_path))
+
+    return saved, total
 
 
 def compile_template(
