@@ -34,6 +34,7 @@ except Exception:  # pragma: no cover - fallback when barcode is missing
     ImageWriter = object  # type: ignore[assignment]
 
 from compile import Calibration, SafeDict
+from fonts import font_store
 
 __all__ = [
     "PreviewRenderer",
@@ -90,8 +91,9 @@ def _ensure_size(value: float, minimum: int = 1) -> int:
 
 def _resolve_font_path(font_spec: Mapping[str, Any]) -> str | None:
     ttf = font_spec.get("ttf")
-    if isinstance(ttf, (str, Path)):
-        return str(ttf)
+    path = font_store.resolve_spec_path(ttf)
+    if path:
+        return path
     family = font_spec.get("family")
     if isinstance(family, str) and family.strip():
         # ``ImageFont`` cannot locate fonts by family name directly so we
@@ -498,12 +500,17 @@ class PreviewRenderer:
 
     page: Mapping[str, Any]
     calibration: Calibration = Calibration()
+    metadata: Mapping[str, Any] | None = None
     dots_per_mm: float = field(init=False)
     width: int = field(init=False)
     height: int = field(init=False)
 
     def __post_init__(self) -> None:
         self.page = dict(self.page)
+        if isinstance(self.metadata, Mapping):
+            fonts_metadata = self.metadata.get("fonts")
+            if isinstance(fonts_metadata, Mapping):
+                font_store.register_metadata(fonts_metadata)
         self.dots_per_mm = _dots_per_mm(self.page)
         width_mm = float(self.page.get("width_mm", 0))
         height_mm = float(self.page.get("height_mm", 0))
@@ -550,5 +557,16 @@ def render_template(
 
     page = template.get("page", template)
     elements = template.get("elements", [])
-    renderer = PreviewRenderer(page, calibration=calibration or Calibration())
+    metadata = template.get("metadata", {})
+    if isinstance(metadata, Mapping):
+        fonts_metadata = metadata.get("fonts")
+        if isinstance(fonts_metadata, Mapping):
+            font_store.register_metadata(fonts_metadata)
+    else:
+        metadata = {}
+    renderer = PreviewRenderer(
+        page,
+        calibration=calibration or Calibration(),
+        metadata=metadata if isinstance(metadata, Mapping) else None,
+    )
     return renderer.render(elements, variables or {})

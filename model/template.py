@@ -175,6 +175,18 @@ def _value_provided(value: Any) -> bool:
     return True
 
 
+def _normalise_metadata(data: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(data, Mapping):
+        return {}
+    metadata = {str(key): value for key, value in data.items()}
+    fonts = metadata.get("fonts")
+    if isinstance(fonts, Mapping):
+        metadata["fonts"] = {str(key): value for key, value in fonts.items()}
+    else:
+        metadata.pop("fonts", None)
+    return metadata
+
+
 @dataclass(slots=True)
 class TemplateDocument:
     """Serializable template representation."""
@@ -184,6 +196,7 @@ class TemplateDocument:
     elements: list[dict[str, Any]]
     variables: dict[str, TemplateVariable] = field(default_factory=dict)
     version: int = CURRENT_TEMPLATE_VERSION
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.page = _normalise_page(self.page)
@@ -192,6 +205,7 @@ class TemplateDocument:
         for key, value in list(self.variables.items()):
             if not isinstance(value, TemplateVariable):
                 self.variables[key] = TemplateVariable.from_any(key, value)
+        self.metadata = _normalise_metadata(self.metadata)
 
     @property
     def backend(self) -> str:
@@ -202,13 +216,16 @@ class TemplateDocument:
         return slugify(self.name)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data = {
             "name": self.name,
             "version": self.version,
             "page": dict(self.page),
             "elements": [dict(element) for element in self.elements],
             "variables": {name: var.to_dict() for name, var in self.variables.items()},
         }
+        if self.metadata:
+            data["metadata"] = dict(self.metadata)
+        return data
 
     def to_json(self, *, indent: int | None = 2) -> str:
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=indent)
@@ -220,6 +237,8 @@ class TemplateDocument:
         data = dict(self.page)
         data.setdefault("backend", data.get("type", "tspl"))
         data["elements"] = [dict(element) for element in self.elements]
+        if self.metadata:
+            data["metadata"] = dict(self.metadata)
         return data
 
     def defaults(self, *, scope: str | None = None) -> dict[str, Any]:
@@ -293,12 +312,14 @@ class TemplateDocument:
         page = _normalise_page(data.get("page"))
         elements = _normalise_elements(data.get("elements"))
         variables = _normalise_variables(data.get("variables"))
+        metadata = _normalise_metadata(data.get("metadata"))
         return cls(
             name=name,
             page=page,
             elements=elements,
             variables=variables,
             version=version,
+            metadata=metadata,
         )
 
     @classmethod

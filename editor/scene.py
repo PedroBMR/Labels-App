@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import copy
 import math
+from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from compile import Calibration, SafeDict
+from fonts import font_store
 from model.template import TemplateDocument
 from qt_compat import (
     QT_API,
@@ -58,13 +60,35 @@ def build_model_from_scene(
         element = item.to_dict()
         if bool(element.get("hidden")):
             continue
+        if str(element.get("type", "")).lower() == "text":
+            element["font"] = scene._normalise_font_value(element.get("font"))
         elements.append(element)
     page = dict(scene.page)
+    font_ids: set[str] = set()
+    for element in elements:
+        font_spec = element.get("font")
+        if not isinstance(font_spec, Mapping):
+            continue
+        ttf_spec = font_spec.get("ttf")
+        if isinstance(ttf_spec, Mapping):
+            font_id = str(ttf_spec.get("id", ""))
+            if font_id:
+                font_ids.add(font_id)
+    metadata = dict(scene.metadata)
+    if font_ids:
+        fonts_metadata = scene.export_fonts(font_ids)
+        if fonts_metadata:
+            metadata["fonts"] = fonts_metadata
+        else:
+            metadata.pop("fonts", None)
+    else:
+        metadata.pop("fonts", None)
     return TemplateDocument(
         name=name,
         page=page,
         elements=elements,
         variables=dict(variables or {}),
+        metadata=metadata,
     )
 
 
@@ -152,6 +176,8 @@ class LabelScene(QGraphicsScene):
         self._alignment_tolerance = 6.0
         self.setBackgroundBrush(QColor(250, 250, 250))
         self._base_rect = None
+        self.metadata: dict[str, Any] = {}
+        self._metadata_fonts: dict[str, Any] = {}
         self._default_name_map = {
             "text": "Texto",
             "barcode": "Código de barras",
@@ -284,6 +310,7 @@ class LabelScene(QGraphicsScene):
         element_type = str(data.get("type", "")).lower()
         data["name"] = self._prepare_element_name(data.get("name"), element_type)
         if element_type == "text":
+            data["font"] = self._normalise_font_value(data.get("font"))
             item = create_text_item(data)
             self.addItem(item)
             item.apply_element(data)
@@ -583,11 +610,93 @@ class LabelScene(QGraphicsScene):
     ) -> None:
         current = copy.deepcopy(item.element.get(name))
         if name == "font":
-            current = copy.deepcopy(item.element.get("font", {}))
+            current = self._normalise_font_value(current)
+            value = self._normalise_font_value(value)
         if current == value:
             return
         command = _PropertyChange(item, name, current, value)
         self._push_command(command)
+
+    # ------------------------------------------------------------------
+    def font_metadata_for(self, font_id: str) -> dict[str, Any] | None:
+        if font_id in self._metadata_fonts:
+            return dict(self._metadata_fonts[font_id])
+        entry = font_store.metadata_for(font_id)
+        if entry:
+            self._metadata_fonts[font_id] = dict(entry)
+            return dict(entry)
+        return None
+
+    def export_fonts(self, font_ids: set[str]) -> dict[str, Any]:
+        fonts: dict[str, Any] = {}
+        for font_id in font_ids:
+            entry = self.font_metadata_for(font_id)
+            if entry:
+                fonts[font_id] = entry
+        return fonts
+
+    def _find_font_by_filename(self, filename: str) -> dict[str, Any] | None:
+        target = Path(filename).name.lower()
+        for font_id, entry in self._metadata_fonts.items():
+            name = str(entry.get("filename") or "")
+            if name and Path(name).name.lower() == target:
+                return {"id": font_id, "filename": name}
+        return None
+
+    def _normalise_font_value(self, value: Any) -> dict[str, Any]:
+        font = dict(value) if isinstance(value, Mapping) else {}
+        ttf_value = font.get("ttf")
+        if isinstance(ttf_value, Mapping):
+            font_id = str(ttf_value.get("id", ""))
+            filename = ttf_value.get("filename")
+            if font_id:
+                entry = self.font_metadata_for(font_id)
+                if entry:
+                    font_store.register_metadata({font_id: entry})
+                    filename = filename or entry.get("filename")
+                families = font_store.ensure_qt_font(font_id)
+                if families and not font.get("family"):
+                    font["family"] = families[0]
+                font_spec = {"id": font_id}
+                if filename:
+                    font_spec["filename"] = str(filename)
+                font["ttf"] = font_spec
+                if entry:
+                    self._metadata_fonts[font_id] = dict(entry)
+                    self.metadata.setdefault("fonts", {})[font_id] = dict(entry)
+            else:
+                font["ttf"] = None
+            return font
+        if isinstance(ttf_value, (str, Path)) and ttf_value:
+            path = Path(ttf_value)
+            if path.exists():
+                font_id, _ = font_store.register_file(path)
+                entry = font_store.metadata_for(font_id) or {}
+                if entry:
+                    self._metadata_fonts[font_id] = dict(entry)
+                    self.metadata.setdefault("fonts", {})[font_id] = dict(entry)
+                families = entry.get("families") or font_store.ensure_qt_font(font_id)
+                if families and not font.get("family"):
+                    font["family"] = families[0]
+                filename = entry.get("filename", path.name)
+                font["ttf"] = {"id": font_id, "filename": filename}
+            else:
+                existing = self._find_font_by_filename(str(ttf_value))
+                if existing:
+                    font_id = existing["id"]
+                    entry = self.font_metadata_for(font_id)
+                    if entry:
+                        self.metadata.setdefault("fonts", {})[font_id] = dict(entry)
+                    families = font_store.ensure_qt_font(font_id)
+                    if families and not font.get("family"):
+                        font["family"] = families[0]
+                    font["ttf"] = existing
+                else:
+                    font["ttf"] = None
+            return font
+        if ttf_value in (None, ""):
+            font["ttf"] = None
+        return font
 
     # ------------------------------------------------------------------
     def to_template(
@@ -600,6 +709,17 @@ class LabelScene(QGraphicsScene):
     def load_document(self, document: TemplateDocument) -> None:
         self.clear()
         self._base_rect = None
+        self.metadata = dict(getattr(document, "metadata", {}))
+        fonts_metadata = self.metadata.get("fonts")
+        if isinstance(fonts_metadata, Mapping):
+            self._metadata_fonts = {
+                str(font_id): dict(spec)
+                for font_id, spec in fonts_metadata.items()
+                if isinstance(font_id, str) and isinstance(spec, Mapping)
+            }
+            font_store.register_metadata(self._metadata_fonts)
+        else:
+            self._metadata_fonts = {}
         self.page = document.page
         self._dots_per_mm = _compute_dots_per_mm(self.page)
         self._update_scene_rect()

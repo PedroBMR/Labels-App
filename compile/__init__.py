@@ -30,6 +30,8 @@ from typing import Any, Mapping
 
 from PIL import Image, ImageDraw, ImageFont
 
+from fonts import font_store
+
 __all__ = [
     "Backend",
     "Calibration",
@@ -92,7 +94,7 @@ def render_text_bitmap(text: str, font_spec: Mapping[str, Any]) -> Image.Image:
     """Render ``text`` into a monochrome bitmap using Pillow."""
 
     size = int(font_spec.get("size", 24))
-    font_path = font_spec.get("ttf")
+    font_path = font_store.resolve_spec_path(font_spec.get("ttf"))
     try:
         if font_path:
             font = ImageFont.truetype(str(font_path), size)
