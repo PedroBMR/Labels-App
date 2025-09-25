@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from qt_compat import (
     QCheckBox,
@@ -12,11 +12,13 @@ from qt_compat import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
-    QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QSpinBox,
+    QStyle,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -31,13 +33,37 @@ class PropertyPanel(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("PropertyPanel")
         self._scene: LabelScene | None = None
         self._item: GraphicsElementItem | TextGraphicsItem | None = None
+        self._current_element_type: str | None = None
+
+        self._required_rules: list[dict[str, Any]] = []
+        self._tab_sections: dict[str, QWidget] = {}
+        self._tab_order = ["position", "text", "barcode", "qr", "image", "shape"]
+        self._element_tab_map = {
+            "text": {"text"},
+            "barcode": {"barcode"},
+            "qr": {"qr"},
+            "qrcode": {"qr"},
+            "image": {"image"},
+            "shape": {"shape"},
+        }
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
-        self.general_group = QGroupBox("Posicionamento")
-        self.general_form = QFormLayout(self.general_group)
+        layout.setSpacing(6)
+
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        layout.addWidget(self.tabs)
+
+        # --- Position ---------------------------------------------------
+        self.position_tab = QWidget()
+        self.general_form = QFormLayout(self.position_tab)
+        self.general_form.setContentsMargins(4, 4, 4, 4)
+        self.general_form.setSpacing(4)
+        self.general_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         self.x_spin = QDoubleSpinBox()
         self.x_spin.setRange(-1000, 1000)
@@ -79,15 +105,24 @@ class PropertyPanel(QWidget):
         self.hidden_check.toggled.connect(self._toggle_hidden)
         self.general_form.addRow(self.hidden_check)
 
-        layout.addWidget(self.general_group)
+        self._tab_sections["position"] = self.position_tab
+        self.tabs.addTab(self.position_tab, "Posição")
 
-        # --- Text specific -------------------------------------------------
-        self.text_group = QGroupBox("Texto")
-        self.text_form = QFormLayout(self.text_group)
+        # --- Text -------------------------------------------------------
+        self.text_tab = QWidget()
+        self.text_form = QFormLayout(self.text_tab)
+        self.text_form.setContentsMargins(4, 4, 4, 4)
+        self.text_form.setSpacing(4)
+        self.text_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+
         self.text_content = QTextEdit()
         self.text_content.setPlaceholderText("Conteúdo com variáveis {exemplo}")
+        self.text_content.setMinimumHeight(72)
         self.text_content.textChanged.connect(self._on_text_changed)
-        self.text_form.addRow(QLabel("Conteúdo"), self.text_content)
+        self.text_form.addRow(
+            self._make_label("Conteúdo", required=True),
+            self.text_content,
+        )
 
         self.font_size_spin = QSpinBox()
         self.font_size_spin.setRange(6, 200)
@@ -116,19 +151,38 @@ class PropertyPanel(QWidget):
         self.font_path_line.textChanged.connect(self._update_font_path)
         font_button = QPushButton("Escolher…")
         font_button.clicked.connect(self._choose_font)
-        font_layout = QVBoxLayout()
+        font_container = QWidget()
+        font_layout = QHBoxLayout(font_container)
+        font_layout.setContentsMargins(0, 0, 0, 0)
+        font_layout.setSpacing(4)
         font_layout.addWidget(self.font_path_line)
         font_layout.addWidget(font_button)
-        self.text_form.addRow("Arquivo da fonte", font_layout)
-        layout.addWidget(self.text_group)
+        self.text_form.addRow("Arquivo da fonte", font_container)
 
-        # --- Barcode -------------------------------------------------------
-        self.barcode_group = QGroupBox("Código de barras")
-        self.barcode_form = QFormLayout(self.barcode_group)
+        self._register_required_field(
+            widget=self.text_content,
+            validator=lambda: bool(self.text_content.toPlainText().strip()),
+            message="Informe o conteúdo que será impresso no elemento de texto.",
+            category="text",
+            layout=self.text_form,
+        )
+
+        self._tab_sections["text"] = self.text_tab
+        self.tabs.addTab(self.text_tab, "Texto")
+
+        # --- Barcode ----------------------------------------------------
+        self.barcode_tab = QWidget()
+        self.barcode_form = QFormLayout(self.barcode_tab)
+        self.barcode_form.setContentsMargins(4, 4, 4, 4)
+        self.barcode_form.setSpacing(4)
+
         self.barcode_value = QLineEdit()
         self.barcode_value.setPlaceholderText("Dados do código")
-        self.barcode_value.textChanged.connect(partial(self._apply_property, "value"))
-        self.barcode_form.addRow("Dados", self.barcode_value)
+        self.barcode_value.textChanged.connect(self._on_barcode_value_changed)
+        self.barcode_form.addRow(
+            self._make_label("Dados", required=True),
+            self.barcode_value,
+        )
 
         self.barcode_type = QComboBox()
         self.barcode_type.addItems(["code128", "ean13", "code39", "code93"])
@@ -150,14 +204,30 @@ class PropertyPanel(QWidget):
         self.barcode_human = QCheckBox("Exibir texto")
         self.barcode_human.toggled.connect(partial(self._apply_property, "human"))
         self.barcode_form.addRow(self.barcode_human)
-        layout.addWidget(self.barcode_group)
 
-        # --- QR ------------------------------------------------------------
-        self.qr_group = QGroupBox("QR Code")
-        self.qr_form = QFormLayout(self.qr_group)
+        self._register_required_field(
+            widget=self.barcode_value,
+            validator=lambda: bool(self.barcode_value.text().strip()),
+            message="Preencha os dados que compõem o código de barras.",
+            category="barcode",
+            layout=self.barcode_form,
+        )
+
+        self._tab_sections["barcode"] = self.barcode_tab
+        self.tabs.addTab(self.barcode_tab, "Código de barras")
+
+        # --- QR ---------------------------------------------------------
+        self.qr_tab = QWidget()
+        self.qr_form = QFormLayout(self.qr_tab)
+        self.qr_form.setContentsMargins(4, 4, 4, 4)
+        self.qr_form.setSpacing(4)
+
         self.qr_value = QLineEdit()
-        self.qr_value.textChanged.connect(partial(self._apply_property, "value"))
-        self.qr_form.addRow("Dados", self.qr_value)
+        self.qr_value.textChanged.connect(self._on_qr_value_changed)
+        self.qr_form.addRow(
+            self._make_label("Dados", required=True),
+            self.qr_value,
+        )
 
         self.qr_error = QComboBox()
         self.qr_error.addItems(["L", "M", "Q", "H"])
@@ -165,29 +235,61 @@ class PropertyPanel(QWidget):
             partial(self._apply_property, "error")
         )
         self.qr_form.addRow("Correção", self.qr_error)
-        layout.addWidget(self.qr_group)
 
-        # --- Image ---------------------------------------------------------
-        self.image_group = QGroupBox("Imagem")
-        self.image_form = QFormLayout(self.image_group)
+        self._register_required_field(
+            widget=self.qr_value,
+            validator=lambda: bool(self.qr_value.text().strip()),
+            message="Informe o conteúdo que será codificado no QR Code.",
+            category="qr",
+            layout=self.qr_form,
+        )
+
+        self._tab_sections["qr"] = self.qr_tab
+        self.tabs.addTab(self.qr_tab, "QR Code")
+
+        # --- Image ------------------------------------------------------
+        self.image_tab = QWidget()
+        self.image_form = QFormLayout(self.image_tab)
+        self.image_form.setContentsMargins(4, 4, 4, 4)
+        self.image_form.setSpacing(4)
+
         self.image_path = QLineEdit()
         self.image_path.textChanged.connect(self._update_image_source)
         self.image_button = QPushButton("Escolher…")
         self.image_button.clicked.connect(self._choose_image)
-        image_layout = QVBoxLayout()
+        image_container = QWidget()
+        image_layout = QHBoxLayout(image_container)
+        image_layout.setContentsMargins(0, 0, 0, 0)
+        image_layout.setSpacing(4)
         image_layout.addWidget(self.image_path)
         image_layout.addWidget(self.image_button)
-        self.image_form.addRow("Arquivo", image_layout)
+        self.image_form.addRow(
+            self._make_label("Arquivo", required=True),
+            image_container,
+        )
 
         self.image_fit = QComboBox()
         self.image_fit.addItems(["contain", "cover"])
         self.image_fit.currentTextChanged.connect(partial(self._apply_property, "fit"))
         self.image_form.addRow("Ajuste", self.image_fit)
-        layout.addWidget(self.image_group)
 
-        # --- Shape ---------------------------------------------------------
-        self.shape_group = QGroupBox("Formas")
-        self.shape_form = QFormLayout(self.shape_group)
+        self._register_required_field(
+            widget=self.image_path,
+            validator=lambda: bool(self.image_path.text().strip()),
+            message="Selecione o arquivo que será impresso na imagem.",
+            category="image",
+            layout=self.image_form,
+        )
+
+        self._tab_sections["image"] = self.image_tab
+        self.tabs.addTab(self.image_tab, "Imagem")
+
+        # --- Shape ------------------------------------------------------
+        self.shape_tab = QWidget()
+        self.shape_form = QFormLayout(self.shape_tab)
+        self.shape_form.setContentsMargins(4, 4, 4, 4)
+        self.shape_form.setSpacing(4)
+
         self.shape_kind = QComboBox()
         self.shape_kind.addItems(["rect", "line"])
         self.shape_kind.currentTextChanged.connect(
@@ -203,10 +305,155 @@ class PropertyPanel(QWidget):
             partial(self._apply_property, "thickness_mm")
         )
         self.shape_form.addRow("Espessura", self.shape_thickness)
-        layout.addWidget(self.shape_group)
 
-        layout.addStretch(1)
+        self._tab_sections["shape"] = self.shape_tab
+        self.tabs.addTab(self.shape_tab, "Formas")
+
+        self.setStyleSheet(
+            """
+#PropertyPanel QLineEdit[invalid="true"],
+#PropertyPanel QTextEdit[invalid="true"],
+#PropertyPanel QWidget > QTextEdit[invalid="true"] {
+    border: 1px solid #b3261e;
+    border-radius: 4px;
+}
+#PropertyPanel QLabel#validationHintText {
+    color: #b3261e;
+    font-size: 11px;
+}
+#PropertyPanel QWidget#requiredLabel QLabel {
+    font-weight: 600;
+}
+"""
+        )
+
         self.setDisabled(True)
+
+    # ------------------------------------------------------------------
+    def _make_label(self, text: str, *, required: bool = False) -> QWidget:
+        if not required:
+            label = QLabel(text)
+            label.setObjectName("formLabel")
+            return label
+
+        container = QWidget()
+        container.setObjectName("requiredLabel")
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        icon_label = QLabel()
+        icon = self.style().standardIcon(QStyle.SP_ArrowRight)
+        icon_label.setPixmap(icon.pixmap(12, 12))
+        layout.addWidget(icon_label)
+        text_label = QLabel(text)
+        text_label.setObjectName("formLabel")
+        layout.addWidget(text_label)
+        layout.addStretch(1)
+        return container
+
+    def _create_validation_hint(self, message: str) -> QWidget:
+        hint = QWidget()
+        layout = QHBoxLayout(hint)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        icon_label = QLabel()
+        icon = self.style().standardIcon(QStyle.SP_MessageBoxWarning)
+        icon_label.setPixmap(icon.pixmap(14, 14))
+        layout.addWidget(icon_label)
+        text_label = QLabel(message)
+        text_label.setObjectName("validationHintText")
+        text_label.setWordWrap(True)
+        layout.addWidget(text_label, 1)
+        hint.setProperty("message", message)
+        hint.hide()
+        return hint
+
+    def _register_required_field(
+        self,
+        *,
+        widget: QWidget,
+        validator: Callable[[], bool],
+        message: str,
+        category: str,
+        layout: QFormLayout,
+    ) -> None:
+        hint = self._create_validation_hint(message)
+        layout.addRow("", hint)
+        self._required_rules.append(
+            {
+                "widget": widget,
+                "validator": validator,
+                "hint": hint,
+                "category": category,
+            }
+        )
+        self._apply_validation_feedback(widget, hint, True)
+
+    def _apply_validation_feedback(
+        self, widget: QWidget, hint: QWidget, is_valid: bool
+    ) -> None:
+        targets = [widget]
+        if isinstance(widget, QTextEdit):
+            targets.append(widget.viewport())
+        for target in targets:
+            target.setProperty("invalid", not is_valid)
+            style = target.style()
+            if style is not None:
+                style.unpolish(target)
+                style.polish(target)
+            target.update()
+        widget.setAccessibleDescription(
+            hint.property("message") if not is_valid else ""
+        )
+        hint.setVisible(not is_valid)
+
+    def _active_required_categories(self) -> set[str]:
+        if not self._current_element_type:
+            return set()
+        return set(
+            self._element_tab_map.get(self._current_element_type.lower(), set())
+        )
+
+    def _update_tabs(self, element_type: str | None) -> None:
+        normalized = element_type.lower() if element_type else None
+        self._current_element_type = normalized
+        allowed = set()
+        if normalized:
+            allowed = set(self._element_tab_map.get(normalized, set()))
+
+        position_widget = self._tab_sections.get("position")
+        for name, widget in self._tab_sections.items():
+            index = self.tabs.indexOf(widget)
+            if index < 0:
+                continue
+            if name == "position":
+                self.tabs.setTabEnabled(index, True)
+                continue
+            enabled = name in allowed
+            self.tabs.setTabEnabled(index, enabled)
+            if not enabled and self.tabs.currentWidget() is widget and position_widget:
+                self.tabs.setCurrentWidget(position_widget)
+
+        if allowed:
+            for name in self._tab_order:
+                if name in allowed:
+                    target = self._tab_sections.get(name)
+                    if target is not None:
+                        self.tabs.setCurrentWidget(target)
+                    break
+        elif position_widget is not None:
+            self.tabs.setCurrentWidget(position_widget)
+
+    def _validate_required_fields(self) -> None:
+        active_categories = self._active_required_categories()
+        for rule in self._required_rules:
+            widget = rule["widget"]
+            hint = rule["hint"]
+            if rule["category"] not in active_categories:
+                self._apply_validation_feedback(widget, hint, True)
+                continue
+            is_valid = rule["validator"]()
+            self._apply_validation_feedback(widget, hint, is_valid)
 
     # ------------------------------------------------------------------
     def set_scene(self, scene: LabelScene | None) -> None:
@@ -222,11 +469,15 @@ class PropertyPanel(QWidget):
         if scene is None:
             self.setDisabled(True)
             self._item = None
+            self._update_tabs(None)
+            self._validate_required_fields()
             return
         selected = scene.selected_items()
         if not selected:
             self.setDisabled(True)
             self._item = None
+            self._update_tabs(None)
+            self._validate_required_fields()
             return
         self.setDisabled(False)
         self._item = selected[0]
@@ -261,7 +512,7 @@ class PropertyPanel(QWidget):
         self.hidden_check.blockSignals(False)
 
         element_type = str(data.get("type", "text")).lower()
-        self._show_groups(element_type)
+        self._update_tabs(element_type)
 
         if element_type == "text":
             font = data.get("font", {}) if isinstance(data.get("font"), dict) else {}
@@ -334,23 +585,7 @@ class PropertyPanel(QWidget):
             self.shape_kind.blockSignals(False)
             self.shape_thickness.blockSignals(False)
 
-    # ------------------------------------------------------------------
-    def _show_groups(self, element_type: str) -> None:
-        self.text_group.hide()
-        self.barcode_group.hide()
-        self.qr_group.hide()
-        self.image_group.hide()
-        self.shape_group.hide()
-        if element_type == "text":
-            self.text_group.show()
-        elif element_type == "barcode":
-            self.barcode_group.show()
-        elif element_type in {"qr", "qrcode"}:
-            self.qr_group.show()
-        elif element_type == "image":
-            self.image_group.show()
-        elif element_type == "shape":
-            self.shape_group.show()
+        self._validate_required_fields()
 
     # ------------------------------------------------------------------
     def _apply_numeric(self, name: str, value: float) -> None:
@@ -360,6 +595,14 @@ class PropertyPanel(QWidget):
     def _apply_property(self, name: str, value: Any) -> None:
         if self._item and self._scene:
             self._scene.change_property(self._item, name, value)
+
+    def _on_barcode_value_changed(self, text: str) -> None:
+        self._apply_property("value", text)
+        self._validate_required_fields()
+
+    def _on_qr_value_changed(self, text: str) -> None:
+        self._apply_property("value", text)
+        self._validate_required_fields()
 
     def _apply_font_property(self, name: str, value: Any) -> None:
         if not self._item or not self._scene:
@@ -383,10 +626,12 @@ class PropertyPanel(QWidget):
         if self._item and self._scene:
             content = self.text_content.toPlainText()
             self._scene.change_property(self._item, "content", content)
+        self._validate_required_fields()
 
     # ------------------------------------------------------------------
     def _update_image_source(self, text: str) -> None:
         self._apply_property("source", text or None)
+        self._validate_required_fields()
 
     def _choose_font(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
