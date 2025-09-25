@@ -818,6 +818,17 @@ class LabelScene(QGraphicsScene):
         for item in selected:
             item.setX(max_right - item.shapeRect().width())
 
+    def align_center(self) -> None:
+        selected = self.selected_items()
+        if not selected:
+            return
+        min_left = min(item.pos().x() for item in selected)
+        max_right = max(item.pos().x() + item.shapeRect().width() for item in selected)
+        center = (min_left + max_right) / 2.0
+        for item in selected:
+            width = item.shapeRect().width()
+            item.setX(center - width / 2.0)
+
     def align_top(self) -> None:
         selected = self.selected_items()
         if not selected:
