@@ -50,6 +50,10 @@ class EditableTextItem(QGraphicsTextItem):
         if locked and self._editing:
             self.clearFocus()
 
+    def lock(self, state: bool) -> None:
+        self.set_locked(state)
+        self._element["locked"] = state
+
     # ------------------------------------------------------------------
     def mouseDoubleClickEvent(self, event):  # noqa: D401 - Qt API
         if self._locked:

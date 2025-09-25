@@ -329,11 +329,13 @@ class GraphicsElementItem(QGraphicsObject):
     # ------------------------------------------------------------------
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: D401 - Qt API
         if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
+            if self._locked:
+                event.ignore()
+                return
             scene = self.scene()
-            if scene:
-                scene.delete_item(self)
-            event.accept()
-            return
+            if scene and scene.remove_items([self]):
+                event.accept()
+                return
         super().keyPressEvent(event)
 
     # ------------------------------------------------------------------
