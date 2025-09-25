@@ -89,7 +89,8 @@ def test_build_calibration_template_compiles_tspl():
     template = build_calibration_template(square_mm=40, backend="tspl")
     backend_name, commands = compile_template(template, {})
     assert backend_name == "tspl"
-    assert "BOX" in commands
+    assert isinstance(commands, bytes)
+    assert b"BOX" in commands
 
 
 def test_apply_calibration_adjustment_updates_scales():
@@ -107,7 +108,8 @@ def test_compile_template_explicit_backend():
         backend_name="tspl",
     )
     assert backend_name == "tspl"
-    assert "Joao" in commands
+    assert isinstance(commands, bytes)
+    assert b"Joao" in commands
 
 
 def test_prepare_quick_job_provides_defaults():

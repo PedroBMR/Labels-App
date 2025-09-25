@@ -39,7 +39,6 @@ __all__ = [
     "image_from_source",
     "register_backend",
     "render_text_bitmap",
-    "to_hex_bitmap",
 ]
 
 
@@ -112,37 +111,6 @@ def render_text_bitmap(text: str, font_spec: Mapping[str, Any]) -> Image.Image:
     canvas_draw = ImageDraw.Draw(canvas)
     canvas_draw.text((-bbox[0], -bbox[1]), text, font=font, fill=0)
     return canvas
-
-
-def to_hex_bitmap(image: Image.Image) -> tuple[str, int, int]:
-    """Convert ``image`` to TSPL/ZPL compatible hexadecimal data."""
-
-    mono = image.convert("1")
-    width_bytes = (mono.width + 7) // 8
-    padded_width = width_bytes * 8
-
-    pixels = mono.load()
-    if pixels is None:  # pragma: no cover - pillow internal failure
-        raise CompilationError("Image pixels could not be loaded")
-
-    data = bytearray()
-    for y in range(mono.height):
-        byte = 0
-        bits = 0
-        for x in range(padded_width):
-            if x < mono.width and pixels[x, y] == 0:
-                bit = 1
-            else:
-                bit = 0
-            byte = (byte << 1) | bit
-            bits += 1
-            if bits == 8:
-                data.append(byte)
-                byte = 0
-                bits = 0
-        if bits:
-            data.append(byte << (8 - bits))
-    return "".join(f"{b:02X}" for b in data), width_bytes, mono.height
 
 
 _BACKENDS: dict[str, type["Backend"]] = {}
@@ -241,6 +209,20 @@ class Backend(ABC):
                 value = 0
         return max(minimum, value)
 
+    def optional_dimension(
+        self, element: Mapping[str, Any], name: str, *, axis: str
+    ) -> int | None:
+        key_dots = f"{name}_dots"
+        if key_dots in element:
+            return int(round(float(element[key_dots])))
+        key_mm = f"{name}_mm"
+        if key_mm in element:
+            raw = float(element[key_mm])
+            return (
+                self.mm_to_dots_x(raw) if axis == "x" else self.mm_to_dots_y(raw)
+            )
+        return None
+
     def prepare_context(self, variables: Mapping[str, Any]) -> SafeDict:
         return SafeDict(dict(variables))
 
@@ -259,7 +241,7 @@ class Backend(ABC):
             return list(raw)
         return []
 
-    def compile(self, variables: Mapping[str, Any]) -> str:
+    def compile(self, variables: Mapping[str, Any]) -> bytes:
         data = dict(variables)
         items = data.pop("items", None)
         if items is None:
@@ -267,7 +249,10 @@ class Backend(ABC):
         else:
             contexts = [self.prepare_context({**data, **item}) for item in items]
         rendered = [self.render(ctx) for ctx in contexts]
-        return "".join(rendered)
+        if rendered and isinstance(rendered[0], (bytes, bytearray)):
+            return b"".join(bytes(part) for part in rendered)
+        text = "".join(str(part) for part in rendered)
+        return text.encode("ascii", errors="replace")
 
     def fit_image(self, image: Image.Image, element: Mapping[str, Any]) -> Image.Image:
         width_mm = element.get("max_width_mm")
@@ -298,7 +283,7 @@ class Backend(ABC):
         return image.resize(new_size, Image.Resampling.LANCZOS)
 
     @abstractmethod
-    def render(self, context: Mapping[str, Any]) -> str:
+    def render(self, context: Mapping[str, Any]) -> bytes:
         """Render commands for a single label using ``context``."""
 
 

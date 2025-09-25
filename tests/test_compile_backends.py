@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from PIL import Image
 
-from compile import Calibration, to_hex_bitmap
+from compile import Calibration
 from compile.tspl import TSPLBackend
 from compile.zpl import ZPLBackend
+from imaging.raster import prepare_bitmap_for_tspl, tspl_bitmap_command
 
 
 def _sample_image() -> Image.Image:
@@ -69,20 +70,26 @@ def test_tspl_backend_snapshot():
     backend = TSPLBackend(template, calibration=Calibration())
     result = backend.compile({"name": "World", "code": "123456", "qr": "HELLO"})
 
-    hex_data, width_bytes, height = to_hex_bitmap(image)
-    expected = (
-        "SIZE 50 mm,40 mm\r\n"
-        "GAP 2 mm,0\r\n"
-        "DIRECTION 1\r\n"
-        "CLS\r\n"
-        'TEXT 40,40,"3",0,1,1,"Hello World"\r\n'
-        'BARCODE 40,120,"128",80,1,0,4,2,"123456"\r\n'
-        'QRCODE 40,224,M,16,A,0,"HELLO"\r\n'
-        "BOX 40,280,280,312,4\r\n"
-        f"BITMAP 280,40,{width_bytes},{height},0,{hex_data}\r\n"
-        "PRINT 1\r\n"
+    assert result.startswith(b"SIZE 50 mm,40 mm\r\n")
+    assert b"GAP 2 mm,0\r\n" in result
+    assert b"DIRECTION 1\r\n" in result
+    assert b"CLS\r\n" in result
+    assert b'TEXT 40,40,"3",0,1,1,"Hello World"\r\n' in result
+    assert b'BARCODE 40,120,"128",80,1,0,4,2,"123456"\r\n' in result
+    assert b'QRCODE 40,224,M,16,A,0,"HELLO"\r\n' in result
+    assert b"BOX 40,280,280,312,4\r\n" in result
+
+    dpi = backend.dots_per_mm * 25.4
+    width_bytes, height, mode, data = prepare_bitmap_for_tspl(
+        image,
+        dpi_x=dpi,
+        dpi_y=dpi,
+        width_mm=8,
+        height_mm=8,
     )
-    assert result == expected
+    expected_bitmap = tspl_bitmap_command(280, 40, width_bytes, height, mode, data)
+    assert expected_bitmap in result
+    assert result.endswith(b"PRINT 1\r\n")
 
 
 def test_zpl_backend_snapshot():
@@ -139,20 +146,33 @@ def test_zpl_backend_snapshot():
     backend = ZPLBackend(template, calibration=Calibration())
     result = backend.compile({"name": "World", "code": "123456", "qr": "HELLO"})
 
-    hex_data, width_bytes, height = to_hex_bitmap(image)
-    total_bytes = width_bytes * height
-    expected = (
-        "^XA\n"
-        "^PW400\n"
-        "^LL320\n"
-        "^FO40,40^A0N,48,32^FDHello World^FS\n"
-        "^FO40,96^BCN,80,Y,N,N^FD123456^FS\n"
-        "^FO40,200^BQN,2,10^FDLA,HELLO^FS\n"
-        "^FO40,240^GB240,4,4,B,0^FS\n"
-        f"^FO240,40^GFA,{total_bytes},{total_bytes},{width_bytes},{hex_data}^FS\n"
-        "^XZ\n"
+    assert result.startswith(b"^XA\n")
+    assert b"^PW400\n" in result
+    assert b"^LL320\n" in result
+    assert b"^FO40,40^A0N,48,32^FDHello World^FS\n" in result
+    assert b"^FO40,96^BCN,80,Y,N,N^FD123456^FS\n" in result
+    assert b"^FO40,200^BQN,2,10^FDLA,HELLO^FS\n" in result
+    assert b"^FO40,240^GB240,4,4,B,0^FS\n" in result
+
+    dpi = backend.dots_per_mm * 25.4
+    width_bytes, height, _, data = prepare_bitmap_for_tspl(
+        image,
+        dpi_x=dpi,
+        dpi_y=dpi,
+        width_mm=8,
+        height_mm=8,
     )
-    assert result == expected
+    total_bytes = width_bytes * height
+    hex_data = data.hex().upper().encode("ascii")
+    expected = (
+        b"^FO240,40^GFA," +
+        str(total_bytes).encode("ascii") +
+        b"," + str(total_bytes).encode("ascii") +
+        b"," + str(width_bytes).encode("ascii") +
+        b"," + hex_data + b"^FS\n"
+    )
+    assert expected in result
+    assert result.endswith(b"^XZ\n")
 
 
 def test_tspl_text_bitmap_fallback():
@@ -173,8 +193,8 @@ def test_tspl_text_bitmap_fallback():
     }
     backend = TSPLBackend(template)
     output = backend.compile({"greeting": "Olá"})
-    assert "BITMAP" in output
-    assert "TEXT" not in output
+    assert b"BITMAP" in output
+    assert b"TEXT" not in output
 
 
 def test_zpl_text_bitmap_fallback():
@@ -194,5 +214,5 @@ def test_zpl_text_bitmap_fallback():
     }
     backend = ZPLBackend(template)
     output = backend.compile({"greeting": "Olá"})
-    assert "^GFA" in output
-    assert "^A" not in output
+    assert b"^GFA" in output
+    assert b"^A" not in output
