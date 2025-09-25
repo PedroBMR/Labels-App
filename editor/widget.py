@@ -421,6 +421,9 @@ class LabelEditorWidget(QWidget):
         self.property_panel.set_scene(self.scene)
         self.layer_panel = LayerPanel()
         self.layer_panel.set_scene(self.scene)
+        self.layer_panel.alignmentToleranceChanged.connect(
+            self._on_alignment_tolerance_changed
+        )
         self.preview_widget = PreviewWidget()
         self.preview_widget.refresh_requested.connect(
             lambda: self.update_preview(immediate=True)
@@ -462,6 +465,17 @@ class LabelEditorWidget(QWidget):
         self.scene.selectionChanged.connect(self.update_preview)
         self.view.viewportChanged.connect(self._update_rulers)
         self.update_preview(immediate=True)
+
+    # ------------------------------------------------------------------
+    def alignment_tolerance(self) -> float:
+        return self.scene.alignment_tolerance()
+
+    def set_alignment_tolerance(self, tolerance: float) -> None:
+        self.scene.set_alignment_tolerance(tolerance)
+        self.layer_panel.set_alignment_tolerance(self.scene.alignment_tolerance())
+
+    def _on_alignment_tolerance_changed(self, tolerance: float) -> None:
+        self.set_alignment_tolerance(tolerance)
 
     # ------------------------------------------------------------------
     def _update_rulers(self) -> None:

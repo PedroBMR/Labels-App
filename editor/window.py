@@ -48,6 +48,9 @@ class LabelEditorWindow(QMainWindow):
         self.resize(1200, 800)
         self.editor = LabelEditorWidget()
         self.setCentralWidget(self.editor)
+        self.editor.layer_panel.alignmentToleranceChanged.connect(
+            self._on_alignment_tolerance_changed
+        )
         self.status = QStatusBar()
         self.setStatusBar(self.status)
         self._settings = QSettings("CONIMS", "LabelEditor")
@@ -612,6 +615,13 @@ class LabelEditorWindow(QMainWindow):
             self._normal_splitter_sizes = sizes
             self._write_sizes("ui/splitSizes/normal", sizes)
 
+    def _on_alignment_tolerance_changed(self, tolerance: float) -> None:
+        self.editor.set_alignment_tolerance(tolerance)
+        if not self._loading_state:
+            self._settings.setValue(
+                "editor/alignmentTolerance", self.editor.alignment_tolerance()
+            )
+
     def _save_dock_state(self, dock: QDockWidget, visible: bool) -> None:
         if self._loading_state or self._in_compact_transition:
             return
@@ -647,6 +657,15 @@ class LabelEditorWindow(QMainWindow):
             return default
         return str(value).lower() in {"1", "true", "yes"}
 
+    def _read_float(self, key: str, default: float) -> float:
+        value = self._settings.value(key)
+        if value is None:
+            return default
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
     def _restore_state(self) -> None:
         self._loading_state = True
         try:
@@ -666,6 +685,11 @@ class LabelEditorWindow(QMainWindow):
                 self.compact_action.setChecked(False)
                 if self._normal_splitter_sizes:
                     self.editor.splitter.setSizes(self._normal_splitter_sizes)
+            tolerance = self._read_float(
+                "editor/alignmentTolerance",
+                self.editor.alignment_tolerance(),
+            )
+            self.editor.set_alignment_tolerance(tolerance)
         finally:
             self._loading_state = False
 
@@ -687,6 +711,9 @@ class LabelEditorWindow(QMainWindow):
         self._settings.setValue("ui/compact", self.compact_action.isChecked())
         self._settings.setValue("ui/docks/propertiesDock", bool(prop_visible))
         self._settings.setValue("ui/docks/variablesDock", bool(var_visible))
+        self._settings.setValue(
+            "editor/alignmentTolerance", self.editor.alignment_tolerance()
+        )
 
     def closeEvent(self, event) -> None:  # noqa: D401
         self._save_state()

@@ -7,6 +7,8 @@ from typing import Dict, List
 
 from qt_compat import (
     QAbstractItemView,
+    QDoubleSpinBox,
+    QFormLayout,
     QHBoxLayout,
     QInputDialog,
     QListWidget,
@@ -122,6 +124,8 @@ class _LayerRow(QWidget):
 class LayerPanel(QWidget):
     """Palette listing scene elements ordered by their stacking layer."""
 
+    alignmentToleranceChanged = pyqtSignal(float)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._scene: LabelScene | None = None
@@ -131,6 +135,7 @@ class LayerPanel(QWidget):
         self._change_handlers: Dict[
             GraphicsElementItem | TextGraphicsItem, object
         ] = {}
+        self._snap_tolerance_spin: QDoubleSpinBox | None = None
 
         self.setMinimumWidth(220)
         self._build_ui()
@@ -140,6 +145,25 @@ class LayerPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
+
+        controls = QWidget(self)
+        controls_layout = QFormLayout(controls)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(4)
+
+        self._snap_tolerance_spin = QDoubleSpinBox(controls)
+        self._snap_tolerance_spin.setRange(0.0, 200.0)
+        self._snap_tolerance_spin.setDecimals(1)
+        self._snap_tolerance_spin.setSingleStep(0.5)
+        self._snap_tolerance_spin.setSuffix(" px")
+        self._snap_tolerance_spin.setToolTip(
+            "Distância máxima, em pixels, para alinhar com outros elementos."
+        )
+        self._snap_tolerance_spin.valueChanged.connect(
+            self._on_alignment_tolerance_changed
+        )
+        controls_layout.addRow("Tolerância de snap", self._snap_tolerance_spin)
+        layout.addWidget(controls)
 
         self.list_widget = _LayerListWidget(self)
         self.list_widget.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -167,6 +191,7 @@ class LayerPanel(QWidget):
         if scene is not None:
             scene.selectionChanged.connect(self._sync_selection)
             scene.itemsChanged.connect(self.refresh)
+        self._update_alignment_controls()
         self.refresh()
 
     # ------------------------------------------------------------------
@@ -217,6 +242,35 @@ class LayerPanel(QWidget):
             except Exception:  # pragma: no cover - defensive
                 pass
         self._change_handlers.clear()
+
+    # ------------------------------------------------------------------
+    def alignment_tolerance(self) -> float:
+        if self._scene is None:
+            return 0.0
+        return self._scene.alignment_tolerance()
+
+    def set_alignment_tolerance(self, tolerance: float) -> None:
+        if self._snap_tolerance_spin is None:
+            return
+        self._snap_tolerance_spin.blockSignals(True)
+        self._snap_tolerance_spin.setValue(float(tolerance))
+        self._snap_tolerance_spin.blockSignals(False)
+        self._update_alignment_controls()
+
+    def _update_alignment_controls(self) -> None:
+        if self._snap_tolerance_spin is None:
+            return
+        has_scene = self._scene is not None
+        self._snap_tolerance_spin.setEnabled(has_scene)
+        if has_scene:
+            self._snap_tolerance_spin.blockSignals(True)
+            self._snap_tolerance_spin.setValue(self._scene.alignment_tolerance())
+            self._snap_tolerance_spin.blockSignals(False)
+
+    def _on_alignment_tolerance_changed(self, value: float) -> None:
+        if self._scene is None:
+            return
+        self.alignmentToleranceChanged.emit(float(value))
 
     # ------------------------------------------------------------------
     def _display_name(self, item: GraphicsElementItem | TextGraphicsItem) -> str:
