@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from editor.widget import LabelEditorWidget
-from model.template import TemplateDocument, TemplateVariable
+from model.template import TemplateDocument
 from printing import (
     Template,
     compile_template,
@@ -31,14 +31,12 @@ from qt_compat import (
     QSettings,
     QStatusBar,
     Qt,
-    QTableWidget,
-    QTableWidgetItem,
     QTimer,
     QToolBar,
     QVBoxLayout,
     QWidget,
-    pyqtSignal,
 )
+from .variables import VariablePanel
 from template_store import template_store
 
 __all__ = ["LabelEditorWindow"]
@@ -146,77 +144,6 @@ class TutorialDialog(QDialog):
 
         painter.end()
         return pixmap
-
-
-class VariablePanel(QWidget):
-    """Panel listing template variables and allowing value editing."""
-
-    changed = pyqtSignal(dict)
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.table = QTableWidget(0, 3, self)
-        self.table.setHorizontalHeaderLabels(["Variável", "Valor", "Escopo"])
-        self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.verticalHeader().setVisible(False)
-        layout = self.layout() or None
-        if layout is None:
-            from qt_compat import QVBoxLayout
-
-            layout = QVBoxLayout(self)
-            layout.setContentsMargins(4, 4, 4, 4)
-            layout.addWidget(self.table)
-        self._variables: dict[str, TemplateVariable] = {}
-        self._values: dict[str, Any] = {}
-        self.table.itemChanged.connect(self._on_item_changed)
-
-    def set_variables(
-        self,
-        variables: dict[str, TemplateVariable],
-        values: dict[str, Any],
-    ) -> None:
-        self._variables = dict(variables)
-        self._values = dict(values)
-        self.table.blockSignals(True)
-        self.table.setRowCount(0)
-        for name, var in sorted(self._variables.items()):
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-            name_item = QTableWidgetItem(name)
-            name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
-            self.table.setItem(row, 0, name_item)
-            value = values.get(name, "")
-            self.table.setItem(row, 1, QTableWidgetItem(str(value)))
-            scope_item = QTableWidgetItem(var.scope)
-            scope_item.setFlags(scope_item.flags() & ~Qt.ItemIsEditable)
-            self.table.setItem(row, 2, scope_item)
-        self.table.blockSignals(False)
-
-    def _on_item_changed(self, item: QTableWidgetItem) -> None:
-        name_item = self.table.item(item.row(), 0)
-        if not name_item:
-            return
-        name = name_item.text()
-        self._values[name] = item.text()
-        self.changed.emit(dict(self._values))
-
-    def values(self) -> dict[str, Any]:
-        return dict(self._values)
-
-    def template_values(self) -> dict[str, Any]:
-        data: dict[str, Any] = {}
-        for name, var in self._variables.items():
-            if var.scope == "template":
-                data[name] = self._values.get(name)
-        return data
-
-    def item_values(self) -> dict[str, Any]:
-        data: dict[str, Any] = {}
-        for name, var in self._variables.items():
-            if var.scope == "item":
-                data[name] = self._values.get(name)
-        return data
-
 
 class LabelEditorWindow(QMainWindow):
     """Standalone window embedding the WYSIWYG label editor."""
