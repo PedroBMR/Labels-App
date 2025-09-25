@@ -9,6 +9,7 @@ from typing import Any, Iterable, Mapping
 from compile import Calibration, SafeDict
 from model.template import TemplateDocument
 from qt_compat import (
+    QT_API,
     QColor,
     QGraphicsLineItem,
     QGraphicsScene,
@@ -20,6 +21,16 @@ from qt_compat import (
     QUndoCommand,
     QUndoStack,
 )
+
+try:  # pragma: no cover - optional dependency per Qt binding
+    from shiboken6 import shiboken6
+except Exception:  # pragma: no cover - best-effort fallback
+    shiboken6 = None
+
+try:  # pragma: no cover - optional dependency per Qt binding
+    import sip
+except Exception:  # pragma: no cover - best-effort fallback
+    sip = None
 
 from .items import (
     GraphicsElementItem,
@@ -89,6 +100,22 @@ class _StateChange(QUndoCommand):
 
     def redo(self) -> None:  # noqa: D401 - Qt API
         self.item.restore_state(self.after)
+
+
+def _is_valid_graphics_item(item: QGraphicsLineItem | None) -> bool:
+    """Return ``True`` when ``item`` still has a valid C++ backing object."""
+
+    if item is None:
+        return False
+    if QT_API == "PySide6" and shiboken6 is not None:
+        return shiboken6.isValid(item)
+    if QT_API == "PyQt5" and sip is not None:
+        return not sip.isdeleted(item)
+    try:  # pragma: no cover - defensive fallback
+        item.scene()
+    except RuntimeError:
+        return False
+    return True
 
 
 class LabelScene(QGraphicsScene):
@@ -272,7 +299,11 @@ class LabelScene(QGraphicsScene):
 
     def clear_guides(self) -> None:
         for guide in self._guides:
-            self.removeItem(guide)
+            if _is_valid_graphics_item(guide):
+                try:
+                    self.removeItem(guide)
+                except RuntimeError:  # pragma: no cover - defensive
+                    pass
         self._guides.clear()
 
     # ------------------------------------------------------------------
