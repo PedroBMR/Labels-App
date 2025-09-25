@@ -148,10 +148,11 @@ def _resize_image(
     return resized
 
 
-def _dither_to_mono(image: Image.Image, *, method: str) -> Image.Image:
+def _dither_to_mono(image: Image.Image, *, method: str, threshold: int = 128) -> Image.Image:
     if method == "threshold":
+        cut = max(0, min(255, int(threshold)))
         table = [0] * 256
-        for i in range(128, 256):
+        for i in range(cut, 256):
             table[i] = 255
         return image.point(table, mode="1")
     if method == "bayer":
@@ -203,6 +204,7 @@ def prepare_bitmap_for_tspl(
     sharpen: bool = False,
     invert: bool = False,
     file_hash: str | None = None,
+    threshold: int | None = None,
 ) -> tuple[int, int, int, bytes]:
     """Return TSPL compatible raster data for ``image``."""
 
@@ -225,6 +227,7 @@ def prepare_bitmap_for_tspl(
             float(gamma or 0),
             bool(sharpen),
             bool(invert),
+            int(threshold if threshold is not None else 128),
         )
         if cache_key in _RASTER_CACHE:
             return _RASTER_CACHE[cache_key]
@@ -247,7 +250,11 @@ def prepare_bitmap_for_tspl(
     if sharpen:
         resized = resized.filter(ImageFilter.UnsharpMask())
 
-    mono = _dither_to_mono(resized, method=method)
+    mono = _dither_to_mono(
+        resized,
+        method=method,
+        threshold=threshold if threshold is not None else 128,
+    )
     data = _pack_msb_first(mono, invert=invert)
 
     width_bytes = (mono.width + 7) // 8
