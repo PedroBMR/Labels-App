@@ -425,7 +425,7 @@ def compile_template(
     backend_name: str | None = None,
     calibration: Calibration | None = None,
     strict: bool = True,
-) -> tuple[str, str]:
+) -> tuple[str, bytes]:
     try:
         if isinstance(template, Template):
             if strict:
@@ -447,7 +447,12 @@ def compile_template(
         raise CompilationError(str(exc)) from exc
     backend = backend or "tspl"
     compiler = get_backend(backend, template_data, calibration=combined)
-    return backend, compiler.compile(variables)
+    commands = compiler.compile(variables)
+    if isinstance(commands, str):
+        commands_bytes = commands.encode("ascii", errors="replace")
+    else:
+        commands_bytes = bytes(commands)
+    return backend, commands_bytes
 
 
 def _prepare_quick_variables(
@@ -521,18 +526,17 @@ def compile_model_silent(
         variables,
         strict=not silent,
     )
-    encoding = "cp1252" if backend.lower() == "tspl" else "utf-8"
-    return commands.encode(encoding, errors="replace")
+    return commands
 
 
-def montar_tspl(template: Template, dados: Mapping[str, Any]) -> str:
+def montar_tspl(template: Template, dados: Mapping[str, Any]) -> bytes:
     variables = template.document.defaults(scope="template")
     variables["items"] = build_label_series(dados, template)
     _, commands = compile_template(template, variables, backend_name="tspl")
     return commands
 
 
-def montar_zpl(template: Template, dados: Mapping[str, Any]) -> str:
+def montar_zpl(template: Template, dados: Mapping[str, Any]) -> bytes:
     variables = template.document.defaults(scope="template")
     variables["items"] = build_label_series(dados, template)
     _, commands = compile_template(template, variables, backend_name="zpl")
@@ -715,7 +719,7 @@ class Printer:
 
     def compile_job(
         self, template: Template | Mapping[str, Any], variables: Mapping[str, Any]
-    ) -> tuple[str, str]:
+    ) -> tuple[str, bytes]:
         backend_name, commands = compile_template(
             template,
             variables,
@@ -724,12 +728,15 @@ class Printer:
         )
         return backend_name, commands
 
-    def send_commands(self, commands: str, *, backend: str | None = None) -> None:
-        encoding = self.config.encoding
+    def send_commands(self, commands: bytes | str, *, backend: str | None = None) -> None:
         backend = backend or self.config.backend
-        if encoding is None:
-            encoding = "cp1252" if backend.lower() == "tspl" else "utf-8"
-        payload = commands.encode(encoding, errors="replace")
+        if isinstance(commands, str):
+            encoding = self.config.encoding
+            if encoding is None:
+                encoding = "cp1252" if backend.lower() == "tspl" else "utf-8"
+            payload = commands.encode(encoding, errors="replace")
+        else:
+            payload = bytes(commands)
         self.transport.send(payload)
 
     def print_job(
@@ -838,7 +845,7 @@ def apply_calibration_adjustment(
 
 
 def imprimir_etiqueta(
-    commands: str,
+    commands: bytes | str,
     repetir_em_falha: bool = False,
     *,
     nome_impressora: str | None = None,

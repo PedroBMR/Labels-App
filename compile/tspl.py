@@ -6,6 +6,12 @@ from typing import Any, Iterable, Mapping
 
 from PIL import Image
 
+from imaging.raster import (
+    fingerprint_image,
+    prepare_bitmap_for_tspl,
+    tspl_bitmap_command,
+)
+
 from . import (
     Backend,
     Calibration,
@@ -13,7 +19,6 @@ from . import (
     image_from_source,
     register_backend,
     render_text_bitmap,
-    to_hex_bitmap,
 )
 
 __all__ = ["TSPLBackend"]
@@ -33,9 +38,9 @@ class TSPLBackend(Backend):
         super().__init__(template, calibration=calibration)
 
     # ------------------------------------------------------------------
-    def render(self, context: Mapping[str, Any]) -> str:
-        parts: list[str] = []
-        parts.extend(self._header())
+    def render(self, context: Mapping[str, Any]) -> bytes:
+        parts: list[bytes] = []
+        parts.extend(self._encode_lines(self._header()))
         for element in self.elements:
             handler = getattr(self, f"_render_{element.get('type')}", None)
             if handler is None:
@@ -43,13 +48,28 @@ class TSPLBackend(Backend):
             result = handler(element, context)
             if not result:
                 continue
-            if isinstance(result, Iterable) and not isinstance(result, (str, bytes)):
-                parts.extend(str(item) for item in result)
+            if isinstance(result, Iterable) and not isinstance(result, (bytes, bytearray)):
+                parts.extend(self._ensure_bytes(item) for item in result)
             else:
-                parts.append(str(result))
+                parts.append(self._ensure_bytes(result))
         copies = int(context.get("copies", self.template.get("print_copies", 1)) or 1)
-        parts.append(f"PRINT {max(1, copies)}")
-        return "\r\n".join(parts) + "\r\n"
+        parts.append(self._line(f"PRINT {max(1, copies)}"))
+        return b"".join(parts)
+
+    # ------------------------------------------------------------------
+    def _encode_lines(self, lines: Iterable[str]) -> list[bytes]:
+        return [self._line(line) for line in lines]
+
+    def _line(self, text: str) -> bytes:
+        return text.encode("cp1252", errors="replace") + b"\r\n"
+
+    def _ensure_bytes(self, value: Any) -> bytes:
+        if isinstance(value, (bytes, bytearray)):
+            data = bytes(value)
+            if data.endswith(b"\n"):
+                return data
+            return data + b"\r\n"
+        return self._line(str(value))
 
     # ------------------------------------------------------------------
     def _header(self) -> list[str]:
@@ -93,13 +113,13 @@ class TSPLBackend(Backend):
         y_mul = int(font_spec.get("y", font_spec.get("ym", 1)))
 
         if font_name in self.builtin_fonts:
-            return (
+            return self._line(
                 f'TEXT {x},{y},"{font_name}",{rotation},'
                 f'{max(1, x_mul)},{max(1, y_mul)},"{text}"'
             )
 
         bitmap = render_text_bitmap(text, font_spec)
-        return self._bitmap_command(element, bitmap)
+        return self._bitmap_command(element, bitmap, digest=fingerprint_image(bitmap))
 
     def _render_barcode(
         self, element: Mapping[str, Any], context: Mapping[str, Any]
@@ -116,7 +136,7 @@ class TSPLBackend(Backend):
         human = int(bool(element.get("human", True)))
         x = self.position(element, "x")
         y = self.position(element, "y")
-        return (
+        return self._line(
             f'BARCODE {x},{y},"{sym}",{height},{human},{rotation},{module},'
             f'{max(1, ratio)},"{text}"'
         )
@@ -136,7 +156,9 @@ class TSPLBackend(Backend):
         rotation = int(element.get("rotation", 0))
         x = self.position(element, "x")
         y = self.position(element, "y")
-        return f'QRCODE {x},{y},{error},{cell},{mode},{rotation},"{text}"'
+        return self._line(
+            f'QRCODE {x},{y},{error},{cell},{mode},{rotation},"{text}"'
+        )
 
     def _render_image(
         self, element: Mapping[str, Any], context: Mapping[str, Any]
@@ -147,8 +169,8 @@ class TSPLBackend(Backend):
             source = context[key]
         if source in (None, ""):
             return None
-        image = self._load_image(source, element)
-        return self._bitmap_command(element, image)
+        image, digest = self._load_image(source, element)
+        return self._bitmap_command(element, image, digest=digest)
 
     def _render_shape(
         self, element: Mapping[str, Any], context: Mapping[str, Any]
@@ -159,28 +181,110 @@ class TSPLBackend(Backend):
         if kind in {"line", "bar"}:
             width = self.dimension(element, "width", axis="x", minimum=1)
             height = self.dimension(element, "height", axis="y", minimum=1)
-            return f"BAR {x},{y},{width},{height}"
+            return self._line(f"BAR {x},{y},{width},{height}")
         if kind in {"rect", "rectangle", "box"}:
             width = self.dimension(element, "width", axis="x", minimum=1)
             height = self.dimension(element, "height", axis="y", minimum=1)
             thickness = self.dimension(element, "thickness", axis="x", minimum=1)
             x2 = x + width
             y2 = y + height
-            return f"BOX {x},{y},{x2},{y2},{thickness}"
+            return self._line(f"BOX {x},{y},{x2},{y2},{thickness}")
         raise CompilationError(f"Unsupported TSPL shape '{kind}'")
 
     # ------------------------------------------------------------------
-    def _load_image(self, source: Any, element: Mapping[str, Any]) -> Image.Image:
+    def _load_image(
+        self, source: Any, element: Mapping[str, Any]
+    ) -> tuple[Image.Image, str]:
         image = image_from_source(source)
-        return self.fit_image(image, element)
+        image.load()
+        return image, fingerprint_image(image)
 
-    def _bitmap_command(self, element: Mapping[str, Any], image: Image.Image) -> str:
-        prepared = self.fit_image(image, element)
-        hex_data, width_bytes, height = to_hex_bitmap(prepared)
+    def _resolve_raster_settings(self, element: Mapping[str, Any]) -> dict[str, Any]:
+        template_settings = {}
+        page_settings = self.template.get("raster")
+        if isinstance(page_settings, Mapping):
+            template_settings.update(page_settings)
+        for key in ("dither", "gamma", "sharpen", "fit", "invert", "threshold"):
+            value = self.template.get(key)
+            if value is not None and key not in template_settings:
+                template_settings[key] = value
+        settings = {**template_settings}
+        for key in ("dither", "gamma", "sharpen", "fit", "invert", "threshold"):
+            if key in element:
+                settings[key] = element[key]
+        return settings
+
+    def _bitmap_command(
+        self, element: Mapping[str, Any], image: Image.Image, *, digest: str | None = None
+    ) -> bytes:
+        settings = self._resolve_raster_settings(element)
+        width = self.optional_dimension(element, "width", axis="x")
+        height = self.optional_dimension(element, "height", axis="y")
+        max_width = self.optional_dimension(element, "max_width", axis="x")
+        max_height = self.optional_dimension(element, "max_height", axis="y")
+        width_dots = width or max_width
+        height_dots = height or max_height
+
+        dpi_x = self.dots_per_mm * 25.4 * self.calibration.scale_x
+        dpi_y = self.dots_per_mm * 25.4 * self.calibration.scale_y
+
+        dither = str(settings.get("dither", "floyd")).lower()
+        gamma = settings.get("gamma")
+        try:
+            gamma_val = float(gamma) if gamma is not None else None
+        except (TypeError, ValueError):
+            gamma_val = None
+        sharpen = bool(settings.get("sharpen", False))
+        fit = str(settings.get("fit", "fit"))
+        invert = bool(settings.get("invert", False))
+        threshold = settings.get("threshold", 128)
+        try:
+            threshold_val = int(threshold)
+        except (TypeError, ValueError):
+            threshold_val = 128
+
+        width_mm = element.get("width_mm") or element.get("max_width_mm")
+        height_mm = element.get("height_mm") or element.get("max_height_mm")
+        try:
+            width_mm_val = float(width_mm) if width_mm is not None else None
+        except (TypeError, ValueError):
+            width_mm_val = None
+        try:
+            height_mm_val = float(height_mm) if height_mm is not None else None
+        except (TypeError, ValueError):
+            height_mm_val = None
+
+        file_hash = settings.get("file_hash")
+        if not isinstance(file_hash, str):
+            file_hash = digest or fingerprint_image(image)
+
+        width_bytes, height, mode, data = prepare_bitmap_for_tspl(
+            image,
+            dpi_x=dpi_x,
+            dpi_y=dpi_y,
+            width_mm=width_mm_val,
+            height_mm=height_mm_val,
+            width_dots=width_dots,
+            height_dots=height_dots,
+            fit=fit,
+            dither=dither,
+            gamma=gamma_val,
+            sharpen=sharpen,
+            invert=invert,
+            threshold=threshold_val,
+            file_hash=file_hash,
+        )
+
         x = self.position(element, "x")
         y = self.position(element, "y")
-        mode = int(element.get("mode", 0))
-        return f"BITMAP {x},{y},{width_bytes},{height},{mode},{hex_data}"
+        element_mode = element.get("mode")
+        if element_mode is not None:
+            try:
+                mode = int(element_mode)
+            except (TypeError, ValueError):
+                mode = 0
+        command = tspl_bitmap_command(x, y, width_bytes, height, mode, data)
+        return command
 
 
 register_backend("tspl", TSPLBackend)

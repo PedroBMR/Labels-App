@@ -46,9 +46,10 @@ def test_compile_tspl_snapshot():
         backend_name="tspl",
     )
     assert backend == "tspl"
-    lines = [line.strip() for line in commands.strip().splitlines() if line.strip()]
-    assert lines[0].startswith("SIZE")
-    assert any("Olá Teste" in line for line in lines)
+    first_line = commands.split(b"\r\n", 1)[0].decode("ascii")
+    assert first_line.startswith("SIZE")
+    text_snapshot = commands.decode("latin-1", errors="ignore")
+    assert "Olá Teste" in text_snapshot
 
 
 def test_render_qrcode_without_dependency(monkeypatch):

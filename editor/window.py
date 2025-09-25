@@ -549,7 +549,7 @@ class LabelEditorWindow(QMainWindow):
         self.editor.set_preview_data(values)
 
     # ------------------------------------------------------------------
-    def _compile(self, backend: str = "tspl") -> tuple[str, str]:
+    def _compile(self, backend: str = "tspl") -> tuple[str, bytes]:
         self.editor.update_preview(immediate=True)
         template = self.editor.to_document(
             self.current_document.name,
@@ -572,5 +572,5 @@ class LabelEditorWindow(QMainWindow):
         dlg = QMessageBox(self)
         dlg.setWindowTitle(f"Comandos {backend_name.upper()}")
         dlg.setText(f"Backend: {backend_name}\nTamanho: {len(commands)} bytes")
-        dlg.setDetailedText(commands)
+        dlg.setDetailedText(commands.decode("latin-1", errors="replace"))
         dlg.exec()

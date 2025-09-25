@@ -6,6 +6,8 @@ from typing import Any, Iterable, Mapping
 
 from PIL import Image
 
+from imaging.raster import fingerprint_image, prepare_bitmap_for_tspl
+
 from . import (
     Backend,
     Calibration,
@@ -13,7 +15,6 @@ from . import (
     image_from_source,
     register_backend,
     render_text_bitmap,
-    to_hex_bitmap,
 )
 
 __all__ = ["ZPLBackend"]
@@ -32,9 +33,9 @@ class ZPLBackend(Backend):
     ) -> None:
         super().__init__(template, calibration=calibration)
 
-    def render(self, context: Mapping[str, Any]) -> str:
-        parts: list[str] = ["^XA"]
-        parts.extend(self._header())
+    def render(self, context: Mapping[str, Any]) -> bytes:
+        parts: list[bytes] = [self._line("^XA")]
+        parts.extend(self._encode_lines(self._header()))
         for element in self.elements:
             handler = getattr(self, f"_render_{element.get('type')}", None)
             if handler is None:
@@ -42,15 +43,30 @@ class ZPLBackend(Backend):
             result = handler(element, context)
             if not result:
                 continue
-            if isinstance(result, Iterable) and not isinstance(result, (str, bytes)):
-                parts.extend(str(item) for item in result)
+            if isinstance(result, Iterable) and not isinstance(result, (bytes, bytearray)):
+                parts.extend(self._ensure_bytes(item) for item in result)
             else:
-                parts.append(str(result))
+                parts.append(self._ensure_bytes(result))
         copies = int(context.get("copies", self.template.get("print_copies", 1)) or 1)
         if copies > 1:
-            parts.append(f"^PQ{copies}")
-        parts.append("^XZ")
-        return "\n".join(parts) + "\n"
+            parts.append(self._line(f"^PQ{copies}"))
+        parts.append(self._line("^XZ"))
+        return b"".join(parts)
+
+    # ------------------------------------------------------------------
+    def _encode_lines(self, lines: Iterable[str]) -> list[bytes]:
+        return [self._line(line) for line in lines]
+
+    def _line(self, text: str) -> bytes:
+        return text.encode("cp1252", errors="replace") + b"\n"
+
+    def _ensure_bytes(self, value: Any) -> bytes:
+        if isinstance(value, (bytes, bytearray)):
+            data = bytes(value)
+            if data.endswith((b"\r", b"\n")):
+                return data
+            return data + b"\n"
+        return self._line(str(value))
 
     # ------------------------------------------------------------------
     def _header(self) -> list[str]:
@@ -93,12 +109,14 @@ class ZPLBackend(Backend):
             width = self.dimension(element, "width", axis="x", minimum=0)
             if not width:
                 width = int(font_spec.get("width", 0))
-            return (
+            return self._line(
                 f"^FO{x},{y}^A{font_name}{orientation},{height},{width}^FD{text}^FS"
             )
 
         bitmap = render_text_bitmap(text, font_spec)
-        return self._graphic_field(element, bitmap)
+        return self._graphic_field(
+            element, bitmap, digest=fingerprint_image(bitmap)
+        )
 
     def _render_barcode(
         self, element: Mapping[str, Any], context: Mapping[str, Any]
@@ -112,7 +130,7 @@ class ZPLBackend(Backend):
         human = "Y" if element.get("human", True) else "N"
         x = self.position(element, "x")
         y = self.position(element, "y")
-        return (
+        return self._line(
             f"^FO{x},{y}^BC{orientation},{height},{human},N,N^FD{text}^FS"
         )
 
@@ -129,7 +147,7 @@ class ZPLBackend(Backend):
         scale = max(1, min(10, scale))
         x = self.position(element, "x")
         y = self.position(element, "y")
-        return f"^FO{x},{y}^BQN,2,{scale}^FDLA,{text}^FS"
+        return self._line(f"^FO{x},{y}^BQN,2,{scale}^FDLA,{text}^FS")
 
     def _render_image(
         self, element: Mapping[str, Any], context: Mapping[str, Any]
@@ -140,8 +158,8 @@ class ZPLBackend(Backend):
             source = context[key]
         if source in (None, ""):
             return None
-        image = self._load_image(source, element)
-        return self._graphic_field(element, image)
+        image, digest = self._load_image(source, element)
+        return self._graphic_field(element, image, digest=digest)
 
     def _render_shape(
         self, element: Mapping[str, Any], context: Mapping[str, Any]
@@ -163,20 +181,98 @@ class ZPLBackend(Backend):
             raise CompilationError(f"Unsupported ZPL shape '{kind}'")
         color = str(element.get("color", "B"))[:1].upper() or "B"
         rounding = int(element.get("rounding", 0))
-        return f"^FO{x},{y}^GB{width},{height},{thickness},{color},{rounding}^FS"
+        return self._line(
+            f"^FO{x},{y}^GB{width},{height},{thickness},{color},{rounding}^FS"
+        )
 
     # ------------------------------------------------------------------
-    def _load_image(self, source: Any, element: Mapping[str, Any]) -> Image.Image:
+    def _load_image(
+        self, source: Any, element: Mapping[str, Any]
+    ) -> tuple[Image.Image, str]:
         image = image_from_source(source)
-        return self.fit_image(image, element)
+        image.load()
+        return image, fingerprint_image(image)
 
-    def _graphic_field(self, element: Mapping[str, Any], image: Image.Image) -> str:
-        prepared = self.fit_image(image, element)
-        hex_data, width_bytes, height = to_hex_bitmap(prepared)
+    def _resolve_raster_settings(self, element: Mapping[str, Any]) -> dict[str, Any]:
+        template_settings = {}
+        page_settings = self.template.get("raster")
+        if isinstance(page_settings, Mapping):
+            template_settings.update(page_settings)
+        for key in ("dither", "gamma", "sharpen", "fit", "invert", "threshold"):
+            value = self.template.get(key)
+            if value is not None and key not in template_settings:
+                template_settings[key] = value
+        settings = {**template_settings}
+        for key in ("dither", "gamma", "sharpen", "fit", "invert", "threshold"):
+            if key in element:
+                settings[key] = element[key]
+        return settings
+
+    def _graphic_field(
+        self, element: Mapping[str, Any], image: Image.Image, *, digest: str | None = None
+    ) -> bytes:
+        settings = self._resolve_raster_settings(element)
+        width = self.optional_dimension(element, "width", axis="x")
+        height = self.optional_dimension(element, "height", axis="y")
+        max_width = self.optional_dimension(element, "max_width", axis="x")
+        max_height = self.optional_dimension(element, "max_height", axis="y")
+        width_dots = width or max_width
+        height_dots = height or max_height
+
+        dpi_x = self.dots_per_mm * 25.4 * self.calibration.scale_x
+        dpi_y = self.dots_per_mm * 25.4 * self.calibration.scale_y
+
+        dither = str(settings.get("dither", "floyd")).lower()
+        gamma = settings.get("gamma")
+        try:
+            gamma_val = float(gamma) if gamma is not None else None
+        except (TypeError, ValueError):
+            gamma_val = None
+        sharpen = bool(settings.get("sharpen", False))
+        fit = str(settings.get("fit", "fit"))
+        invert = bool(settings.get("invert", False))
+        threshold = settings.get("threshold", 128)
+        try:
+            threshold_val = int(threshold)
+        except (TypeError, ValueError):
+            threshold_val = 128
+
+        width_mm = element.get("width_mm") or element.get("max_width_mm")
+        height_mm = element.get("height_mm") or element.get("max_height_mm")
+        try:
+            width_mm_val = float(width_mm) if width_mm is not None else None
+        except (TypeError, ValueError):
+            width_mm_val = None
+        try:
+            height_mm_val = float(height_mm) if height_mm is not None else None
+        except (TypeError, ValueError):
+            height_mm_val = None
+
+        file_hash = settings.get("file_hash")
+        if not isinstance(file_hash, str):
+            file_hash = digest or fingerprint_image(image)
+
+        width_bytes, height, _, data = prepare_bitmap_for_tspl(
+            image,
+            dpi_x=dpi_x,
+            dpi_y=dpi_y,
+            width_mm=width_mm_val,
+            height_mm=height_mm_val,
+            width_dots=width_dots,
+            height_dots=height_dots,
+            fit=fit,
+            dither=dither,
+            gamma=gamma_val,
+            sharpen=sharpen,
+            invert=invert,
+            threshold=threshold_val,
+            file_hash=file_hash,
+        )
         total_bytes = width_bytes * height
+        hex_data = data.hex().upper()
         x = self.position(element, "x")
         y = self.position(element, "y")
-        return (
+        return self._line(
             f"^FO{x},{y}^GFA,{total_bytes},{total_bytes},{width_bytes},{hex_data}^FS"
         )
 
