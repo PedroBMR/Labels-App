@@ -36,6 +36,7 @@ class EditableTextItem(QGraphicsTextItem):
             QGraphicsItem.ItemIsMovable
             | QGraphicsItem.ItemIsSelectable
             | QGraphicsItem.ItemSendsGeometryChanges
+            | QGraphicsItem.ItemIsFocusable
         )
         self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
         self.setTextInteractionFlags(Qt.NoTextInteraction)
@@ -49,10 +50,12 @@ class EditableTextItem(QGraphicsTextItem):
         self.setFlag(QGraphicsItem.ItemIsMovable, not locked)
         if locked and self._editing:
             self.clearFocus()
+            self._finish_editing()
 
     def lock(self, state: bool) -> None:
         self.set_locked(state)
-        self._element["locked"] = state
+        if hasattr(self, "_element"):
+            self._element["locked"] = state
 
     # ------------------------------------------------------------------
     def mouseDoubleClickEvent(self, event):  # noqa: D401 - Qt API
@@ -87,6 +90,8 @@ class EditableTextItem(QGraphicsTextItem):
         self.editingStarted.emit()
 
     def _finish_editing(self) -> None:
+        if not self._editing:
+            return
         self._editing = False
         self.setTextInteractionFlags(Qt.NoTextInteraction)
         self.editingFinished.emit()
