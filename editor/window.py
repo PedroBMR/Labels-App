@@ -600,7 +600,7 @@ class LabelEditorWindow(QMainWindow):
             if not self._normal_splitter_sizes:
                 self._normal_splitter_sizes = self.editor.splitter.sizes()
             if not restoring and self._normal_splitter_sizes:
-                self._write_sizes("splitter/normal", self._normal_splitter_sizes)
+                self._write_sizes("ui/splitSizes/normal", self._normal_splitter_sizes)
             self._dock_visibility_cache = {
                 "propertiesDock": self.property_dock.isVisible(),
                 "variablesDock": self.variable_dock.isVisible(),
@@ -620,13 +620,21 @@ class LabelEditorWindow(QMainWindow):
                 sizes = [canvas, preview]
             self.editor.splitter.setSizes(sizes)
             if not restoring:
-                self._write_sizes("splitter/compact", sizes)
-                self._settings.setValue("compact_mode", True)
+                self._write_sizes("ui/splitSizes/compact", sizes)
+                self._settings.setValue("ui/compact", True)
+                self._settings.setValue(
+                    "ui/docks/propertiesDock",
+                    bool(self._dock_visibility_cache.get("propertiesDock", True)),
+                )
+                self._settings.setValue(
+                    "ui/docks/variablesDock",
+                    bool(self._dock_visibility_cache.get("variablesDock", True)),
+                )
         else:
             self._compact_splitter_sizes = self.editor.splitter.sizes()
             cache = self._dock_visibility_cache or {
-                "propertiesDock": self._read_bool("dock/propertiesDock", True),
-                "variablesDock": self._read_bool("dock/variablesDock", True),
+                "propertiesDock": self._read_bool("ui/docks/propertiesDock", True),
+                "variablesDock": self._read_bool("ui/docks/variablesDock", True),
             }
             self._in_compact_transition = True
             self.property_dock.setVisible(cache.get("propertiesDock", True))
@@ -641,10 +649,14 @@ class LabelEditorWindow(QMainWindow):
                 left = total // 2
                 self.editor.splitter.setSizes([left, total - left])
             if not restoring:
-                self._write_sizes("splitter/normal", self.editor.splitter.sizes())
-                self._settings.setValue("dock/propertiesDock", bool(cache.get("propertiesDock", True)))
-                self._settings.setValue("dock/variablesDock", bool(cache.get("variablesDock", True)))
-                self._settings.setValue("compact_mode", False)
+                self._write_sizes("ui/splitSizes/normal", self.editor.splitter.sizes())
+                self._settings.setValue(
+                    "ui/docks/propertiesDock", bool(cache.get("propertiesDock", True))
+                )
+                self._settings.setValue(
+                    "ui/docks/variablesDock", bool(cache.get("variablesDock", True))
+                )
+                self._settings.setValue("ui/compact", False)
 
     def _reset_splitter(self) -> None:
         sizes = self.editor.splitter.sizes()
@@ -679,15 +691,15 @@ class LabelEditorWindow(QMainWindow):
         sizes = self.editor.splitter.sizes()
         if self.compact_action.isChecked():
             self._compact_splitter_sizes = sizes
-            self._write_sizes("splitter/compact", sizes)
+            self._write_sizes("ui/splitSizes/compact", sizes)
         else:
             self._normal_splitter_sizes = sizes
-            self._write_sizes("splitter/normal", sizes)
+            self._write_sizes("ui/splitSizes/normal", sizes)
 
     def _save_dock_state(self, dock: QDockWidget, visible: bool) -> None:
         if self._loading_state or self._in_compact_transition:
             return
-        key = f"dock/{dock.objectName() or dock.windowTitle()}"
+        key = f"ui/docks/{dock.objectName() or dock.windowTitle()}"
         self._settings.setValue(key, bool(visible))
 
     def _write_sizes(self, key: str, sizes: list[int]) -> None:
@@ -722,13 +734,13 @@ class LabelEditorWindow(QMainWindow):
     def _restore_state(self) -> None:
         self._loading_state = True
         try:
-            self._normal_splitter_sizes = self._read_sizes("splitter/normal")
-            self._compact_splitter_sizes = self._read_sizes("splitter/compact")
-            prop_visible = self._read_bool("dock/propertiesDock", True)
-            var_visible = self._read_bool("dock/variablesDock", True)
+            self._normal_splitter_sizes = self._read_sizes("ui/splitSizes/normal")
+            self._compact_splitter_sizes = self._read_sizes("ui/splitSizes/compact")
+            prop_visible = self._read_bool("ui/docks/propertiesDock", True)
+            var_visible = self._read_bool("ui/docks/variablesDock", True)
             self.property_dock.setVisible(prop_visible)
             self.variable_dock.setVisible(var_visible)
-            compact_enabled = self._read_bool("compact_mode", False)
+            compact_enabled = self._read_bool("ui/compact", False)
             if compact_enabled:
                 self.compact_action.blockSignals(True)
                 self.compact_action.setChecked(True)
@@ -743,22 +755,22 @@ class LabelEditorWindow(QMainWindow):
 
     def _save_state(self) -> None:
         if self.compact_action.isChecked():
-            self._write_sizes("splitter/compact", self.editor.splitter.sizes())
+            self._write_sizes("ui/splitSizes/compact", self.editor.splitter.sizes())
             if self._normal_splitter_sizes:
-                self._write_sizes("splitter/normal", self._normal_splitter_sizes)
+                self._write_sizes("ui/splitSizes/normal", self._normal_splitter_sizes)
             prop_visible = self._dock_visibility_cache.get(
-                "propertiesDock", self._read_bool("dock/propertiesDock", True)
+                "propertiesDock", self._read_bool("ui/docks/propertiesDock", True)
             )
             var_visible = self._dock_visibility_cache.get(
-                "variablesDock", self._read_bool("dock/variablesDock", True)
+                "variablesDock", self._read_bool("ui/docks/variablesDock", True)
             )
         else:
-            self._write_sizes("splitter/normal", self.editor.splitter.sizes())
+            self._write_sizes("ui/splitSizes/normal", self.editor.splitter.sizes())
             prop_visible = self.property_dock.isVisible()
             var_visible = self.variable_dock.isVisible()
-        self._settings.setValue("compact_mode", self.compact_action.isChecked())
-        self._settings.setValue("dock/propertiesDock", bool(prop_visible))
-        self._settings.setValue("dock/variablesDock", bool(var_visible))
+        self._settings.setValue("ui/compact", self.compact_action.isChecked())
+        self._settings.setValue("ui/docks/propertiesDock", bool(prop_visible))
+        self._settings.setValue("ui/docks/variablesDock", bool(var_visible))
 
     def closeEvent(self, event) -> None:  # noqa: D401
         self._save_state()
