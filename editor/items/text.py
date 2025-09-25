@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from fonts import font_store
 from qt_compat import (
     QColor,
     QFocusEvent,
@@ -140,6 +141,13 @@ class TextGraphicsItem(EditableTextItem):
         self.setPlainText(str(data.get("content", "New Text")))
         font_raw = data.get("font", {})
         font_data = dict(font_raw) if isinstance(font_raw, Mapping) else {}
+        ttf_spec = font_data.get("ttf")
+        if isinstance(ttf_spec, Mapping):
+            font_id = str(ttf_spec.get("id", ""))
+            if font_id:
+                families = font_store.ensure_qt_font(font_id)
+                if families and not font_data.get("family"):
+                    font_data["family"] = families[0]
         font = self.font()
         size = font_data.get("size")
         if size:
@@ -272,13 +280,21 @@ class TextGraphicsItem(EditableTextItem):
         self.changed.emit()
 
     def _apply_font(self, value: Mapping[str, Any]) -> None:
+        font_data = dict(value)
+        ttf_spec = font_data.get("ttf")
+        if isinstance(ttf_spec, Mapping):
+            font_id = str(ttf_spec.get("id", ""))
+            if font_id:
+                families = font_store.ensure_qt_font(font_id)
+                if families and not font_data.get("family"):
+                    font_data["family"] = families[0]
         font = self.font()
-        if "size" in value:
-            font.setPointSizeF(float(value["size"]))
-        if "family" in value:
-            font.setFamily(str(value["family"]))
-        font.setBold(bool(value.get("bold", font.bold())))
-        font.setItalic(bool(value.get("italic", font.italic())))
+        if "size" in font_data:
+            font.setPointSizeF(float(font_data["size"]))
+        if "family" in font_data and font_data["family"]:
+            font.setFamily(str(font_data["family"]))
+        font.setBold(bool(font_data.get("bold", font.bold())))
+        font.setItalic(bool(font_data.get("italic", font.italic())))
         self.setFont(font)
 
     def lock(self, state: bool) -> None:

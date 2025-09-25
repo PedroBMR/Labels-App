@@ -19,6 +19,7 @@ from typing import Any, Mapping, Protocol
 from PIL import Image
 
 from compile import Calibration, CompilationError, SafeDict, get_backend
+from fonts import font_store
 from model.template import TemplateDocument, TemplateValidationError
 from persistence import carregar_config, salvar_config
 from render import PreviewRenderer
@@ -632,10 +633,18 @@ def build_label_series(
                 mapping = {"value": item}
             ctx.update(mapping)
             numero = inicio + offset
-            ctx.setdefault("numero", numero)
+            has_item_numero = isinstance(mapping, Mapping) and "numero" in mapping
+            if not has_item_numero and ctx.get("numero") == defaults.get("numero"):
+                ctx["numero"] = numero
+            else:
+                ctx.setdefault("numero", numero)
             ctx.setdefault("indice", numero)
             ctx.setdefault("volume", offset + 1)
-            ctx.setdefault("total", total)
+            has_item_total = isinstance(mapping, Mapping) and "total" in mapping
+            if not has_item_total and "total" not in dados:
+                ctx["total"] = total
+            else:
+                ctx.setdefault("total", total)
             ctx.setdefault("total_exibicao", total)
             series.append(ctx)
         return series
@@ -703,6 +712,7 @@ def render_label_images(
     renderer = PreviewRenderer(
         working.document.page,
         calibration=combine_calibrations(working.calibration),
+        metadata=working.document.metadata,
     )
     return [renderer.render(working.document.elements, ctx) for ctx in contexts]
 
@@ -814,6 +824,11 @@ def compile_template(
     except TemplateValidationError as exc:
         raise CompilationError(str(exc)) from exc
     backend = backend or "tspl"
+    metadata = template_data.get("metadata")
+    if isinstance(metadata, Mapping):
+        fonts_metadata = metadata.get("fonts")
+        if isinstance(fonts_metadata, Mapping):
+            font_store.register_metadata(fonts_metadata)
     compiler = get_backend(backend, template_data, calibration=combined)
     commands = compiler.compile(variables)
     if isinstance(commands, str):

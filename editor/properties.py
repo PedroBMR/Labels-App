@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from qt_compat import (
     QCheckBox,
@@ -547,7 +547,12 @@ class PropertyPanel(QWidget):
             self.bold_check.setChecked(bool(font.get("bold", False)))
             self.italic_check.setChecked(bool(font.get("italic", False)))
             self.align_combo.setCurrentText(str(data.get("align", "left")))
-            self.font_path_line.setText(str(font.get("ttf", "")))
+            ttf_spec = font.get("ttf")
+            if isinstance(ttf_spec, Mapping):
+                display = str(ttf_spec.get("filename", ""))
+            else:
+                display = str(ttf_spec or "")
+            self.font_path_line.setText(display)
 
             self.text_content.blockSignals(False)
             self.font_size_spin.blockSignals(False)
