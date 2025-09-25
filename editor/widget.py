@@ -4,22 +4,33 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import datetime
 from typing import Any, Mapping
 
 from PIL.ImageQt import ImageQt
 
 from qt_compat import (
+    QBrush,
+    QCheckBox,
     QColor,
+    QGraphicsPixmapItem,
+    QGraphicsScene,
+    QGraphicsView,
     QGridLayout,
+    QHBoxLayout,
     QLabel,
     QPainter,
-    QPixmap,
     QPointF,
+    QPixmap,
+    QSlider,
     QSplitter,
+    QStackedWidget,
     Qt,
     QTimer,
+    QToolButton,
     QVBoxLayout,
     QWidget,
+    pyqtSignal,
 )
 from render.preview import render_template
 
@@ -27,6 +38,9 @@ from .items import GraphicsElementItem, TextGraphicsItem
 from .properties import PropertyPanel
 from .scene import LabelScene, build_model_from_scene
 from .view import LabelView
+
+
+MM_PER_INCH = 25.4
 
 
 class RulerWidget(QWidget):
@@ -156,23 +170,235 @@ class RulerWidget(QWidget):
 class PreviewWidget(QWidget):
     """Widget showing the Pillow generated preview."""
 
+    refresh_requested = pyqtSignal()
+
+    _MIN_ZOOM = 10
+    _MAX_ZOOM = 400
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._pixmap_item: QGraphicsPixmapItem | None = None
+        self._pixmap: QPixmap | None = None
+        self._fit_to_screen = False
+        self._last_updated: datetime | None = None
+        self._checkerboard_brush = self._build_checkerboard_brush()
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
-        self.label = QLabel("Pré-visualização")
-        self.label.setAlignment(Qt.AlignCenter)
-        self.label.setStyleSheet("background: #fff; border: 1px solid #ccc;")
-        layout.addWidget(self.label, 1)
 
-    def set_image(self, image) -> None:
-        if image is None:
-            self.label.clear()
-            self.label.setText("Pré-visualização")
+        controls = QHBoxLayout()
+        controls.setSpacing(4)
+
+        self.zoom_out_button = QToolButton(self)
+        self.zoom_out_button.setText("-")
+        self.zoom_out_button.setToolTip("Reduzir zoom")
+        self.zoom_out_button.clicked.connect(self._zoom_out)
+        controls.addWidget(self.zoom_out_button)
+
+        self.zoom_slider = QSlider(Qt.Horizontal, self)
+        self.zoom_slider.setRange(self._MIN_ZOOM, self._MAX_ZOOM)
+        self.zoom_slider.setValue(100)
+        self.zoom_slider.valueChanged.connect(self._on_zoom_slider_changed)
+        controls.addWidget(self.zoom_slider, 1)
+
+        self.zoom_in_button = QToolButton(self)
+        self.zoom_in_button.setText("+")
+        self.zoom_in_button.setToolTip("Aumentar zoom")
+        self.zoom_in_button.clicked.connect(self._zoom_in)
+        controls.addWidget(self.zoom_in_button)
+
+        self.zoom_label = QLabel("100%", self)
+        controls.addWidget(self.zoom_label)
+
+        self.fit_button = QToolButton(self)
+        self.fit_button.setText("Ajustar")
+        self.fit_button.setToolTip("Ajustar à tela")
+        self.fit_button.clicked.connect(self._fit_view)
+        controls.addWidget(self.fit_button)
+
+        self.reset_button = QToolButton(self)
+        self.reset_button.setText("Reset")
+        self.reset_button.setToolTip("Restaurar visualização")
+        self.reset_button.clicked.connect(self._reset_view)
+        controls.addWidget(self.reset_button)
+
+        self.refresh_button = QToolButton(self)
+        self.refresh_button.setText("Atualizar")
+        self.refresh_button.setToolTip("Recarregar pré-visualização")
+        self.refresh_button.clicked.connect(self.refresh_requested.emit)
+        controls.addWidget(self.refresh_button)
+
+        self.checkerboard_toggle = QCheckBox("Fundo xadrez", self)
+        self.checkerboard_toggle.toggled.connect(self._update_background)
+        controls.addWidget(self.checkerboard_toggle)
+
+        layout.addLayout(controls)
+
+        self.scene = QGraphicsScene(self)
+        self.view = QGraphicsView(self.scene, self)
+        self.view.setRenderHints(self.view.renderHints() | QPainter.Antialiasing)
+        self.view.setAlignment(Qt.AlignCenter)
+        self.view.setBackgroundBrush(QColor("#ffffff"))
+
+        self.placeholder = QLabel("Pré-visualização", self)
+        self.placeholder.setAlignment(Qt.AlignCenter)
+        self.placeholder.setStyleSheet("background: #fff; border: 1px solid #ccc;")
+
+        self.stacked = QStackedWidget(self)
+        self.stacked.addWidget(self.placeholder)
+        self.stacked.addWidget(self.view)
+        self.stacked.setCurrentWidget(self.placeholder)
+
+        layout.addWidget(self.stacked, 1)
+
+        self.metadata_label = QLabel("Sem dados de pré-visualização", self)
+        self.metadata_label.setAlignment(Qt.AlignLeft)
+        self.metadata_label.setStyleSheet("color: #555; font-size: 11px;")
+        layout.addWidget(self.metadata_label)
+
+        self._update_controls_enabled(False)
+
+    # ------------------------------------------------------------------
+    def _build_checkerboard_brush(self) -> QBrush:
+        size = 12
+        pixmap = QPixmap(size * 2, size * 2)
+        pixmap.fill(QColor(220, 220, 220))
+        painter = QPainter(pixmap)
+        painter.fillRect(0, 0, size, size, QColor(245, 245, 245))
+        painter.fillRect(size, size, size, size, QColor(245, 245, 245))
+        painter.end()
+        return QBrush(pixmap)
+
+    def _update_controls_enabled(self, enabled: bool) -> None:
+        for widget in (
+            self.zoom_out_button,
+            self.zoom_in_button,
+            self.zoom_slider,
+            self.fit_button,
+            self.reset_button,
+            self.checkerboard_toggle,
+        ):
+            widget.setEnabled(enabled)
+
+    def _update_background(self, checked: bool) -> None:
+        if checked:
+            self.view.setBackgroundBrush(self._checkerboard_brush)
+        else:
+            self.view.setBackgroundBrush(QColor("#ffffff"))
+
+    def _update_zoom_label(self, value: int | None = None) -> None:
+        percent = value if value is not None else self.zoom_slider.value()
+        self.zoom_label.setText(f"{percent}%")
+
+    def _zoom_in(self) -> None:
+        if self._pixmap is None:
             return
-        pixmap = QPixmap.fromImage(ImageQt(image))
-        self.label.setPixmap(pixmap)
+        self._fit_to_screen = False
+        self.zoom_slider.setValue(min(self.zoom_slider.value() + 10, self._MAX_ZOOM))
+
+    def _zoom_out(self) -> None:
+        if self._pixmap is None:
+            return
+        self._fit_to_screen = False
+        self.zoom_slider.setValue(max(self.zoom_slider.value() - 10, self._MIN_ZOOM))
+
+    def _reset_view(self) -> None:
+        if self._pixmap is None:
+            return
+        self._fit_to_screen = False
+        self.zoom_slider.setValue(100)
+        self.checkerboard_toggle.setChecked(False)
+        self._apply_zoom()
+
+    def _fit_view(self) -> None:
+        if self._pixmap_item is None:
+            return
+        self._fit_to_screen = True
+        self.view.fitInView(self._pixmap_item, Qt.KeepAspectRatio)
+        transform = self.view.transform()
+        scale_percent = max(
+            self._MIN_ZOOM,
+            min(int(round(transform.m11() * 100)), self._MAX_ZOOM),
+        )
+        self.zoom_slider.blockSignals(True)
+        self.zoom_slider.setValue(scale_percent)
+        self.zoom_slider.blockSignals(False)
+        self._update_zoom_label(scale_percent)
+
+    def _apply_zoom(self) -> None:
+        if self._pixmap is None:
+            return
+        self.view.resetTransform()
+        scale = self.zoom_slider.value() / 100.0
+        self.view.scale(scale, scale)
+        self._update_zoom_label()
+
+    def _on_zoom_slider_changed(self, value: int) -> None:
+        if self._pixmap is None:
+            return
+        self._fit_to_screen = False
+        self._apply_zoom()
+
+    # ------------------------------------------------------------------
+    def set_image(self, image, metadata: Mapping[str, Any] | None = None) -> None:
+        if image is None:
+            self._pixmap = None
+            self._pixmap_item = None
+            self.scene.clear()
+            self.stacked.setCurrentWidget(self.placeholder)
+            self.placeholder.setText("Pré-visualização")
+            self.metadata_label.setText("Sem dados de pré-visualização")
+            self._update_controls_enabled(False)
+            return
+
+        qimage = ImageQt(image)
+        pixmap = QPixmap.fromImage(qimage)
+        self._pixmap = pixmap
+
+        self.scene.clear()
+        self._pixmap_item = self.scene.addPixmap(pixmap)
+        self.scene.setSceneRect(pixmap.rect())
+        self.stacked.setCurrentWidget(self.view)
+        self._update_controls_enabled(True)
+
+        if self._fit_to_screen:
+            self._fit_view()
+        else:
+            self._apply_zoom()
+
+        self._last_updated = datetime.now()
+        self._update_metadata(metadata)
+
+    def _update_metadata(self, metadata: Mapping[str, Any] | None) -> None:
+        if self._pixmap is None:
+            self.metadata_label.setText("Sem dados de pré-visualização")
+            return
+
+        def to_float(value: Any) -> float | None:
+            if value in (None, ""):
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        width_mm = to_float(metadata.get("width_mm")) if metadata else None
+        height_mm = to_float(metadata.get("height_mm")) if metadata else None
+        dpi = to_float(metadata.get("dpi")) if metadata else None
+        width_px = self._pixmap.width()
+        height_px = self._pixmap.height()
+
+        parts: list[str] = []
+        if width_mm is not None and height_mm is not None:
+            parts.append(f"{width_mm:.1f} mm × {height_mm:.1f} mm")
+        parts.append(f"{width_px} × {height_px} px")
+        if dpi is not None:
+            parts.append(f"{dpi:.0f} DPI")
+        if self._last_updated:
+            parts.append(self._last_updated.strftime("Atualizado em %d/%m/%Y %H:%M:%S"))
+
+        self.metadata_label.setText(" | ".join(parts))
 
 
 class LabelEditorWidget(QWidget):
@@ -193,6 +419,9 @@ class LabelEditorWidget(QWidget):
         self.property_panel = PropertyPanel()
         self.property_panel.set_scene(self.scene)
         self.preview_widget = PreviewWidget()
+        self.preview_widget.refresh_requested.connect(
+            lambda: self.update_preview(immediate=True)
+        )
 
         self.h_ruler = RulerWidget(Qt.Horizontal, self.scene, self.view)
         self.v_ruler = RulerWidget(Qt.Vertical, self.scene, self.view)
@@ -283,7 +512,33 @@ class LabelEditorWidget(QWidget):
             calibration=self.scene.calibration,
         )
         self._last_preview_payload = payload_signature
-        self.preview_widget.set_image(image)
+        metadata = self._build_preview_metadata(backend_dict.get("page", {}))
+        self.preview_widget.set_image(image, metadata)
+
+    def _build_preview_metadata(self, page: Mapping[str, Any]) -> Mapping[str, Any]:
+        def to_float(value: Any) -> float | None:
+            if value in (None, ""):
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        width_mm = to_float(page.get("width_mm")) or to_float(page.get("width"))
+        height_mm = to_float(page.get("height_mm")) or to_float(page.get("height"))
+        dpi = to_float(page.get("dpi"))
+        if dpi is None:
+            dots_per_mm = to_float(page.get("dots_per_mm"))
+            if dots_per_mm:
+                dpi = dots_per_mm * MM_PER_INCH
+        metadata: dict[str, Any] = {}
+        if width_mm is not None:
+            metadata["width_mm"] = width_mm
+        if height_mm is not None:
+            metadata["height_mm"] = height_mm
+        if dpi is not None:
+            metadata["dpi"] = dpi
+        return metadata
 
     def create_default(self, kind: str) -> dict[str, Any]:
         if kind == "text":
