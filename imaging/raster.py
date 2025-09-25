@@ -23,6 +23,15 @@ __all__ = [
 _MM_PER_INCH = 25.4
 
 
+def _mm_to_dots(size_mm: float | None, dpi: float) -> int | None:
+    if size_mm is None:
+        return None
+    rounded = int(round(dpi))
+    if rounded not in {203, 300}:
+        raise ValueError(f"Unsupported DPI {dpi!r}; expected 203 or 300")
+    return max(1, int(round(size_mm * dpi / _MM_PER_INCH)))
+
+
 class _Cache(MutableMapping[tuple, tuple[int, int, int, bytes]]):
     def __init__(self) -> None:
         self._data: dict[tuple, tuple[int, int, int, bytes]] = {}
@@ -139,16 +148,10 @@ def _resize_image(
     return resized
 
 
-def _dither_to_mono(
-    image: Image.Image,
-    *,
-    method: str,
-    threshold: int,
-) -> Image.Image:
+def _dither_to_mono(image: Image.Image, *, method: str) -> Image.Image:
     if method == "threshold":
-        cutoff = max(0, min(255, int(threshold)))
         table = [0] * 256
-        for i in range(cutoff, 256):
+        for i in range(128, 256):
             table[i] = 255
         return image.point(table, mode="1")
     if method == "bayer":
@@ -199,17 +202,17 @@ def prepare_bitmap_for_tspl(
     gamma: float | None = None,
     sharpen: bool = False,
     invert: bool = False,
-    threshold: int = 128,
     file_hash: str | None = None,
 ) -> tuple[int, int, int, bytes]:
     """Return TSPL compatible raster data for ``image``."""
 
-    dots_x = width_dots
-    dots_y = height_dots
-    if dots_x is None and width_mm is not None:
-        dots_x = int(round(width_mm * dpi_x / _MM_PER_INCH))
-    if dots_y is None and height_mm is not None:
-        dots_y = int(round(height_mm * dpi_y / _MM_PER_INCH))
+    dots_x = width_dots or _mm_to_dots(width_mm, dpi_x)
+    dots_y = height_dots or _mm_to_dots(height_mm, dpi_y)
+
+    rounded_x = int(round(dpi_x))
+    rounded_y = int(round(dpi_y))
+    if rounded_x not in {203, 300} or rounded_y not in {203, 300}:
+        raise ValueError("Thermal raster only supports 203 or 300 DPI")
 
     cache_key = None
     if file_hash:
@@ -217,26 +220,34 @@ def prepare_bitmap_for_tspl(
             file_hash,
             dots_x or image.width,
             dots_y or image.height,
-            int(round(dpi_x)),
+            (rounded_x, rounded_y),
             dither.lower(),
             float(gamma or 0),
             bool(sharpen),
             bool(invert),
-            fit.lower(),
-            int(threshold),
         )
         if cache_key in _RASTER_CACHE:
             return _RASTER_CACHE[cache_key]
 
+    fit_mode = fit.lower()
+    if fit_mode not in {"fit", "fill", "stretch"}:
+        raise ValueError(f"Unknown fit mode: {fit}")
+
+    method = dither.lower()
+    if method not in {"bayer", "floyd", "threshold"}:
+        raise ValueError(f"Unsupported dither method: {dither}")
+
     working = _ensure_srgb(_composite_alpha(image))
-    working = _apply_gamma(working, gamma)
     if working.mode != "L":
         working = ImageOps.grayscale(working)
-    if sharpen:
-        working = working.filter(ImageFilter.UnsharpMask())
 
-    resized = _resize_image(working, dots_x, dots_y, fit=fit)
-    mono = _dither_to_mono(resized, method=dither.lower(), threshold=threshold)
+    working = _apply_gamma(working, gamma)
+    resized = _resize_image(working, dots_x, dots_y, fit=fit_mode)
+
+    if sharpen:
+        resized = resized.filter(ImageFilter.UnsharpMask())
+
+    mono = _dither_to_mono(resized, method=method)
     data = _pack_msb_first(mono, invert=invert)
 
     width_bytes = (mono.width + 7) // 8
