@@ -254,6 +254,62 @@ class LabelScene(QGraphicsScene):
             return True
         return False
 
+    def can_duplicate_selected_items(self) -> bool:
+        for item in self.selected_items():
+            if getattr(item, "_locked", False):
+                continue
+            return True
+        return False
+
+    def duplicate_selected_items(self) -> bool:
+        selected = [
+            item for item in self.selected_items() if not getattr(item, "_locked", False)
+        ]
+        if not selected:
+            return False
+
+        # Offset duplicates by a single grid step (or a sensible default)
+        offset_mm = self.grid_mm if self.grid_mm > 0 else 1.0
+        new_items: list[GraphicsElementItem | TextGraphicsItem] = []
+        for item in selected:
+            element = item.to_dict()
+            element.pop("id", None)
+            element["x_mm"] = float(element.get("x_mm", 0.0)) + offset_mm
+            element["y_mm"] = float(element.get("y_mm", 0.0)) + offset_mm
+            duplicate = self.add_element(element)
+            new_items.append(duplicate)
+
+        if not new_items:
+            return False
+
+        self.clearSelection()
+        for item in new_items:
+            item.setSelected(True)
+        self.update()
+        return True
+
+    def set_selected_items_locked(self, locked: bool) -> bool:
+        changed = False
+        for item in self.selected_items():
+            current = getattr(item, "_locked", False)
+            if current == locked:
+                continue
+            if hasattr(item, "lock"):
+                item.lock(locked)
+            elif hasattr(item, "set_locked"):
+                item.set_locked(locked)
+            item.update()
+            changed = True
+        if changed:
+            self.update()
+        return changed
+
+    def are_all_selected_locked(self) -> bool:
+        selected = self.selected_items()
+        if not selected:
+            return False
+        return all(getattr(item, "_locked", False) for item in selected)
+
     def element_rect(self, element: Mapping[str, Any]) -> QRectF:
         width = float(element.get("width_mm", 20.0))
         height = float(element.get("height_mm", 10.0))

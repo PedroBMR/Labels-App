@@ -78,11 +78,33 @@ class LabelView(QGraphicsView):
         super().keyReleaseEvent(event)
 
     def contextMenuEvent(self, event) -> None:  # noqa: D401 - Qt API
+        scene = self.scene()
+        if scene is None:
+            return
+
         menu = QMenu(self)
+
         delete_action = QAction("Delete", menu)
         delete_action.triggered.connect(self._handle_delete_request)
         delete_action.setEnabled(self._can_delete_selection())
         menu.addAction(delete_action)
+
+        duplicate_action = QAction("Duplicate", menu)
+        duplicate_action.triggered.connect(self._handle_duplicate_request)
+        duplicate_action.setEnabled(scene.can_duplicate_selected_items())
+        menu.addAction(duplicate_action)
+
+        selected = scene.selected_items()
+        any_locked = any(getattr(item, "_locked", False) for item in selected)
+        lock_label = "Unlock" if any_locked else "Lock"
+        lock_state = False if any_locked else True
+        lock_action = QAction(lock_label, menu)
+        lock_action.setEnabled(bool(selected))
+        lock_action.triggered.connect(
+            lambda checked=False, state=lock_state: self._handle_lock_request(state)
+        )
+        menu.addAction(lock_action)
+
         menu.exec(event.globalPos())
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: D401 - Qt API
@@ -148,6 +170,24 @@ class LabelView(QGraphicsView):
         if removed:
             self.viewportChanged.emit()
         return removed
+
+    def _handle_duplicate_request(self) -> bool:
+        scene = self.scene()
+        if scene is None:
+            return False
+        duplicated = scene.duplicate_selected_items()
+        if duplicated:
+            self.viewportChanged.emit()
+        return duplicated
+
+    def _handle_lock_request(self, locked: bool) -> bool:
+        scene = self.scene()
+        if scene is None:
+            return False
+        changed = scene.set_selected_items_locked(locked)
+        if changed:
+            self.viewportChanged.emit()
+        return changed
 
     def _can_delete_selection(self) -> bool:
         scene = self.scene()
