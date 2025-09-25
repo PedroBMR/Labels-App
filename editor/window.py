@@ -16,26 +16,20 @@ from printing import (
 )
 from qt_compat import (
     QAction,
-    QColor,
-    QDialog,
-    QDialogButtonBox,
     QDockWidget,
     QFileDialog,
     QInputDialog,
-    QLabel,
     QKeySequence,
     QMainWindow,
     QMessageBox,
-    QPainter,
-    QPixmap,
     QSettings,
     QStatusBar,
     Qt,
     QTimer,
     QToolBar,
-    QVBoxLayout,
     QWidget,
 )
+from ui.tour import GuidedTourDialog, TourStep
 from .variables import VariablePanel
 from template_store import template_store
 
@@ -44,106 +38,6 @@ __all__ = ["LabelEditorWindow"]
 
 _SIZE_RE = re.compile(r"^\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*$")
 
-
-class TutorialDialog(QDialog):
-    """Dialog presenting a quick visual tour of the editor."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Bem-vindo ao editor de etiquetas")
-        self.setModal(True)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
-
-        illustration = QLabel()
-        illustration.setAlignment(Qt.AlignCenter)
-        illustration.setPixmap(self._build_pixmap())
-        layout.addWidget(illustration)
-
-        intro = QLabel(
-            (
-                "<p><b>Crie novas etiquetas em poucos passos:</b></p>\n"
-                "<ul>\n"
-                "  <li><span style=\"color:#2E86DE;\">Create Label</span> "
-                "gera uma base no tamanho desejado.</li>\n"
-                "  <li>Arraste os elementos com o mouse para reposicioná-los.</li>\n"
-                "  <li>Use as alças azuis para redimensionar e o círculo laranja para "
-                "girar.</li>\n"
-                "  <li>Salve o modelo e ele ficará disponível em <code>assets/templates"
-                "</code>.</li>\n"
-                "</ul>"
-            )
-        )
-        intro.setTextFormat(Qt.RichText)
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
-
-        tips = QLabel(
-            (
-                "<p><b>Dicas rápidas</b></p>\n"
-                "<ul>\n"
-                "  <li>Use a roda do mouse com <b>Ctrl</b> para ampliar/reduzir.</li>\n"
-                "  <li>Mantenha <b>Espaço</b> pressionado para arrastar o "
-                "painel.</li>\n"
-                "  <li>Selecione vários elementos com arraste retangular e alinhe pelo "
-                "menu Editar.</li>\n"
-                "</ul>"
-            )
-        )
-        tips.setTextFormat(Qt.RichText)
-        tips.setWordWrap(True)
-        layout.addWidget(tips)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok)
-        buttons.accepted.connect(self.accept)
-        layout.addWidget(buttons)
-
-        self.resize(480, 500)
-
-    def _build_pixmap(self) -> QPixmap:
-        width, height = 440, 220
-        pixmap = QPixmap(width, height)
-        pixmap.fill(Qt.transparent)
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-
-        base_rect = pixmap.rect().adjusted(60, 36, -60, -40)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(0, 0, 0, 35))
-        shadow = base_rect.adjusted(10, 10, 18, 18)
-        painter.drawRoundedRect(shadow, 12, 12)
-
-        painter.setPen(QColor(200, 200, 200))
-        painter.setBrush(QColor(255, 255, 255))
-        painter.drawRoundedRect(base_rect, 10, 10)
-
-        painter.setPen(QColor(220, 220, 220))
-        grid_step_x = base_rect.width() / 8
-        grid_step_y = base_rect.height() / 5
-        x = base_rect.left() + grid_step_x
-        while x < base_rect.right():
-            painter.drawLine(x, base_rect.top() + 8, x, base_rect.bottom() - 8)
-            x += grid_step_x
-        y = base_rect.top() + grid_step_y
-        while y < base_rect.bottom():
-            painter.drawLine(base_rect.left() + 8, y, base_rect.right() - 8, y)
-            y += grid_step_y
-
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(76, 132, 255, 220))
-        painter.drawRoundedRect(base_rect.adjusted(20, 22, -210, -96), 8, 8)
-        painter.setBrush(QColor(255, 194, 102, 220))
-        painter.drawRoundedRect(base_rect.adjusted(24, 90, -260, -40), 6, 6)
-        painter.setBrush(QColor(120, 200, 160, 220))
-        painter.drawEllipse(base_rect.right() - 120, base_rect.top() + 30, 84, 84)
-
-        painter.setPen(QColor(66, 66, 66))
-        painter.drawText(base_rect.left() + 32, base_rect.top() + 46, "Texto")
-        painter.drawText(base_rect.left() + 32, base_rect.top() + 116, "Código")
-
-        painter.end()
-        return pixmap
 
 class LabelEditorWindow(QMainWindow):
     """Standalone window embedding the WYSIWYG label editor."""
@@ -162,6 +56,15 @@ class LabelEditorWindow(QMainWindow):
         self._normal_splitter_sizes: list[int] | None = None
         self._compact_splitter_sizes: list[int] | None = None
         self._dock_visibility_cache: dict[str, bool] = {}
+
+        self.file_toolbar: QToolBar | None = None
+        self.element_toolbar: QToolBar | None = None
+        self.edit_toolbar: QToolBar | None = None
+        self.export_toolbar: QToolBar | None = None
+
+        self._tour_action = QAction("Tour guiado", self)
+        self._tour_action.setShortcut(QKeySequence("Shift+F1"))
+        self._tour_action.triggered.connect(lambda: self._show_guided_tour(force=True))
 
         self.variable_panel = VariablePanel()
         self.variable_panel.changed.connect(self._on_variables_changed)
@@ -184,11 +87,12 @@ class LabelEditorWindow(QMainWindow):
         self.current_path: Path | None = None
         self._load_default_template()
         self._build_menus()
-        self._tutorial_shown = False
-        QTimer.singleShot(200, self._show_tutorial)
+        self._tour_shown = False
+        QTimer.singleShot(200, self._show_guided_tour)
         self.addAction(self.compact_action)
         self.addAction(self.fullscreen_action)
         self.addAction(self.reset_splitter_action)
+        self.addAction(self._tour_action)
         self.editor.splitter.splitterMoved.connect(self._on_splitter_moved)
         self.property_dock.visibilityChanged.connect(
             lambda visible, dock=self.property_dock: self._save_dock_state(dock, visible)
@@ -202,6 +106,7 @@ class LabelEditorWindow(QMainWindow):
     def _build_menus(self) -> None:
         file_bar = QToolBar("Arquivo", self)
         self.addToolBar(file_bar)
+        self.file_toolbar = file_bar
 
         new_action = QAction("Novo", self)
         new_action.triggered.connect(self.new_template)
@@ -225,6 +130,7 @@ class LabelEditorWindow(QMainWindow):
 
         element_bar = QToolBar("Elementos", self)
         self.addToolBar(element_bar)
+        self.element_toolbar = element_bar
         add_text = QAction("Texto", self)
         add_text.triggered.connect(lambda: self._add_element("text"))
         element_bar.addAction(add_text)
@@ -243,6 +149,7 @@ class LabelEditorWindow(QMainWindow):
 
         edit_bar = QToolBar("Editar", self)
         self.addToolBar(edit_bar)
+        self.edit_toolbar = edit_bar
         undo_action = QAction("Desfazer", self)
         undo_action.triggered.connect(self.editor.scene.undo_stack.undo)
         edit_bar.addAction(undo_action)
@@ -267,6 +174,7 @@ class LabelEditorWindow(QMainWindow):
 
         export_bar = QToolBar("Exportar", self)
         self.addToolBar(export_bar)
+        self.export_toolbar = export_bar
         compile_tspl = QAction("Gerar TSPL", self)
         compile_tspl.triggered.connect(self.generate_tspl)
         export_bar.addAction(compile_tspl)
@@ -294,6 +202,9 @@ class LabelEditorWindow(QMainWindow):
         view_menu.addSeparator()
         view_menu.addAction(self.property_dock.toggleViewAction())
         view_menu.addAction(self.variable_dock.toggleViewAction())
+
+        help_menu = self.menuBar().addMenu("Ajuda")
+        help_menu.addAction(self._tour_action)
 
     # ------------------------------------------------------------------
     def _load_default_template(self) -> None:
@@ -502,12 +413,90 @@ class LabelEditorWindow(QMainWindow):
         self.status.showMessage(f"Template salvo em {saved_path}", 3000)
 
     # ------------------------------------------------------------------
-    def _show_tutorial(self) -> None:
-        if self._tutorial_shown:
+    def _show_guided_tour(self, force: bool = False) -> None:
+        if not force and self._tour_shown:
             return
-        self._tutorial_shown = True
-        dialog = TutorialDialog(self)
+        skip_onboarding = bool(self._settings.value("onboarding/skip", False, type=bool))
+        if not force and skip_onboarding:
+            return
+
+        steps = self._build_tour_steps()
+        if not steps:
+            self._tour_shown = True
+            return
+
+        dialog = GuidedTourDialog(self, steps, dont_show_checked=skip_onboarding)
         dialog.exec()
+        if dialog.dont_show_again:
+            self._settings.setValue("onboarding/skip", True)
+        elif force:
+            self._settings.setValue("onboarding/skip", False)
+        self._tour_shown = True
+
+    def _build_tour_steps(self) -> list[TourStep]:
+        steps: list[TourStep] = [
+            TourStep(
+                title="Bem-vindo ao editor",
+                body=(
+                    "Este tour destaca as principais áreas para começar rapidamente. "
+                    "Use Enter ou Espaço para avançar."
+                ),
+                anchor=None,
+                highlight_padding=0,
+            )
+        ]
+
+        if self.file_toolbar is not None:
+            steps.append(
+                TourStep(
+                    title="Barras de ferramentas",
+                    body=(
+                        "As barras superiores concentram ações para criar modelos, "
+                        "inserir elementos e exportar seu trabalho. O atalho "
+                        "Create Label abre um novo rótulo no tamanho desejado."
+                    ),
+                    anchor=self.file_toolbar,
+                    highlight_padding=24,
+                )
+            )
+
+        steps.append(
+            TourStep(
+                title="Canvas de edição",
+                body=(
+                    "Arraste os elementos diretamente sobre o canvas para reposicioná-los. "
+                    "Use Ctrl + rolagem do mouse para ajustar o zoom e Espaço para arrastar a área visível."
+                ),
+                anchor=self.editor.view,
+                highlight_padding=28,
+            )
+        )
+
+        steps.append(
+            TourStep(
+                title="Painéis de propriedades",
+                body=(
+                    "Selecione um item para ajustar fonte, cores e alinhamento neste painel lateral. "
+                    "A aba Variáveis permite informar os valores dinâmicos usados no modelo."
+                ),
+                anchor=self.property_dock,
+                highlight_padding=20,
+            )
+        )
+
+        steps.append(
+            TourStep(
+                title="Pré-visualização",
+                body=(
+                    "A pré-visualização renderiza o resultado final com os dados atuais. "
+                    "Ajuste o zoom pelos controles inferiores para conferir os detalhes antes de exportar."
+                ),
+                anchor=self.editor.preview_widget,
+                highlight_padding=28,
+            )
+        )
+
+        return [step for step in steps if step.anchor is None or step.anchor.isVisible()]
 
     # ------------------------------------------------------------------
     def _add_element(self, kind: str) -> None:
