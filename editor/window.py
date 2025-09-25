@@ -81,6 +81,11 @@ class LabelEditorWindow(QMainWindow):
         self.variable_dock.setObjectName("variablesDock")
         self.addDockWidget(Qt.RightDockWidgetArea, self.variable_dock)
 
+        self.history_dock = QDockWidget("Histórico", self)
+        self.history_dock.setWidget(self.editor.history_panel)
+        self.history_dock.setObjectName("historyDock")
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.history_dock)
+
         self.current_document = TemplateDocument(
             name="Novo",
             page={"backend": "tspl", "width_mm": 80, "height_mm": 60, "dpi": 203},
@@ -102,6 +107,9 @@ class LabelEditorWindow(QMainWindow):
         )
         self.variable_dock.visibilityChanged.connect(
             lambda visible, dock=self.variable_dock: self._save_dock_state(dock, visible)
+        )
+        self.history_dock.visibilityChanged.connect(
+            lambda visible, dock=self.history_dock: self._save_dock_state(dock, visible)
         )
         QTimer.singleShot(0, self._restore_state)
 
@@ -205,6 +213,7 @@ class LabelEditorWindow(QMainWindow):
         view_menu.addSeparator()
         view_menu.addAction(self.property_dock.toggleViewAction())
         view_menu.addAction(self.variable_dock.toggleViewAction())
+        view_menu.addAction(self.history_dock.toggleViewAction())
 
         help_menu = self.menuBar().addMenu("Ajuda")
         help_menu.addAction(self._tour_action)
@@ -523,10 +532,12 @@ class LabelEditorWindow(QMainWindow):
             self._dock_visibility_cache = {
                 "propertiesDock": self.property_dock.isVisible(),
                 "variablesDock": self.variable_dock.isVisible(),
+                "historyDock": self.history_dock.isVisible(),
             }
             self._in_compact_transition = True
             self.property_dock.hide()
             self.variable_dock.hide()
+            self.history_dock.hide()
             self._in_compact_transition = False
             sizes = self._compact_splitter_sizes
             if not sizes:
@@ -549,15 +560,21 @@ class LabelEditorWindow(QMainWindow):
                     "ui/docks/variablesDock",
                     bool(self._dock_visibility_cache.get("variablesDock", True)),
                 )
+                self._settings.setValue(
+                    "ui/docks/historyDock",
+                    bool(self._dock_visibility_cache.get("historyDock", True)),
+                )
         else:
             self._compact_splitter_sizes = self.editor.splitter.sizes()
             cache = self._dock_visibility_cache or {
                 "propertiesDock": self._read_bool("ui/docks/propertiesDock", True),
                 "variablesDock": self._read_bool("ui/docks/variablesDock", True),
+                "historyDock": self._read_bool("ui/docks/historyDock", True),
             }
             self._in_compact_transition = True
             self.property_dock.setVisible(cache.get("propertiesDock", True))
             self.variable_dock.setVisible(cache.get("variablesDock", True))
+            self.history_dock.setVisible(cache.get("historyDock", True))
             self._in_compact_transition = False
             self._dock_visibility_cache = {}
             sizes = self._normal_splitter_sizes
@@ -574,6 +591,9 @@ class LabelEditorWindow(QMainWindow):
                 )
                 self._settings.setValue(
                     "ui/docks/variablesDock", bool(cache.get("variablesDock", True))
+                )
+                self._settings.setValue(
+                    "ui/docks/historyDock", bool(cache.get("historyDock", True))
                 )
                 self._settings.setValue("ui/compact", False)
 
@@ -673,8 +693,10 @@ class LabelEditorWindow(QMainWindow):
             self._compact_splitter_sizes = self._read_sizes("ui/splitSizes/compact")
             prop_visible = self._read_bool("ui/docks/propertiesDock", True)
             var_visible = self._read_bool("ui/docks/variablesDock", True)
+            history_visible = self._read_bool("ui/docks/historyDock", True)
             self.property_dock.setVisible(prop_visible)
             self.variable_dock.setVisible(var_visible)
+            self.history_dock.setVisible(history_visible)
             compact_enabled = self._read_bool("ui/compact", False)
             if compact_enabled:
                 self.compact_action.blockSignals(True)
@@ -704,13 +726,18 @@ class LabelEditorWindow(QMainWindow):
             var_visible = self._dock_visibility_cache.get(
                 "variablesDock", self._read_bool("ui/docks/variablesDock", True)
             )
+            history_visible = self._dock_visibility_cache.get(
+                "historyDock", self._read_bool("ui/docks/historyDock", True)
+            )
         else:
             self._write_sizes("ui/splitSizes/normal", self.editor.splitter.sizes())
             prop_visible = self.property_dock.isVisible()
             var_visible = self.variable_dock.isVisible()
+            history_visible = self.history_dock.isVisible()
         self._settings.setValue("ui/compact", self.compact_action.isChecked())
         self._settings.setValue("ui/docks/propertiesDock", bool(prop_visible))
         self._settings.setValue("ui/docks/variablesDock", bool(var_visible))
+        self._settings.setValue("ui/docks/historyDock", bool(history_visible))
         self._settings.setValue(
             "editor/alignmentTolerance", self.editor.alignment_tolerance()
         )

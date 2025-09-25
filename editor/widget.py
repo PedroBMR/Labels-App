@@ -34,6 +34,7 @@ from qt_compat import (
 )
 from render.preview import render_template
 
+from .history import UndoHistoryPanel
 from .items import GraphicsElementItem, TextGraphicsItem
 from .layers import LayerPanel
 from .properties import PropertyPanel
@@ -410,6 +411,7 @@ class LabelEditorWidget(QWidget):
         self.scene = LabelScene()
         self.view = LabelView()
         self.view.setScene(self.scene)
+        self.history_panel = UndoHistoryPanel(self.scene)
         self.preview_variables: dict[str, Any] = {}
         self._last_preview_payload: tuple[str, str] | None = None
         self._preview_delay_ms = 75

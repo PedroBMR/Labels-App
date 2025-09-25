@@ -13,8 +13,10 @@ from qt_compat import (
     QColor,
     QGraphicsLineItem,
     QGraphicsScene,
+    QImage,
     QPainter,
     QPen,
+    QPixmap,
     QPointF,
     QRectF,
     Qt,
@@ -123,6 +125,7 @@ class LabelScene(QGraphicsScene):
     """Scene containing all editable items for a template."""
 
     itemsChanged = pyqtSignal()
+    historyChanged = pyqtSignal()
 
     def __init__(
         self,
@@ -138,6 +141,7 @@ class LabelScene(QGraphicsScene):
         self.grid_mm = max(0.1, float(grid_mm))
         self.calibration = Calibration()
         self.undo_stack = QUndoStack(self)
+        self._history_snapshots: list[QPixmap] = []
         self._dots_per_mm = _compute_dots_per_mm(self.page)
         self._variables: dict[str, Any] = {}
         self._guides: list[QGraphicsLineItem] = []
@@ -157,6 +161,7 @@ class LabelScene(QGraphicsScene):
             "shape": "Forma",
         }
         self._update_scene_rect()
+        self.reset_history_snapshots()
 
     # ------------------------------------------------------------------
     def set_page(self, page: Mapping[str, Any]) -> None:
@@ -184,6 +189,57 @@ class LabelScene(QGraphicsScene):
             self._base_rect.prepareGeometryChange()
             self._base_rect.setRect(rect)
             self._base_rect.setPos(0, 0)
+
+    def reset_history_snapshots(self) -> None:
+        """Reset stored history thumbnails to the current scene state."""
+
+        snapshot = self.capture_thumbnail()
+        self._history_snapshots = [snapshot]
+        self.historyChanged.emit()
+
+    def history_snapshots(self) -> list[QPixmap]:
+        return list(self._history_snapshots)
+
+    def _push_command(self, command: QUndoCommand) -> None:
+        """Push ``command`` to the undo stack updating history thumbnails."""
+
+        index = self.undo_stack.index()
+        if index < len(self._history_snapshots) - 1:
+            self._history_snapshots = self._history_snapshots[: index + 1]
+        self.undo_stack.push(command)
+        snapshot = self.capture_thumbnail()
+        index = self.undo_stack.index()
+        if index < len(self._history_snapshots):
+            self._history_snapshots[index] = snapshot
+        else:
+            self._history_snapshots.append(snapshot)
+        self.historyChanged.emit()
+
+    def capture_thumbnail(self, size: int = 120, padding: int = 6) -> QPixmap:
+        """Capture a thumbnail representation of the current scene state."""
+
+        rect = self.sceneRect()
+        image = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
+        image.fill(QColor(245, 245, 245))
+        if rect.width() <= 0 or rect.height() <= 0:
+            return QPixmap.fromImage(image)
+
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        available = max(1.0, size - padding * 2)
+        scale = min(available / rect.width(), available / rect.height())
+        width = rect.width() * scale
+        height = rect.height() * scale
+        target = QRectF(
+            (size - width) / 2,
+            (size - height) / 2,
+            width,
+            height,
+        )
+        self.render(painter, target, rect)
+        painter.end()
+        return QPixmap.fromImage(image)
 
     # ------------------------------------------------------------------
     def mm_to_pixels_x(self, value: float) -> float:
@@ -520,7 +576,7 @@ class LabelScene(QGraphicsScene):
         self, item: GraphicsElementItem | TextGraphicsItem, before, after
     ) -> None:
         command = _StateChange(item, before, after, "Mover elemento")
-        self.undo_stack.push(command)
+        self._push_command(command)
 
     def change_property(
         self, item: GraphicsElementItem | TextGraphicsItem, name: str, value: Any
@@ -531,7 +587,7 @@ class LabelScene(QGraphicsScene):
         if current == value:
             return
         command = _PropertyChange(item, name, current, value)
-        self.undo_stack.push(command)
+        self._push_command(command)
 
     # ------------------------------------------------------------------
     def to_template(
@@ -551,6 +607,8 @@ class LabelScene(QGraphicsScene):
             self.add_element(element)
         if not document.elements:
             self.itemsChanged.emit()
+        self.undo_stack.clear()
+        self.reset_history_snapshots()
 
     # ------------------------------------------------------------------
     def selected_items(self) -> list[GraphicsElementItem | TextGraphicsItem]:
