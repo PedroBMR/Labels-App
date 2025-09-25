@@ -506,7 +506,9 @@ class LabelEditorWindow(QMainWindow):
             self.current_document.variables,
         )
         self.current_document = template
-        is_same_file = self.current_path is not None and Path(self.current_path) == target
+        is_same_file = (
+            self.current_path is not None and Path(self.current_path) == target
+        )
         try:
             saved_path = template_store.save(
                 template,

@@ -28,8 +28,8 @@ from typing import Any, TypedDict
 
 from _version import __version__
 from editor.window import LabelEditorWindow
-from model.template import TemplateDocument
 from log import LOG_FILE, logger, register_status_callback
+from model.template import TemplateDocument
 from persistence import (
     atualizar_recentes,
     carregar_config,

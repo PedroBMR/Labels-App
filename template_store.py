@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 from model.template import TemplateDocument, slugify
 from qt_compat import QObject, pyqtSignal
 from utils import recurso_caminho
@@ -47,7 +48,10 @@ class TemplateStore(QObject):
         path: Path | None = None,
         overwrite: bool = False,
     ) -> Path:
-        target = self.ensure_path(path or self.path_for_name(document.name), name=document.name)
+        target = self.ensure_path(
+            path or self.path_for_name(document.name),
+            name=document.name,
+        )
         if target.exists() and not overwrite:
             raise FileExistsError(str(target))
         document.dump(target)
