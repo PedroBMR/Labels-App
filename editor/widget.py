@@ -35,6 +35,7 @@ from qt_compat import (
 from render.preview import render_template
 
 from .items import GraphicsElementItem, TextGraphicsItem
+from .layers import LayerPanel
 from .properties import PropertyPanel
 from .scene import LabelScene, build_model_from_scene
 from .view import LabelView
@@ -418,6 +419,8 @@ class LabelEditorWidget(QWidget):
 
         self.property_panel = PropertyPanel()
         self.property_panel.set_scene(self.scene)
+        self.layer_panel = LayerPanel()
+        self.layer_panel.set_scene(self.scene)
         self.preview_widget = PreviewWidget()
         self.preview_widget.refresh_requested.connect(
             lambda: self.update_preview(immediate=True)
@@ -436,9 +439,17 @@ class LabelEditorWidget(QWidget):
         canvas_container = QWidget()
         canvas_container.setLayout(canvas_layout)
 
+        self.canvas_splitter = QSplitter()
+        self.canvas_splitter.setOrientation(Qt.Horizontal)
+        self.canvas_splitter.addWidget(self.layer_panel)
+        self.canvas_splitter.addWidget(canvas_container)
+        self.canvas_splitter.setStretchFactor(0, 0)
+        self.canvas_splitter.setStretchFactor(1, 1)
+        self.canvas_splitter.setCollapsible(0, False)
+
         self.splitter = QSplitter()
         self.splitter.setOrientation(Qt.Horizontal)
-        self.splitter.addWidget(canvas_container)
+        self.splitter.addWidget(self.canvas_splitter)
         self.splitter.addWidget(self.preview_widget)
         self.splitter.setStretchFactor(0, 3)
         self.splitter.setStretchFactor(1, 2)

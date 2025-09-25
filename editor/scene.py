@@ -20,6 +20,7 @@ from qt_compat import (
     Qt,
     QUndoCommand,
     QUndoStack,
+    pyqtSignal,
 )
 
 try:  # pragma: no cover - optional dependency per Qt binding
@@ -121,6 +122,8 @@ def _is_valid_graphics_item(item: QGraphicsLineItem | None) -> bool:
 class LabelScene(QGraphicsScene):
     """Scene containing all editable items for a template."""
 
+    itemsChanged = pyqtSignal()
+
     def __init__(
         self,
         page: Mapping[str, Any] | None = None,
@@ -145,6 +148,14 @@ class LabelScene(QGraphicsScene):
         self._alignment_tolerance = 6.0
         self.setBackgroundBrush(QColor(250, 250, 250))
         self._base_rect = None
+        self._default_name_map = {
+            "text": "Texto",
+            "barcode": "Código de barras",
+            "qr": "QR Code",
+            "qrcode": "QR Code",
+            "image": "Imagem",
+            "shape": "Forma",
+        }
         self._update_scene_rect()
 
     # ------------------------------------------------------------------
@@ -213,17 +224,21 @@ class LabelScene(QGraphicsScene):
     def add_element(
         self, element: Mapping[str, Any]
     ) -> GraphicsElementItem | TextGraphicsItem:
-        element_type = str(element.get("type", "")).lower()
+        data = dict(element)
+        element_type = str(data.get("type", "")).lower()
+        data["name"] = self._prepare_element_name(data.get("name"), element_type)
         if element_type == "text":
-            item = create_text_item(element)
+            item = create_text_item(data)
             self.addItem(item)
-            item.apply_element(element)
+            item.apply_element(data)
             item.geometryCommitted.connect(self._on_geometry_committed)
+            self.itemsChanged.emit()
             return item
-        item = create_item(element)
+        item = create_item(data)
         self.addItem(item)
         item.geometryCommitted.connect(self._on_geometry_committed)
-        item.apply_element(element)
+        item.apply_element(data)
+        self.itemsChanged.emit()
         return item
 
     def delete_item(self, item: GraphicsElementItem) -> None:
@@ -242,6 +257,7 @@ class LabelScene(QGraphicsScene):
             self.clearSelection()
             self.clear_guides()
             self.update()
+            self.itemsChanged.emit()
         return removed
 
     def remove_selected_items(self) -> bool:
@@ -274,6 +290,7 @@ class LabelScene(QGraphicsScene):
         for item in selected:
             element = item.to_dict()
             element.pop("id", None)
+            element.pop("name", None)
             element["x_mm"] = float(element.get("x_mm", 0.0)) + offset_mm
             element["y_mm"] = float(element.get("y_mm", 0.0)) + offset_mm
             duplicate = self.add_element(element)
@@ -517,6 +534,8 @@ class LabelScene(QGraphicsScene):
         self._update_scene_rect()
         for element in document.elements:
             self.add_element(element)
+        if not document.elements:
+            self.itemsChanged.emit()
 
     # ------------------------------------------------------------------
     def selected_items(self) -> list[GraphicsElementItem | TextGraphicsItem]:
@@ -527,12 +546,68 @@ class LabelScene(QGraphicsScene):
         return selected
 
     def bring_to_front(self) -> None:
-        for index, item in enumerate(self.selected_items(), start=1):
+        selected = self.selected_items()
+        for index, item in enumerate(selected, start=1):
             item.setZValue(item.zValue() + 10 * index)
+        if selected:
+            self.itemsChanged.emit()
 
     def send_to_back(self) -> None:
-        for index, item in enumerate(self.selected_items(), start=1):
+        selected = self.selected_items()
+        for index, item in enumerate(selected, start=1):
             item.setZValue(item.zValue() - 10 * index)
+        if selected:
+            self.itemsChanged.emit()
+
+    def reorder_items(
+        self, order: list[GraphicsElementItem | TextGraphicsItem]
+    ) -> None:
+        """Apply ``order`` as the stacking sequence for editable items."""
+
+        total = len(order)
+        if total <= 1:
+            return
+        for position, item in enumerate(order):
+            # Highest z-value should appear first in ``order``
+            item.setZValue(float(total - position))
+        self.itemsChanged.emit()
+
+    # ------------------------------------------------------------------
+    def unique_name(
+        self,
+        proposed: str | None,
+        *,
+        element_type: str | None = None,
+        exclude: GraphicsElementItem | TextGraphicsItem | None = None,
+    ) -> str:
+        """Return a name unique among the editable items."""
+
+        base = (proposed or "").strip()
+        if not base:
+            base = self.default_name(element_type)
+
+        existing = {
+            str(item.element.get("name", "")).strip()
+            for item in self._iter_editable_items()
+            if item is not exclude
+        }
+        if base not in existing:
+            return base
+
+        suffix = 2
+        while True:
+            candidate = f"{base} ({suffix})"
+            if candidate not in existing:
+                return candidate
+            suffix += 1
+
+    def default_name(self, element_type: str | None) -> str:
+        return self._default_name_map.get(element_type or "", "Elemento")
+
+    def _prepare_element_name(
+        self, proposed: str | None, element_type: str | None
+    ) -> str:
+        return self.unique_name(proposed, element_type=element_type)
 
     def align_left(self) -> None:
         selected = self.selected_items()
