@@ -23,10 +23,12 @@ from qt_compat import (
     QFileDialog,
     QInputDialog,
     QLabel,
+    QKeySequence,
     QMainWindow,
     QMessageBox,
     QPainter,
     QPixmap,
+    QSettings,
     QStatusBar,
     Qt,
     QTableWidget,
@@ -227,15 +229,23 @@ class LabelEditorWindow(QMainWindow):
         self.setCentralWidget(self.editor)
         self.status = QStatusBar()
         self.setStatusBar(self.status)
+        self._settings = QSettings("CONIMS", "LabelEditor")
+        self._loading_state = False
+        self._in_compact_transition = False
+        self._normal_splitter_sizes: list[int] | None = None
+        self._compact_splitter_sizes: list[int] | None = None
+        self._dock_visibility_cache: dict[str, bool] = {}
 
         self.variable_panel = VariablePanel()
         self.variable_panel.changed.connect(self._on_variables_changed)
         self.property_dock = QDockWidget("Propriedades", self)
         self.property_dock.setWidget(self.editor.property_panel)
+        self.property_dock.setObjectName("propertiesDock")
         self.addDockWidget(Qt.RightDockWidgetArea, self.property_dock)
 
         self.variable_dock = QDockWidget("Variáveis", self)
         self.variable_dock.setWidget(self.variable_panel)
+        self.variable_dock.setObjectName("variablesDock")
         self.addDockWidget(Qt.RightDockWidgetArea, self.variable_dock)
 
         self.current_document = TemplateDocument(
@@ -249,6 +259,17 @@ class LabelEditorWindow(QMainWindow):
         self._build_menus()
         self._tutorial_shown = False
         QTimer.singleShot(200, self._show_tutorial)
+        self.addAction(self.compact_action)
+        self.addAction(self.fullscreen_action)
+        self.addAction(self.reset_splitter_action)
+        self.editor.splitter.splitterMoved.connect(self._on_splitter_moved)
+        self.property_dock.visibilityChanged.connect(
+            lambda visible, dock=self.property_dock: self._save_dock_state(dock, visible)
+        )
+        self.variable_dock.visibilityChanged.connect(
+            lambda visible, dock=self.variable_dock: self._save_dock_state(dock, visible)
+        )
+        QTimer.singleShot(0, self._restore_state)
 
     # ------------------------------------------------------------------
     def _build_menus(self) -> None:
@@ -325,6 +346,27 @@ class LabelEditorWindow(QMainWindow):
         compile_zpl = QAction("Gerar ZPL", self)
         compile_zpl.triggered.connect(lambda: self.generate_tspl(backend="zpl"))
         export_bar.addAction(compile_zpl)
+
+        view_menu = self.menuBar().addMenu("Exibir")
+        self.compact_action = QAction("Modo compacto", self)
+        self.compact_action.setCheckable(True)
+        self.compact_action.setShortcut(QKeySequence("Ctrl+Shift+P"))
+        self.compact_action.toggled.connect(self._on_compact_toggled)
+        view_menu.addAction(self.compact_action)
+
+        self.fullscreen_action = QAction("Alternar tela cheia", self)
+        self.fullscreen_action.setShortcut(QKeySequence("F11"))
+        self.fullscreen_action.triggered.connect(self._toggle_fullscreen)
+        view_menu.addAction(self.fullscreen_action)
+
+        self.reset_splitter_action = QAction("Restaurar divisória (50/50)", self)
+        self.reset_splitter_action.setShortcut(QKeySequence("Ctrl+0"))
+        self.reset_splitter_action.triggered.connect(self._reset_splitter)
+        view_menu.addAction(self.reset_splitter_action)
+
+        view_menu.addSeparator()
+        view_menu.addAction(self.property_dock.toggleViewAction())
+        view_menu.addAction(self.variable_dock.toggleViewAction())
 
     # ------------------------------------------------------------------
     def _load_default_template(self) -> None:
@@ -547,6 +589,180 @@ class LabelEditorWindow(QMainWindow):
 
     def _on_variables_changed(self, values: dict[str, Any]) -> None:
         self.editor.set_preview_data(values)
+
+    def _on_compact_toggled(self, checked: bool) -> None:
+        self._set_compact_mode(checked)
+
+    def _set_compact_mode(self, enabled: bool, *, restoring: bool = False) -> None:
+        if self._loading_state and not restoring:
+            return
+        if enabled:
+            if not self._normal_splitter_sizes:
+                self._normal_splitter_sizes = self.editor.splitter.sizes()
+            if not restoring and self._normal_splitter_sizes:
+                self._write_sizes("splitter/normal", self._normal_splitter_sizes)
+            self._dock_visibility_cache = {
+                "propertiesDock": self.property_dock.isVisible(),
+                "variablesDock": self.variable_dock.isVisible(),
+            }
+            self._in_compact_transition = True
+            self.property_dock.hide()
+            self.variable_dock.hide()
+            self._in_compact_transition = False
+            sizes = self._compact_splitter_sizes
+            if not sizes:
+                base = self._normal_splitter_sizes or self.editor.splitter.sizes()
+                total = sum(base)
+                if total <= 0:
+                    total = max(self.editor.width(), 2)
+                preview = max(1, int(round(total * 0.35)))
+                canvas = max(1, total - preview)
+                sizes = [canvas, preview]
+            self.editor.splitter.setSizes(sizes)
+            if not restoring:
+                self._write_sizes("splitter/compact", sizes)
+                self._settings.setValue("compact_mode", True)
+        else:
+            self._compact_splitter_sizes = self.editor.splitter.sizes()
+            cache = self._dock_visibility_cache or {
+                "propertiesDock": self._read_bool("dock/propertiesDock", True),
+                "variablesDock": self._read_bool("dock/variablesDock", True),
+            }
+            self._in_compact_transition = True
+            self.property_dock.setVisible(cache.get("propertiesDock", True))
+            self.variable_dock.setVisible(cache.get("variablesDock", True))
+            self._in_compact_transition = False
+            self._dock_visibility_cache = {}
+            sizes = self._normal_splitter_sizes
+            if sizes and sum(sizes) > 0:
+                self.editor.splitter.setSizes(sizes)
+            else:
+                total = max(self.editor.width(), 2)
+                left = total // 2
+                self.editor.splitter.setSizes([left, total - left])
+            if not restoring:
+                self._write_sizes("splitter/normal", self.editor.splitter.sizes())
+                self._settings.setValue("dock/propertiesDock", bool(cache.get("propertiesDock", True)))
+                self._settings.setValue("dock/variablesDock", bool(cache.get("variablesDock", True)))
+                self._settings.setValue("compact_mode", False)
+
+    def _reset_splitter(self) -> None:
+        sizes = self.editor.splitter.sizes()
+        total = sum(sizes)
+        if total <= 0:
+            total = max(self.editor.width(), 2)
+        left = total // 2
+        self.editor.splitter.setSizes([left, total - left])
+        self._on_splitter_moved()
+
+    def _toggle_fullscreen(self) -> None:
+        if self.isFullScreen():
+            self.showNormal()
+            sizes = (
+                self._compact_splitter_sizes
+                if self.compact_action.isChecked()
+                else self._normal_splitter_sizes
+            )
+            if sizes:
+                QTimer.singleShot(0, lambda s=list(sizes): self.editor.splitter.setSizes(s))
+        else:
+            current = self.editor.splitter.sizes()
+            if self.compact_action.isChecked():
+                self._compact_splitter_sizes = current
+            else:
+                self._normal_splitter_sizes = current
+            self.showFullScreen()
+
+    def _on_splitter_moved(self, *_args: object) -> None:
+        if self._loading_state:
+            return
+        sizes = self.editor.splitter.sizes()
+        if self.compact_action.isChecked():
+            self._compact_splitter_sizes = sizes
+            self._write_sizes("splitter/compact", sizes)
+        else:
+            self._normal_splitter_sizes = sizes
+            self._write_sizes("splitter/normal", sizes)
+
+    def _save_dock_state(self, dock: QDockWidget, visible: bool) -> None:
+        if self._loading_state or self._in_compact_transition:
+            return
+        key = f"dock/{dock.objectName() or dock.windowTitle()}"
+        self._settings.setValue(key, bool(visible))
+
+    def _write_sizes(self, key: str, sizes: list[int]) -> None:
+        if not sizes:
+            return
+        self._settings.setValue(key, ",".join(str(int(max(0, value))) for value in sizes))
+
+    def _read_sizes(self, key: str) -> list[int] | None:
+        value = self._settings.value(key)
+        if value is None:
+            return None
+        if isinstance(value, (list, tuple)):
+            raw = value
+        else:
+            raw = str(value).split(",")
+        sizes: list[int] = []
+        for part in raw:
+            try:
+                sizes.append(int(round(float(part))))
+            except (TypeError, ValueError):
+                continue
+        return sizes or None
+
+    def _read_bool(self, key: str, default: bool) -> bool:
+        value = self._settings.value(key)
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return default
+        return str(value).lower() in {"1", "true", "yes"}
+
+    def _restore_state(self) -> None:
+        self._loading_state = True
+        try:
+            self._normal_splitter_sizes = self._read_sizes("splitter/normal")
+            self._compact_splitter_sizes = self._read_sizes("splitter/compact")
+            prop_visible = self._read_bool("dock/propertiesDock", True)
+            var_visible = self._read_bool("dock/variablesDock", True)
+            self.property_dock.setVisible(prop_visible)
+            self.variable_dock.setVisible(var_visible)
+            compact_enabled = self._read_bool("compact_mode", False)
+            if compact_enabled:
+                self.compact_action.blockSignals(True)
+                self.compact_action.setChecked(True)
+                self.compact_action.blockSignals(False)
+                self._set_compact_mode(True, restoring=True)
+            else:
+                self.compact_action.setChecked(False)
+                if self._normal_splitter_sizes:
+                    self.editor.splitter.setSizes(self._normal_splitter_sizes)
+        finally:
+            self._loading_state = False
+
+    def _save_state(self) -> None:
+        if self.compact_action.isChecked():
+            self._write_sizes("splitter/compact", self.editor.splitter.sizes())
+            if self._normal_splitter_sizes:
+                self._write_sizes("splitter/normal", self._normal_splitter_sizes)
+            prop_visible = self._dock_visibility_cache.get(
+                "propertiesDock", self._read_bool("dock/propertiesDock", True)
+            )
+            var_visible = self._dock_visibility_cache.get(
+                "variablesDock", self._read_bool("dock/variablesDock", True)
+            )
+        else:
+            self._write_sizes("splitter/normal", self.editor.splitter.sizes())
+            prop_visible = self.property_dock.isVisible()
+            var_visible = self.variable_dock.isVisible()
+        self._settings.setValue("compact_mode", self.compact_action.isChecked())
+        self._settings.setValue("dock/propertiesDock", bool(prop_visible))
+        self._settings.setValue("dock/variablesDock", bool(var_visible))
+
+    def closeEvent(self, event) -> None:  # noqa: D401
+        self._save_state()
+        super().closeEvent(event)
 
     # ------------------------------------------------------------------
     def _compile(self, backend: str = "tspl") -> tuple[str, bytes]:

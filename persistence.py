@@ -31,6 +31,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "retry_automatico": False,
     "backup_horario": "17:10",
     "backup_quantidade": 7,
+    "media_type": "gap",
+    "media_gap_mm": 2.0,
+    "media_gap_offset_mm": 0.0,
+    "media_mark_mm": 2.0,
+    "media_mark_offset_mm": 0.0,
+    "media_fine_offset_mm": 0.0,
+    "media_calibrate_next": False,
 }
 
 # Cache em memória para o conteúdo de ``recentes.json``.

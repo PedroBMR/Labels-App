@@ -52,6 +52,8 @@ from printing import (
     listar_impressoras,
     listar_templates,
     montar_tspl,
+    resolve_media_settings,
+    apply_media_settings,
 )
 from qt_compat import (
     QCheckBox,
@@ -62,10 +64,12 @@ from qt_compat import (
     QDesktopServices,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFont,
     QFormLayout,
     QFrame,
     QGridLayout,
+    QGroupBox,
     QIcon,
     QInputDialog,
     QLabel,
@@ -176,6 +180,12 @@ class ConfigDialog(QDialog):
         layout = QVBoxLayout(self)
 
         self._settings = settings
+        self._gap_size = float(settings.get("media_gap_mm", 2.0) or 0.0)
+        self._gap_offset = float(settings.get("media_gap_offset_mm", 0.0) or 0.0)
+        self._mark_size = float(settings.get("media_mark_mm", self._gap_size) or 0.0)
+        self._mark_offset = float(
+            settings.get("media_mark_offset_mm", self._gap_offset) or 0.0
+        )
 
         form = QFormLayout()
         self.printer_combo = QComboBox()
@@ -199,6 +209,56 @@ class ConfigDialog(QDialog):
         form.addRow("Horário backup:", self.time_edit)
 
         layout.addLayout(form)
+
+        media_group = QGroupBox("Configurações da mídia")
+        media_form = QFormLayout(media_group)
+
+        self.media_type_combo = QComboBox()
+        self.media_type_combo.addItem("Gap (web)", "gap")
+        self.media_type_combo.addItem("Marca preta", "black_mark")
+
+        self.media_size_label = QLabel()
+        self.media_offset_label = QLabel()
+        self.media_size_spin = QDoubleSpinBox()
+        self.media_size_spin.setRange(0.0, 100.0)
+        self.media_size_spin.setDecimals(2)
+        self.media_size_spin.setSingleStep(0.1)
+
+        self.media_offset_spin = QDoubleSpinBox()
+        self.media_offset_spin.setRange(-50.0, 50.0)
+        self.media_offset_spin.setDecimals(2)
+        self.media_offset_spin.setSingleStep(0.1)
+
+        self.media_fine_offset_spin = QDoubleSpinBox()
+        self.media_fine_offset_spin.setRange(-20.0, 20.0)
+        self.media_fine_offset_spin.setDecimals(2)
+        self.media_fine_offset_spin.setSingleStep(0.05)
+        self.media_fine_offset_spin.setValue(
+            float(settings.get("media_fine_offset_mm", 0.0) or 0.0)
+        )
+
+        media_type = str(settings.get("media_type", "gap") or "gap").lower()
+        idx = self.media_type_combo.findData(
+            "black_mark" if media_type in {"black_mark", "blackmark", "mark"} else "gap"
+        )
+        if idx >= 0:
+            self.media_type_combo.setCurrentIndex(idx)
+
+        self.media_calibrate_check = QCheckBox("Calibrar na próxima impressão")
+        self.media_calibrate_check.setChecked(bool(settings.get("media_calibrate_next")))
+
+        media_form.addRow("Tipo de mídia:", self.media_type_combo)
+        media_form.addRow(self.media_size_label, self.media_size_spin)
+        media_form.addRow(self.media_offset_label, self.media_offset_spin)
+        media_form.addRow("Ajuste fino (mm):", self.media_fine_offset_spin)
+        media_form.addRow(self.media_calibrate_check)
+
+        layout.addWidget(media_group)
+
+        self.media_type_combo.currentIndexChanged.connect(self._update_media_fields)
+        self.media_size_spin.valueChanged.connect(self._store_media_values)
+        self.media_offset_spin.valueChanged.connect(self._store_media_values)
+        self._update_media_fields()
 
         botoes = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         botoes.accepted.connect(self.accept)
@@ -240,12 +300,52 @@ class ConfigDialog(QDialog):
         if idx >= 0:
             self.template_combo.setCurrentIndex(idx)
 
+    def _update_media_fields(self) -> None:
+        current = str(self.media_type_combo.currentData())
+        label_gap = current == "gap"
+        self.media_size_label.setText(
+            "Tamanho do gap (mm):" if label_gap else "Comprimento da marca (mm):"
+        )
+        self.media_offset_label.setText(
+            "Offset do gap (mm):" if label_gap else "Offset da marca (mm):"
+        )
+
+        self.media_size_spin.blockSignals(True)
+        self.media_offset_spin.blockSignals(True)
+        try:
+            if label_gap:
+                self.media_size_spin.setValue(self._gap_size)
+                self.media_offset_spin.setValue(self._gap_offset)
+            else:
+                self.media_size_spin.setValue(self._mark_size)
+                self.media_offset_spin.setValue(self._mark_offset)
+        finally:
+            self.media_size_spin.blockSignals(False)
+            self.media_offset_spin.blockSignals(False)
+
+    def _store_media_values(self) -> None:
+        current = str(self.media_type_combo.currentData())
+        if current == "gap":
+            self._gap_size = self.media_size_spin.value()
+            self._gap_offset = self.media_offset_spin.value()
+        else:
+            self._mark_size = self.media_size_spin.value()
+            self._mark_offset = self.media_offset_spin.value()
+
     def obter_config(self) -> dict[str, Any]:
+        self._store_media_values()
         return {
             "ultima_impressora": self.printer_combo.currentText().strip(),
             "template": self.template_combo.currentText(),
             "retry_automatico": self.retry_check.isChecked(),
             "backup_horario": self.time_edit.time().toString("HH:mm"),
+            "media_type": str(self.media_type_combo.currentData()),
+            "media_gap_mm": float(self._gap_size),
+            "media_gap_offset_mm": float(self._gap_offset),
+            "media_mark_mm": float(self._mark_size),
+            "media_mark_offset_mm": float(self._mark_offset),
+            "media_fine_offset_mm": float(self.media_fine_offset_spin.value()),
+            "media_calibrate_next": self.media_calibrate_check.isChecked(),
         }
 
 
@@ -777,10 +877,34 @@ class EtiquetaApp(QWidget):
 
     def _aplicar_template(self, nome: str) -> None:
         try:
-            self._template = aplicar_template(nome)
-            self._impressao_template = nome  # lembra o modelo atual
+            template = aplicar_template(nome)
         except ValueError as e:
             QMessageBox.critical(self, "Erro", str(e))
+            return
+        base_settings = self._media_settings(consume=False)
+        self._template = apply_media_settings(template, base_settings)
+        self._impressao_template = nome  # lembra o modelo atual
+
+    def _media_settings(self, *, consume: bool) -> dict[str, Any]:
+        settings = resolve_media_settings(self.config)
+        calibrate = bool(settings.get("calibrate_next_print"))
+        if consume:
+            if calibrate:
+                self.config["media_calibrate_next"] = False
+                salvar_config(self.config)
+        else:
+            settings["calibrate_next_print"] = False
+        return settings
+
+    def _refresh_template_media(self) -> None:
+        if not self._impressao_template:
+            return
+        try:
+            template = aplicar_template(self._impressao_template)
+        except ValueError:
+            return
+        base_settings = self._media_settings(consume=False)
+        self._template = apply_media_settings(template, base_settings)
 
     def _toggle_template(self) -> None:
         atual = self.template_input.currentText()
@@ -838,6 +962,7 @@ class EtiquetaApp(QWidget):
                 self.template_input.setCurrentIndex(idx)
             self.retry_checkbox.setChecked(bool(self.config.get("retry_automatico")))
             self._agendar_backup_diario()
+            self._refresh_template_media()
             self._verificar_impressora()
 
     def _verificar_impressora(self) -> None:
@@ -927,7 +1052,8 @@ class EtiquetaApp(QWidget):
         if self._template is None:
             QMessageBox.warning(self, "Modelo", "Selecione um modelo de etiqueta.")
             return
-        tspl = montar_tspl(self._template, dados)
+        media_settings = self._media_settings(consume=True)
+        tspl = montar_tspl(self._template, dados, media_settings)
         logger.debug("TSPL gerado:\n%s", tspl)
 
         # guarda o contexto desta impressão (inclui template para salvar depois)
@@ -1056,7 +1182,7 @@ class EtiquetaApp(QWidget):
         )
         if tpl_name:
             try:
-                self._template = aplicar_template(tpl_name)
+                self._aplicar_template(tpl_name)
             except Exception:
                 pass
 
@@ -1066,7 +1192,8 @@ class EtiquetaApp(QWidget):
             return
         dados_tspl = dict(dados)
         dados_tspl["saida"] = str(dados_tspl.get("saida", ""))
-        tspl = montar_tspl(self._template, dados_tspl)
+        media_settings = self._media_settings(consume=True)
+        tspl = montar_tspl(self._template, dados_tspl, media_settings)
         ok, erro = imprimir_etiqueta(
             tspl,
             repetir_em_falha=self.retry_checkbox.isChecked(),
@@ -1107,7 +1234,7 @@ class EtiquetaApp(QWidget):
             tpl_name = self.ultima_etiqueta.get("template", "")
             if tpl_name:
                 try:
-                    self._template = aplicar_template(tpl_name)
+                    self._aplicar_template(tpl_name)
                 except Exception:
                     pass
 
@@ -1125,7 +1252,8 @@ class EtiquetaApp(QWidget):
             if self._template is None:
                 QMessageBox.warning(self, "Modelo", "Selecione um modelo de etiqueta.")
                 return
-            tspl = montar_tspl(self._template, dados_tspl)
+            media_settings = self._media_settings(consume=True)
+            tspl = montar_tspl(self._template, dados_tspl, media_settings)
             ok, erro = imprimir_etiqueta(
                 tspl,
                 repetir_em_falha=self.retry_checkbox.isChecked(),
@@ -1202,7 +1330,7 @@ class EtiquetaApp(QWidget):
             tpl_name = self.ultima_etiqueta.get("template", "")
             if tpl_name:
                 try:
-                    self._template = aplicar_template(tpl_name)
+                    self._aplicar_template(tpl_name)
                 except Exception:
                     pass
 
@@ -1220,7 +1348,8 @@ class EtiquetaApp(QWidget):
             if self._template is None:
                 QMessageBox.warning(self, "Modelo", "Selecione um modelo de etiqueta.")
                 return
-            tspl = montar_tspl(self._template, dados_tspl)
+            media_settings = self._media_settings(consume=True)
+            tspl = montar_tspl(self._template, dados_tspl, media_settings)
             ok, erro = imprimir_etiqueta(
                 tspl,
                 repetir_em_falha=self.retry_checkbox.isChecked(),
