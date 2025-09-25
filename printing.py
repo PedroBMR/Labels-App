@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import base64
+import csv
 import importlib
 import io
 import json
 import logging
+import re
 import socket
 import time
 import unicodedata
@@ -218,6 +220,18 @@ def _default_logo() -> str | None:
         return recurso_caminho("logo.png")
     except Exception:
         return None
+
+
+_NON_WORD_RE = re.compile(r"[^0-9a-zA-Z_]+")
+
+
+def _normalise_header(name: str) -> str:
+    value = unicodedata.normalize("NFKD", name or "")
+    value = "".join(ch for ch in value if not unicodedata.combining(ch))
+    value = value.replace("-", "_").replace(" ", "_")
+    value = _NON_WORD_RE.sub("_", value)
+    value = value.strip("_")
+    return value.lower()
 
 
 def combine_calibrations(*calibrations: Calibration | None) -> Calibration:
@@ -537,14 +551,49 @@ def aplicar_template(nome: str) -> Template:
     return template_manager.get_template(nome)
 
 
+def load_csv_items(
+    path: str | Path,
+    *,
+    delimiter: str = ",",
+    encoding: str = "utf-8",
+) -> list[dict[str, Any]]:
+    """Return a list of row dictionaries parsed from ``path``."""
+
+    arquivo = Path(path)
+    if not arquivo.exists():
+        raise FileNotFoundError(str(path))
+
+    with arquivo.open("r", encoding=encoding, newline="") as handle:
+        reader = csv.DictReader(handle, delimiter=delimiter)
+        if reader.fieldnames is None:
+            return []
+
+        items: list[dict[str, Any]] = []
+        for row in reader:
+            entry: dict[str, Any] = {}
+            for raw_key, raw_value in row.items():
+                if raw_key is None:
+                    continue
+                key = str(raw_key).strip()
+                if not key:
+                    continue
+                value = raw_value.strip() if isinstance(raw_value, str) else raw_value
+                entry[key] = value
+                normalised = _normalise_header(key)
+                if normalised and normalised not in entry:
+                    entry[normalised] = value
+                upper = normalised.upper()
+                if upper and upper not in entry:
+                    entry[upper] = value
+            if entry:
+                items.append(entry)
+        return items
+
+
 def build_label_series(
     dados: Mapping[str, Any],
     template: Template | TemplateDocument | None = None,
 ) -> list[dict[str, Any]]:
-    volumes = max(1, int(dados.get("volumes", 1)))
-    inicio = int(dados.get("inicio_indice", 1))
-    total = int(dados.get("total_exibicao") or volumes)
-
     defaults = dict(DEFAULT_VARIABLES)
     if isinstance(template, TemplateDocument):
         defaults.update(template.defaults(scope="item"))
@@ -552,12 +601,48 @@ def build_label_series(
         defaults.update(template.document.defaults(scope="item"))
 
     base = dict(defaults)
-    base.update({k: dados.get(k, base.get(k)) for k in defaults})
-    base.update({k: dados.get(k) for k in dados if k not in base})
+    for key in defaults:
+        if key in dados:
+            base[key] = dados.get(key, base.get(key))
+    for key, value in dados.items():
+        if key not in base and key != "items":
+            base[key] = value
 
     logo = dados.get("logo") or _default_logo()
     if logo:
         base["logo"] = logo
+
+    items_override = dados.get("items")
+    if isinstance(items_override, list) and items_override:
+        inicio = int(dados.get("inicio_indice", 1))
+        try:
+            total_override = int(dados.get("total_exibicao"))
+        except (TypeError, ValueError):
+            total_override = len(items_override)
+        total = total_override if total_override > 0 else len(items_override)
+        series: list[dict[str, Any]] = []
+        for offset, item in enumerate(items_override):
+            ctx = dict(base)
+            mapping: Mapping[str, Any]
+            if isinstance(item, Mapping):
+                mapping = item
+            elif hasattr(item, "items"):
+                mapping = dict(item.items())  # type: ignore[assignment]
+            else:
+                mapping = {"value": item}
+            ctx.update(mapping)
+            numero = inicio + offset
+            ctx.setdefault("numero", numero)
+            ctx.setdefault("indice", numero)
+            ctx.setdefault("volume", offset + 1)
+            ctx.setdefault("total", total)
+            ctx.setdefault("total_exibicao", total)
+            series.append(ctx)
+        return series
+
+    volumes = max(1, int(dados.get("volumes", 1)))
+    inicio = int(dados.get("inicio_indice", 1))
+    total = int(dados.get("total_exibicao") or volumes)
 
     series: list[dict[str, Any]] = []
     for offset in range(volumes):
@@ -576,15 +661,27 @@ def build_label_series(
     return series
 
 
-def _prepare_preview_contexts(
-    template: Template,
+def prepare_variable_contexts(
+    template: Template | TemplateDocument,
     dados: Mapping[str, Any],
 ) -> list[SafeDict]:
-    base = template.document.defaults(scope="template")
-    base.update({k: dados.get(k, base.get(k)) for k in dados})
+    if isinstance(template, Template):
+        document = template.document
+    elif isinstance(template, TemplateDocument):
+        document = template
+    else:  # pragma: no cover - defensive
+        raise TypeError("template deve ser Template ou TemplateDocument")
+
+    base = document.defaults(scope="template")
+    for key, value in dados.items():
+        if key == "items":
+            continue
+        base[key] = value
+
     items = build_label_series(dados, template)
     if not items:
         return [SafeDict(dict(base))]
+
     contexts: list[SafeDict] = []
     for item in items:
         ctx = SafeDict(dict(base))
@@ -602,7 +699,7 @@ def render_label_images(
     working = template
     if media_settings:
         working = apply_media_settings(template, media_settings)
-    contexts = _prepare_preview_contexts(working, dados)
+    contexts = prepare_variable_contexts(working, dados)
     renderer = PreviewRenderer(
         working.document.page,
         calibration=combine_calibrations(working.calibration),
