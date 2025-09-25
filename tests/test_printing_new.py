@@ -11,7 +11,9 @@ from printing import (
     apply_calibration_adjustment,
     build_calibration_template,
     build_label_series,
+    compile_model_silent,
     compile_template,
+    prepare_quick_job,
 )
 
 
@@ -106,3 +108,17 @@ def test_compile_template_explicit_backend():
     )
     assert backend_name == "tspl"
     assert "Joao" in commands
+
+
+def test_prepare_quick_job_provides_defaults():
+    template, variables = prepare_quick_job("100x30")
+    assert template.name
+    assert variables["copies"] == 1
+    assert isinstance(variables.get("items"), list)
+    assert variables["items"]
+
+
+def test_compile_model_silent_returns_bytes():
+    payload = compile_model_silent("100x30")
+    assert isinstance(payload, bytes)
+    assert b"PRINT" in payload.upper()

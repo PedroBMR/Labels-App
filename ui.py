@@ -30,6 +30,7 @@ from _version import __version__
 from editor.window import LabelEditorWindow
 from log import LOG_FILE, logger, register_status_callback
 from model.template import TemplateDocument
+from quick_print import QuickPrintDialog
 from persistence import (
     atualizar_recentes,
     carregar_config,
@@ -77,10 +78,12 @@ from qt_compat import (
     QPushButton,
     QRegularExpression,
     QRegularExpressionValidator,
+    QShortcut,
     QSizePolicy,
     QSpacerItem,
     QSpinBox,
     Qt,
+    QKeySequence,
     QThread,
     QTime,
     QTimeEdit,
@@ -295,6 +298,8 @@ class EtiquetaApp(QWidget):
         self._template: Template | None = None
         self._tem_impressora: bool | None = None
         self._editor_window: LabelEditorWindow | None = None
+        self._quick_print_dialog: QuickPrintDialog | None = None
+        self._quick_shortcut: QShortcut | None = None
 
         # Estilo base precisa existir antes de sinais dispararem
         self._input_style_base = (
@@ -550,6 +555,13 @@ class EtiquetaApp(QWidget):
         ac_config.setShortcut("Ctrl+,")
         ac_verificar = menu.addAction("Testar conexão", self._verificar_impressora)
         ac_verificar.setShortcut("F5")
+        ac_quick = menu.addAction(
+            "Impressão Rápida (F6)", self._abrir_impressao_rapida
+        )
+        ac_quick.setShortcut("F6")
+
+        self._quick_shortcut = QShortcut(QKeySequence("F6"), self)
+        self._quick_shortcut.activated.connect(self._abrir_impressao_rapida)
 
         for b in (
             self.imprimir_btn,
@@ -787,6 +799,22 @@ class EtiquetaApp(QWidget):
 
     def _editor_window_closed(self, _obj: QObject | None = None) -> None:
         self._editor_window = None
+
+    def _abrir_impressao_rapida(self) -> None:
+        if self._quick_print_dialog is None:
+            self._quick_print_dialog = QuickPrintDialog(self)
+            self._quick_print_dialog.finished.connect(self._quick_print_closed)
+            ultima = self.config.get("ultima_impressora")
+            if ultima:
+                self._quick_print_dialog.set_printer_hint(str(ultima))
+        self._quick_print_dialog.show()
+        self._quick_print_dialog.raise_()
+        self._quick_print_dialog.activateWindow()
+
+    def _quick_print_closed(self, _result: int) -> None:
+        if self._quick_print_dialog is not None:
+            self._quick_print_dialog.deleteLater()
+            self._quick_print_dialog = None
 
     # =========================
     # Persistência e ações
