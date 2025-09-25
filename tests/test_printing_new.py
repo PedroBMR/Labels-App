@@ -9,10 +9,12 @@ from printing import (
     PrinterConfig,
     Template,
     apply_calibration_adjustment,
+    apply_media_settings,
     build_calibration_template,
     build_label_series,
     compile_model_silent,
     compile_template,
+    resolve_media_settings,
     prepare_quick_job,
 )
 
@@ -124,3 +126,52 @@ def test_compile_model_silent_returns_bytes():
     payload = compile_model_silent("100x30")
     assert isinstance(payload, bytes)
     assert b"PRINT" in payload.upper()
+
+
+def test_resolve_media_settings_includes_speed_and_darkness():
+    settings = resolve_media_settings(
+        {
+            "media_type": "black_mark",
+            "media_gap_mm": 2.5,
+            "media_gap_offset_mm": 0.4,
+            "media_mark_mm": 7.2,
+            "media_mark_offset_mm": 1.1,
+            "media_fine_offset_mm": 0.3,
+            "media_calibrate_next": True,
+            "media_speed": 6,
+            "media_darkness": 13,
+        }
+    )
+
+    assert settings["media_type"] == "black_mark"
+    assert settings["speed"] == 6
+    assert settings["density"] == 13
+    assert settings["darkness"] == 13
+    assert settings["print_rate"] == "6"
+    assert settings["calibrate_next_print"] is True
+
+
+def test_apply_media_settings_updates_speed_and_darkness():
+    template = _simple_template()
+    updated = apply_media_settings(
+        template,
+        {
+            "media_type": "gap",
+            "gap_mm": 2.0,
+            "gap_offset_mm": 0.1,
+            "mark_mm": 3.0,
+            "mark_offset_mm": 0.2,
+            "speed": 5,
+            "density": 11,
+            "print_rate": "7",
+            "calibrate_next_print": True,
+        },
+    )
+
+    page = updated.document.page
+    assert page["speed"] == 5
+    assert page["density"] == 11
+    assert page["darkness"] == 11
+    assert page["print_rate"] == "7"
+    assert page["print_speed"] == "7"
+    assert page["calibrate_next_print"] is True

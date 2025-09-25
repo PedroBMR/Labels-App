@@ -80,8 +80,19 @@ class TSPLBackend(Backend):
     def _header(self) -> list[str]:
         width = float(self.template.get("width_mm", 0))
         height = float(self.template.get("height_mm", 0))
-        speed = self.template.get("speed")
-        density = self.template.get("density")
+        def _int_setting(value: Any) -> int | None:
+            try:
+                if value in (None, ""):
+                    return None
+                number = int(float(value))
+            except (TypeError, ValueError):
+                return None
+            return number
+
+        speed = _int_setting(self.template.get("speed"))
+        density = _int_setting(
+            self.template.get("density", self.template.get("darkness"))
+        )
         direction = int(self.template.get("direction", 1))
         reference_x = int(self.template.get("reference_x", 0))
         reference_y = int(self.template.get("reference_y", 0))
@@ -99,8 +110,8 @@ class TSPLBackend(Backend):
         params = TSPLMediaParams(
             width_mm=width,
             height_mm=height,
-            speed=int(speed) if speed is not None else None,
-            density=int(density) if density is not None else None,
+            speed=speed,
+            density=density,
             direction=direction,
             reference_x=reference_x,
             reference_y=reference_y,
