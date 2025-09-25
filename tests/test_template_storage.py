@@ -19,6 +19,21 @@ def _patch_assets(monkeypatch, tmp_path: Path) -> None:
     )
 
 
+def test_template_document_auto_discovers_placeholders():
+    documento = TemplateDocument(
+        name="Auto",
+        page={"backend": "tspl", "width_mm": 60, "height_mm": 30},
+        elements=[
+            {"type": "text", "content": "{NOME} #{codigo:04d}"},
+            {"type": "text", "content": "Total: {total}"},
+        ],
+        variables={},
+    )
+    placeholders = documento.ensure_placeholder_variables()
+    assert {"NOME", "codigo", "total"} <= placeholders
+    assert {"NOME", "codigo", "total"}.issubset(documento.variables.keys())
+
+
 def test_template_round_trip(monkeypatch, tmp_path):
     _patch_assets(monkeypatch, tmp_path)
     documento = TemplateDocument(

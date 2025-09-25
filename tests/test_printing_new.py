@@ -14,8 +14,10 @@ from printing import (
     build_label_series,
     compile_model_silent,
     compile_template,
-    resolve_media_settings,
+    load_csv_items,
     prepare_quick_job,
+    prepare_variable_contexts,
+    resolve_media_settings,
 )
 
 
@@ -59,6 +61,68 @@ def test_build_label_series_generates_sequence():
     assert [ctx["numero"] for ctx in series] == [5, 6, 7]
     assert all(ctx["total"] == 10 for ctx in series)
     assert series[0]["logo"]
+
+
+def _batch_template() -> Template:
+    document = TemplateDocument(
+        name="batch",
+        page={"backend": "tspl", "width_mm": 40, "height_mm": 30, "dpi": 203},
+        elements=[
+            {
+                "type": "text",
+                "x_mm": 2,
+                "y_mm": 2,
+                "content": "{NOME} - {CODIGO}",
+            }
+        ],
+        variables={
+            "items": TemplateVariable(name="items", scope="template", required=True),
+            "NOME": TemplateVariable(name="NOME", default=""),
+            "CODIGO": TemplateVariable(name="CODIGO", default=""),
+        },
+    )
+    return Template(document)
+
+
+def test_build_label_series_with_items_override():
+    template = _batch_template()
+    dados = {
+        "items": [
+            {"NOME": "Ana", "CODIGO": "001"},
+            {"NOME": "Bia", "CODIGO": "002"},
+        ],
+        "inicio_indice": 2,
+        "total_exibicao": 5,
+    }
+    series = build_label_series(dados, template)
+    assert [item["NOME"] for item in series] == ["Ana", "Bia"]
+    assert [item["numero"] for item in series] == [2, 3]
+    assert all(item["total"] == 5 for item in series)
+
+
+def test_prepare_variable_contexts_combines_template_and_items():
+    template = _batch_template()
+    dados = {
+        "titulo": "Lote Especial",
+        "items": [{"NOME": "Ana", "CODIGO": "001"}],
+    }
+    contexts = prepare_variable_contexts(template, dados)
+    assert len(contexts) == 1
+    assert contexts[0]["titulo"] == "Lote Especial"
+    assert contexts[0]["NOME"] == "Ana"
+    assert contexts[0]["CODIGO"] == "001"
+
+
+def test_load_csv_items_normalises_headers(tmp_path):
+    csv_path = tmp_path / "dados.csv"
+    csv_path.write_text("Nome;Código\n Ana ; 001 \n", encoding="utf-8")
+    items = load_csv_items(csv_path, delimiter=";")
+    assert len(items) == 1
+    entry = items[0]
+    assert entry["Nome"] == "Ana"
+    assert entry["nome"] == "Ana"
+    assert entry["NOME"] == "Ana"
+    assert entry["codigo"] == "001"
 
 
 def test_printer_print_template_uses_transport():

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from editor.widget import LabelEditorWidget
-from model.template import TemplateDocument
+from model.template import TemplateDocument, TemplateVariable
 from printing import (
     Template,
     compile_template,
@@ -80,6 +80,7 @@ class LabelEditorWindow(QMainWindow):
         self.variable_dock.setWidget(self.variable_panel)
         self.variable_dock.setObjectName("variablesDock")
         self.addDockWidget(Qt.RightDockWidgetArea, self.variable_dock)
+        self.editor.scene.itemsChanged.connect(self._sync_variable_definitions)
 
         self.history_dock = QDockWidget("Histórico", self)
         self.history_dock.setWidget(self.editor.history_panel)
@@ -232,6 +233,7 @@ class LabelEditorWindow(QMainWindow):
 
     def load_document(self, document: TemplateDocument, path: Path | None) -> None:
         self.current_document = document.copy()
+        self.current_document.ensure_placeholder_variables()
         self.current_path = path
         self.editor.load_document(self.current_document)
         defaults = self.current_document.defaults(scope="template")
@@ -397,6 +399,7 @@ class LabelEditorWindow(QMainWindow):
             name,
             self.current_document.variables,
         )
+        template.ensure_placeholder_variables()
         self.current_document = template
         is_same_file = (
             self.current_path is not None and Path(self.current_path) == target
@@ -517,6 +520,29 @@ class LabelEditorWindow(QMainWindow):
 
     def _on_variables_changed(self, values: dict[str, Any]) -> None:
         self.editor.set_preview_data(values)
+
+    def _sync_variable_definitions(self) -> None:
+        if self._loading_state:
+            return
+
+        snapshot = self.editor.to_document(
+            self.current_document.name or "Preview",
+            self.current_document.variables,
+        )
+        placeholders = snapshot.placeholder_names()
+        added = False
+        for name in placeholders:
+            if name not in self.current_document.variables:
+                self.current_document.variables[name] = TemplateVariable(name=name)
+                added = True
+        if not added:
+            return
+
+        values = self.variable_panel.values()
+        defaults = self.current_document.defaults(scope="template")
+        defaults.update(self.current_document.defaults(scope="item"))
+        defaults.update(values)
+        self.variable_panel.set_variables(self.current_document.variables, defaults)
 
     def _on_compact_toggled(self, checked: bool) -> None:
         self._set_compact_mode(checked)

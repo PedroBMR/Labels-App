@@ -7,7 +7,8 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar, Mapping
+from string import Formatter
+from typing import Any, ClassVar, Iterable, Mapping
 
 __all__ = [
     "CURRENT_TEMPLATE_VERSION",
@@ -91,6 +92,41 @@ class TemplateVariable:
 
 
 _slug_regex = re.compile(r"[^a-z0-9]+")
+
+
+def _iter_format_fields(value: str) -> Iterable[str]:
+    """Yield placeholder field names found in ``value``."""
+
+    formatter = Formatter()
+    try:
+        iterator = formatter.parse(value)
+    except ValueError:  # pragma: no cover - defensive against bad formats
+        return
+
+    for _literal, field_name, _format_spec, _conversion in iterator:
+        if not field_name:
+            continue
+        cleaned = field_name.split("!", 1)[0]
+        cleaned = cleaned.split(":", 1)[0]
+        cleaned = cleaned.split(".", 1)[0]
+        cleaned = cleaned.split("[", 1)[0]
+        cleaned = cleaned.strip()
+        if cleaned:
+            yield cleaned
+
+
+def _collect_placeholders(data: Any) -> set[str]:
+    names: set[str] = set()
+    if isinstance(data, Mapping):
+        for value in data.values():
+            names.update(_collect_placeholders(value))
+    elif isinstance(data, (list, tuple)):
+        for entry in data:
+            names.update(_collect_placeholders(entry))
+    elif isinstance(data, str):
+        for field in _iter_format_fields(data):
+            names.add(field)
+    return names
 
 
 def slugify(value: str) -> str:
@@ -201,6 +237,22 @@ class TemplateDocument:
             if var.is_required() and (scope is None or var.scope == scope):
                 names.add(name)
         return names
+
+    def placeholder_names(self) -> set[str]:
+        """Return a set with all placeholder names referenced by the template."""
+
+        names = _collect_placeholders(self.elements)
+        names.update(_collect_placeholders(self.page))
+        return names
+
+    def ensure_placeholder_variables(self, *, default_scope: str = "item") -> set[str]:
+        """Ensure placeholders without metadata become template variables."""
+
+        placeholders = self.placeholder_names()
+        for name in placeholders:
+            if name not in self.variables:
+                self.variables[name] = TemplateVariable(name=name, scope=default_scope)
+        return placeholders
 
     def ensure_valid(self, variables: Mapping[str, Any]) -> None:
         missing_template = [
