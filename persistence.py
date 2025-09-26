@@ -18,12 +18,13 @@ import csv
 import json
 import os
 import shutil
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
 from model.template import TemplateDocument
 from utils import recurso_caminho
+from utils.fs import canonical_path as canonical_file_path
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "ultima_impressora": "",
@@ -350,8 +351,13 @@ def salvar_template_documento(
     else:
         arquivo = f"{documento.slug}.json"
     caminho = diretorio / arquivo
-    documento.dump(caminho)
-    return str(caminho)
+    canonical = canonical_file_path(caminho)
+    documento.dump(
+        canonical,
+        canonical_path=canonical,
+        updated_at=datetime.now(UTC),
+    )
+    return str(canonical)
 
 
 def carregar_template_documento(nome_arquivo: str) -> TemplateDocument:
@@ -368,8 +374,13 @@ def exportar_template_documento(documento: TemplateDocument, destino: str) -> st
     if caminho.is_dir() or destino.endswith(os.sep):
         caminho = caminho / f"{documento.slug}.json"
     caminho.parent.mkdir(parents=True, exist_ok=True)
-    documento.dump(caminho)
-    return str(caminho)
+    canonical = canonical_file_path(caminho)
+    documento.dump(
+        canonical,
+        canonical_path=canonical,
+        updated_at=datetime.now(UTC),
+    )
+    return str(canonical)
 
 
 def importar_template_documento(caminho: str) -> TemplateDocument:

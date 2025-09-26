@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from string import Formatter
-from typing import Any, ClassVar, Iterable, Mapping
+from datetime import UTC, datetime
+from typing import Any, ClassVar, Iterable, Mapping, Sequence
+
+from db import store as db_store
+from utils.fs import canonical_path as canonical_file_path
+from utils.fs import file_hash
 
 __all__ = [
     "CURRENT_TEMPLATE_VERSION",
@@ -328,11 +334,114 @@ class TemplateDocument:
 
     @classmethod
     def from_file(cls, path: str | Path) -> "TemplateDocument":
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls.from_dict(data)
+        path_obj = Path(path)
+        raw = path_obj.read_text(encoding="utf-8")
+        data = json.loads(raw)
+        document = cls.from_dict(data)
+        canonical = canonical_file_path(path_obj)
+        try:
+            updated_at = datetime.fromtimestamp(
+                canonical.stat().st_mtime, tz=UTC
+            )
+        except OSError:
+            updated_at = None
+        document._record_index(
+            canonical,
+            payload=raw,
+            updated_at=updated_at,
+        )
+        return document
 
-    def dump(self, path: str | Path, *, indent: int | None = 2) -> None:
-        Path(path).write_text(self.to_json(indent=indent), encoding="utf-8")
+    def dump(
+        self,
+        path: str | Path,
+        *,
+        indent: int | None = 2,
+        canonical_path: str | Path | None = None,
+        updated_at: datetime | None = None,
+    ) -> None:
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        payload = self.to_json(indent=indent)
+        target.write_text(payload, encoding="utf-8")
+        canonical = canonical_file_path(canonical_path or target)
+        self._record_index(
+            canonical,
+            payload=payload,
+            updated_at=updated_at,
+        )
+
+    # ------------------------------------------------------------------
+    def _record_index(
+        self,
+        canonical_path: Path,
+        *,
+        payload: str,
+        updated_at: datetime | None = None,
+    ) -> None:
+        logger = logging.getLogger("app")
+        try:
+            digest = file_hash(canonical_path)
+        except OSError:
+            logger.exception(
+                "Falha ao calcular hash do template: %s", canonical_path
+            )
+            return
+
+        width_mm, height_mm, dpi, tags = self._index_metadata()
+        timestamp = updated_at or datetime.now(UTC)
+        try:
+            db_store.upsert_template(
+                name=self.name,
+                data=payload,
+                path=canonical_path,
+                file_hash=digest,
+                width_mm=width_mm,
+                height_mm=height_mm,
+                dpi=dpi,
+                tags=tags,
+                updated_at=timestamp,
+            )
+        except Exception:  # pragma: no cover - defensive logging
+            logger.exception(
+                "Falha ao atualizar índice de templates: %s", self.name
+            )
+
+    def _index_metadata(self) -> tuple[float | None, float | None, int | None, list[str]]:
+        def _to_float(value: Any) -> float | None:
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, str):
+                try:
+                    return float(value)
+                except ValueError:
+                    return None
+            return None
+
+        def _to_int(value: Any) -> int | None:
+            if isinstance(value, int):
+                return value
+            if isinstance(value, float):
+                return int(value)
+            if isinstance(value, str):
+                try:
+                    return int(float(value))
+                except ValueError:
+                    return None
+            return None
+
+        width_mm = _to_float(self.page.get("width_mm"))
+        height_mm = _to_float(self.page.get("height_mm"))
+        dpi = _to_int(self.page.get("dpi"))
+
+        tags_data = self.metadata.get("tags")
+        tags: list[str] = []
+        if isinstance(tags_data, str):
+            tags = [tag.strip() for tag in tags_data.split(",") if tag.strip()]
+        elif isinstance(tags_data, Sequence):
+            tags = [str(tag).strip() for tag in tags_data if str(tag).strip()]
+
+        return width_mm, height_mm, dpi, tags
 
     @classmethod
     def from_legacy(

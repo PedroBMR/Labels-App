@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from model.template import TemplateDocument, slugify
 from qt_compat import QObject, pyqtSignal
 from utils import recurso_caminho
+from utils.fs import canonical_path as canonical_file_path
 
 __all__ = ["TemplateStore", "template_store"]
 
@@ -54,13 +56,18 @@ class TemplateStore(QObject):
         )
         if target.exists() and not overwrite:
             raise FileExistsError(str(target))
-        document.dump(target)
+        canonical = canonical_file_path(target)
+        document.dump(
+            canonical,
+            canonical_path=canonical,
+            updated_at=datetime.now(UTC),
+        )
         # Reload templates so consumers see the freshly saved model.
         from printing import template_manager  # Local import to avoid cycles
 
         template_manager.reload()
-        self.templateSaved.emit(str(target))
-        return target
+        self.templateSaved.emit(str(canonical))
+        return canonical
 
 
 template_store = TemplateStore()
