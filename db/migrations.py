@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def apply_migrations(conn: sqlite3.Connection) -> None:
@@ -34,6 +34,17 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
 
     def ensure_table(sql: str) -> None:
         conn.execute(sql)
+
+    def table_exists(name: str) -> bool:
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (name,),
+        )
+        return cursor.fetchone() is not None
+
+    def table_columns(name: str) -> set[str]:
+        cursor = conn.execute(f"PRAGMA table_info({name})")
+        return {row[1] for row in cursor.fetchall()}
 
     def has_column(table: str, column: str) -> bool:
         cursor = conn.execute(f"PRAGMA table_info({table})")
@@ -90,13 +101,32 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             """
         )
 
+        if table_exists("raster_cache"):
+            columns = table_columns("raster_cache")
+            legacy_markers = {"width_px", "height_px", "path"}
+            expected_columns = {
+                "asset_id",
+                "width_dots",
+                "height_dots",
+                "dpi_x",
+                "dpi_y",
+                "dither",
+                "gamma",
+                "sharpen",
+                "invert",
+                "threshold",
+                "cache_path",
+            }
+            if legacy_markers & columns or not expected_columns <= columns:
+                conn.execute("DROP TABLE raster_cache")
+
         ensure_table(
             """
             CREATE TABLE IF NOT EXISTS raster_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 asset_id INTEGER NOT NULL,
-                width_px INTEGER NOT NULL,
-                height_px INTEGER NOT NULL,
+                width_dots INTEGER NOT NULL,
+                height_dots INTEGER NOT NULL,
                 dpi_x INTEGER NOT NULL,
                 dpi_y INTEGER NOT NULL,
                 dither TEXT NOT NULL,
@@ -104,12 +134,13 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
                 sharpen INTEGER NOT NULL,
                 invert INTEGER NOT NULL,
                 threshold INTEGER NOT NULL,
-                path TEXT NOT NULL,
+                cache_path TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE,
                 UNIQUE(
                     asset_id,
-                    width_px,
-                    height_px,
+                    width_dots,
+                    height_dots,
                     dpi_x,
                     dpi_y,
                     dither,
