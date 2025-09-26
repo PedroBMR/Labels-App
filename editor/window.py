@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from editor.arrange_dialog import ArrangeGridDialog
 from editor.widget import LabelEditorWidget
 from model.template import TemplateDocument, TemplateVariable
 from printing import (
@@ -17,10 +18,12 @@ from printing import (
 from qt_compat import (
     QAction,
     QDockWidget,
+    QDialog,
     QFileDialog,
     QInputDialog,
     QKeySequence,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QSettings,
     QStatusBar,
@@ -28,6 +31,7 @@ from qt_compat import (
     QTimer,
     QToolBar,
     QWidget,
+    QCursor,
 )
 from ui.tour import GuidedTourDialog, TourStep
 from .variables import VariablePanel
@@ -178,12 +182,9 @@ class LabelEditorWindow(QMainWindow):
         align_right = QAction("Alinhar direita", self)
         align_right.triggered.connect(self.editor.scene.align_right)
         edit_bar.addAction(align_right)
-        dist_h = QAction("Distribuir H", self)
-        dist_h.triggered.connect(self.editor.scene.distribute_horizontally)
-        edit_bar.addAction(dist_h)
-        dist_v = QAction("Distribuir V", self)
-        dist_v.triggered.connect(self.editor.scene.distribute_vertically)
-        edit_bar.addAction(dist_v)
+        arrange_action = QAction("Organizar", self)
+        arrange_action.triggered.connect(self._show_arrange_options)
+        edit_bar.addAction(arrange_action)
 
         export_bar = QToolBar("Exportar", self)
         self.addToolBar(export_bar)
@@ -219,6 +220,49 @@ class LabelEditorWindow(QMainWindow):
 
         help_menu = self.menuBar().addMenu("Ajuda")
         help_menu.addAction(self._tour_action)
+
+    # ------------------------------------------------------------------
+    def _show_arrange_options(self) -> None:
+        selected = self.editor.scene.selected_items()
+        if not selected:
+            QMessageBox.information(
+                self,
+                "Organizar",
+                "Selecione ao menos um item para organizar.",
+            )
+            return
+        menu = QMenu(self)
+        horizontal_action = menu.addAction("Horizontal")
+        vertical_action = menu.addAction("Vertical")
+        grid_action = menu.addAction("Grade…")
+        chosen = menu.exec_(QCursor.pos())
+        if chosen is horizontal_action:
+            self.editor.scene.distribute_horizontally()
+        elif chosen is vertical_action:
+            self.editor.scene.distribute_vertically()
+        elif chosen is grid_action:
+            self._organize_in_grid(len(selected))
+
+    def _organize_in_grid(self, selection_count: int) -> None:
+        dialog = ArrangeGridDialog(self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        columns, rows = dialog.grid_size()
+        if columns <= 0 or rows <= 0:
+            QMessageBox.warning(
+                self,
+                "Organizar",
+                "As dimensões da grade devem ser maiores que zero.",
+            )
+            return
+        if columns * rows < selection_count:
+            QMessageBox.warning(
+                self,
+                "Organizar",
+                "A grade informada não comporta todos os itens selecionados.",
+            )
+            return
+        self.editor.scene.arrange_grid(columns, rows)
 
     # ------------------------------------------------------------------
     def _load_default_template(self) -> None:

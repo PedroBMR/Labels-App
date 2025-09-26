@@ -847,31 +847,78 @@ class LabelScene(QGraphicsScene):
         for item in selected:
             item.setY(max_bottom - item.shapeRect().height())
 
+    def _distribute_linear(self, orientation: Qt.Orientation) -> None:
+        if orientation == Qt.Horizontal:
+            selected = sorted(self.selected_items(), key=lambda item: item.pos().x())
+            if len(selected) < 3:
+                return
+            start = selected[0].pos().x()
+            end = selected[-1].pos().x()
+            total_size = sum(item.shapeRect().width() for item in selected)
+            spacing = (end - start - total_size) / (len(selected) - 1)
+            cursor = start
+            for item in selected:
+                item.setX(cursor)
+                cursor += item.shapeRect().width() + spacing
+        else:
+            selected = sorted(self.selected_items(), key=lambda item: item.pos().y())
+            if len(selected) < 3:
+                return
+            start = selected[0].pos().y()
+            end = selected[-1].pos().y()
+            total_size = sum(item.shapeRect().height() for item in selected)
+            spacing = (end - start - total_size) / (len(selected) - 1)
+            cursor = start
+            for item in selected:
+                item.setY(cursor)
+                cursor += item.shapeRect().height() + spacing
+
     def distribute_horizontally(self) -> None:
-        selected = sorted(self.selected_items(), key=lambda item: item.pos().x())
-        if len(selected) < 3:
-            return
-        left = selected[0].pos().x()
-        right = selected[-1].pos().x()
-        total_width = sum(item.shapeRect().width() for item in selected)
-        spacing = (right - left - total_width) / (len(selected) - 1)
-        cursor = left
-        for item in selected:
-            item.setX(cursor)
-            cursor += item.shapeRect().width() + spacing
+        self._distribute_linear(Qt.Horizontal)
 
     def distribute_vertically(self) -> None:
-        selected = sorted(self.selected_items(), key=lambda item: item.pos().y())
-        if len(selected) < 3:
+        self._distribute_linear(Qt.Vertical)
+
+    def arrange_grid(self, columns: int, rows: int) -> None:
+        if columns <= 0 or rows <= 0:
             return
-        top = selected[0].pos().y()
-        bottom = selected[-1].pos().y()
-        total_height = sum(item.shapeRect().height() for item in selected)
-        spacing = (bottom - top - total_height) / (len(selected) - 1)
-        cursor = top
-        for item in selected:
-            item.setY(cursor)
-            cursor += item.shapeRect().height() + spacing
+        selected = sorted(
+            self.selected_items(), key=lambda item: (item.pos().y(), item.pos().x())
+        )
+        if not selected:
+            return
+        cells = columns * rows
+        if cells <= 0:
+            return
+        arranged = selected[:cells]
+        left = min(item.pos().x() for item in arranged)
+        top = min(item.pos().y() for item in arranged)
+        right = max(item.pos().x() + item.shapeRect().width() for item in arranged)
+        bottom = max(item.pos().y() + item.shapeRect().height() for item in arranged)
+        bounding_width = right - left
+        bounding_height = bottom - top
+        max_width = max(item.shapeRect().width() for item in arranged)
+        max_height = max(item.shapeRect().height() for item in arranged)
+        h_spacing = 0.0
+        if columns > 1:
+            h_spacing = max(
+                (bounding_width - max_width * columns) / (columns - 1),
+                0.0,
+            )
+        v_spacing = 0.0
+        if rows > 1:
+            v_spacing = max(
+                (bounding_height - max_height * rows) / (rows - 1),
+                0.0,
+            )
+        for index, item in enumerate(arranged):
+            row = index // columns
+            column = index % columns
+            x = left + column * (max_width + h_spacing)
+            y = top + row * (max_height + v_spacing)
+            x += (max_width - item.shapeRect().width()) / 2.0
+            y += (max_height - item.shapeRect().height()) / 2.0
+            item.setPos(x, y)
 
 
 class _PropertyChange(QUndoCommand):
