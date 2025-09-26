@@ -18,8 +18,11 @@ __all__ = [
     "backup",
     "configure_default_path",
     "default_db_path",
+    "find_raster_cache",
     "get_conn",
+    "get_asset_id_by_hash",
     "init",
+    "insert_or_get_raster_cache",
     # upsert_asset(name, kind, data, path, file_hash, width_px, height_px,
     #              dpi_x, dpi_y, tags, updated_at, db_path)
     "upsert_asset",
@@ -111,6 +114,12 @@ def _ensure_initialised(db_path: Path) -> None:
         return
     init(db_path)
     _INITIALISED.add(db_path)
+
+
+def _normalise_gamma(value: float | int | None) -> float:
+    if value is None:
+        return 0.0
+    return float(value) if float(value) > 0 else 0.0
 
 
 def upsert_template(
@@ -278,3 +287,155 @@ def upsert_asset(
                     timestamp,
                 ),
             )
+
+
+def get_asset_id_by_hash(
+    file_hash: str,
+    *,
+    db_path: str | Path | None = None,
+) -> int | None:
+    """Return the asset identifier for ``file_hash`` if present."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    with contextlib.closing(get_conn(database)) as conn:
+        row = conn.execute(
+            "SELECT id FROM assets WHERE file_hash = ?",
+            (file_hash,),
+        ).fetchone()
+        if row is None:
+            return None
+        return int(row["id"])
+
+
+def find_raster_cache(
+    asset_id: int,
+    width_px: int,
+    height_px: int,
+    dpi: tuple[int, int],
+    dither: str,
+    gamma: float | int | None,
+    sharpen: bool,
+    invert: bool,
+    threshold: int,
+    *,
+    db_path: str | Path | None = None,
+) -> Path | None:
+    """Return the cached raster path matching the provided parameters."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    gamma_value = _normalise_gamma(gamma)
+    params = (
+        asset_id,
+        int(width_px),
+        int(height_px),
+        int(dpi[0]),
+        int(dpi[1]),
+        dither,
+        gamma_value,
+        int(bool(sharpen)),
+        int(bool(invert)),
+        int(threshold),
+    )
+
+    with contextlib.closing(get_conn(database)) as conn:
+        row = conn.execute(
+            """
+            SELECT path
+            FROM raster_cache
+            WHERE asset_id = ?
+              AND width_px = ?
+              AND height_px = ?
+              AND dpi_x = ?
+              AND dpi_y = ?
+              AND dither = ?
+              AND gamma = ?
+              AND sharpen = ?
+              AND invert = ?
+              AND threshold = ?
+            """,
+            params,
+        ).fetchone()
+
+    if row is None:
+        return None
+    return Path(row["path"])
+
+
+def insert_or_get_raster_cache(
+    *,
+    asset_id: int,
+    width_px: int,
+    height_px: int,
+    dpi: tuple[int, int],
+    dither: str,
+    gamma: float | int | None,
+    sharpen: bool,
+    invert: bool,
+    threshold: int,
+    path: str | Path,
+    db_path: str | Path | None = None,
+) -> Path:
+    """Insert or update a raster cache entry and return its path."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    gamma_value = _normalise_gamma(gamma)
+    sharpen_value = int(bool(sharpen))
+    invert_value = int(bool(invert))
+    threshold_value = int(threshold)
+    resolved_path = canonical_file_path(path)
+
+    params = (
+        asset_id,
+        int(width_px),
+        int(height_px),
+        int(dpi[0]),
+        int(dpi[1]),
+        dither,
+        gamma_value,
+        sharpen_value,
+        invert_value,
+        threshold_value,
+        str(resolved_path),
+    )
+
+    with contextlib.closing(get_conn(database)) as conn:
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO raster_cache(
+                    asset_id,
+                    width_px,
+                    height_px,
+                    dpi_x,
+                    dpi_y,
+                    dither,
+                    gamma,
+                    sharpen,
+                    invert,
+                    threshold,
+                    path
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(
+                    asset_id,
+                    width_px,
+                    height_px,
+                    dpi_x,
+                    dpi_y,
+                    dither,
+                    gamma,
+                    sharpen,
+                    invert,
+                    threshold
+                ) DO UPDATE SET path = excluded.path
+                """,
+                params,
+            )
+
+    return resolved_path
