@@ -43,7 +43,10 @@ def _base_dir() -> str:
             return install_dir
         if hasattr(sys, "_MEIPASS"):
             return sys._MEIPASS
-    return os.path.dirname(os.path.abspath(__file__))
+    module_dir = os.path.dirname(os.path.abspath(__file__))
+    if os.path.basename(module_dir) == "utils":
+        return os.path.dirname(module_dir)
+    return module_dir
 
 
 def recurso_caminho(rel_path: str) -> str:

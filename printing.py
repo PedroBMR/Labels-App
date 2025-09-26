@@ -24,6 +24,7 @@ from model.template import TemplateDocument, TemplateValidationError
 from persistence import carregar_config, salvar_config
 from render import PreviewRenderer
 from utils import recurso_caminho
+from utils.fs import canonical_path as canonical_file_path
 
 # Retained for backwards compatibility with legacy code/tests that relied on
 # the constant when performing manual conversions.
@@ -516,7 +517,8 @@ class TemplateManager:
             if target.exists():
                 continue
             try:
-                document.dump(target)
+                canonical = canonical_file_path(target)
+                document.dump(canonical, canonical_path=canonical)
             except OSError:  # pragma: no cover - depends on filesystem
                 logging.getLogger("app").exception(
                     "Falha ao gravar template migrado: %s",

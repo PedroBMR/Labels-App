@@ -3,12 +3,31 @@
 from __future__ import annotations
 
 import contextlib
+import json
+import os
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Sequence
 
 from . import migrations
+from utils import recurso_caminho
+from utils.fs import canonical_path as canonical_file_path
 
-__all__ = ["get_conn", "init", "vacuum", "backup"]
+__all__ = [
+    "backup",
+    "configure_default_path",
+    "default_db_path",
+    "get_conn",
+    "init",
+    "upsert_template",
+    "vacuum",
+]
+
+DEFAULT_DB_FILENAME = "app.sqlite"
+
+_DEFAULT_DB_PATH: Path | None = None
+_INITIALISED: set[Path] = set()
 
 
 def get_conn(db_path: str | Path) -> sqlite3.Connection:
@@ -27,6 +46,36 @@ def init(db_path: str | Path) -> None:
         migrations.apply_migrations(conn)
 
 
+def default_db_path() -> Path:
+    """Return the default database path creating parent directories as needed."""
+
+    global _DEFAULT_DB_PATH
+    if _DEFAULT_DB_PATH is not None:
+        return _DEFAULT_DB_PATH
+
+    env_override = os.environ.get("LABELS_DB_PATH")
+    if env_override:
+        path = Path(env_override)
+    else:
+        data_root = Path(recurso_caminho("_data"))
+        data_root.mkdir(parents=True, exist_ok=True)
+        path = data_root / DEFAULT_DB_FILENAME
+    path = canonical_file_path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _DEFAULT_DB_PATH = path
+    return path
+
+
+def configure_default_path(path: str | Path) -> None:
+    """Override the default database path used by store helpers."""
+
+    global _DEFAULT_DB_PATH
+    resolved = canonical_file_path(path)
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    _DEFAULT_DB_PATH = resolved
+    _INITIALISED.discard(resolved)
+
+
 def vacuum(db_path: str | Path) -> None:
     """Vacuum the database file located at ``db_path``."""
 
@@ -42,3 +91,86 @@ def backup(db_path: str | Path, out_path: str | Path) -> None:
     ) as dest:
         src.backup(dest)
         dest.commit()
+
+
+def _resolve_db_path(db_path: str | Path | None) -> Path:
+    if db_path is None:
+        return default_db_path()
+    resolved = canonical_file_path(db_path)
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    return resolved
+
+
+def _ensure_initialised(db_path: Path) -> None:
+    if db_path in _INITIALISED:
+        return
+    init(db_path)
+    _INITIALISED.add(db_path)
+
+
+def upsert_template(
+    *,
+    name: str,
+    data: str,
+    path: str | Path,
+    file_hash: str,
+    width_mm: float | None,
+    height_mm: float | None,
+    dpi: int | None,
+    tags: Sequence[str] | None = None,
+    updated_at: datetime | str | None = None,
+    db_path: str | Path | None = None,
+) -> None:
+    """Insert or update a template record in the database."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    timestamp: str
+    if isinstance(updated_at, str):
+        timestamp = updated_at
+    elif isinstance(updated_at, datetime):
+        timestamp = updated_at.astimezone(UTC).isoformat()
+    else:
+        timestamp = datetime.now(UTC).isoformat()
+
+    payload = json.dumps(list(tags)) if tags else None
+
+    with contextlib.closing(get_conn(database)) as conn:
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO templates(
+                    name,
+                    data,
+                    path,
+                    file_hash,
+                    width_mm,
+                    height_mm,
+                    dpi,
+                    tags,
+                    updated_at
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    data = excluded.data,
+                    path = excluded.path,
+                    file_hash = excluded.file_hash,
+                    width_mm = excluded.width_mm,
+                    height_mm = excluded.height_mm,
+                    dpi = excluded.dpi,
+                    tags = excluded.tags,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    name,
+                    data,
+                    str(canonical_file_path(path)),
+                    file_hash,
+                    width_mm,
+                    height_mm,
+                    dpi,
+                    payload,
+                    timestamp,
+                ),
+            )

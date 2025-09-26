@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def apply_migrations(conn: sqlite3.Connection) -> None:
@@ -32,11 +32,15 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             except (TypeError, ValueError):
                 current_version = None
 
-    if current_version == SCHEMA_VERSION:
-        return
+    def ensure_table(sql: str) -> None:
+        conn.execute(sql)
+
+    def has_column(table: str, column: str) -> bool:
+        cursor = conn.execute(f"PRAGMA table_info({table})")
+        return any(row[1] == column for row in cursor.fetchall())
 
     with conn:
-        conn.execute(
+        ensure_table(
             """
             CREATE TABLE IF NOT EXISTS meta (
                 key TEXT PRIMARY KEY,
@@ -45,12 +49,18 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             """
         )
 
-        conn.execute(
+        ensure_table(
             """
             CREATE TABLE IF NOT EXISTS templates (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 data TEXT NOT NULL,
+                path TEXT,
+                file_hash TEXT,
+                width_mm REAL,
+                height_mm REAL,
+                dpi INTEGER,
+                tags TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(name)
@@ -58,7 +68,7 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             """
         )
 
-        conn.execute(
+        ensure_table(
             """
             CREATE TABLE IF NOT EXISTS assets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,7 +81,7 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             """
         )
 
-        conn.execute(
+        ensure_table(
             """
             CREATE TABLE IF NOT EXISTS raster_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -85,7 +95,7 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             """
         )
 
-        conn.execute(
+        ensure_table(
             """
             CREATE TABLE IF NOT EXISTS print_jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,7 +107,7 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             """
         )
 
-        conn.execute(
+        ensure_table(
             """
             CREATE TABLE IF NOT EXISTS vars_presets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,33 +119,46 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             """
         )
 
-        conn.execute(
+        ensure_table(
             """
             CREATE INDEX IF NOT EXISTS idx_assets_type
             ON assets(type)
             """
         )
 
-        conn.execute(
+        ensure_table(
             """
             CREATE INDEX IF NOT EXISTS idx_raster_cache_template
             ON raster_cache(template_name)
             """
         )
 
-        conn.execute(
+        ensure_table(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_print_jobs_created_at_id
             ON print_jobs(created_at, id)
             """
         )
 
-        conn.execute(
+        ensure_table(
             """
             CREATE INDEX IF NOT EXISTS idx_vars_presets_name
             ON vars_presets(name)
             """
         )
+
+        if not has_column("templates", "path"):
+            conn.execute("ALTER TABLE templates ADD COLUMN path TEXT")
+        if not has_column("templates", "file_hash"):
+            conn.execute("ALTER TABLE templates ADD COLUMN file_hash TEXT")
+        if not has_column("templates", "width_mm"):
+            conn.execute("ALTER TABLE templates ADD COLUMN width_mm REAL")
+        if not has_column("templates", "height_mm"):
+            conn.execute("ALTER TABLE templates ADD COLUMN height_mm REAL")
+        if not has_column("templates", "dpi"):
+            conn.execute("ALTER TABLE templates ADD COLUMN dpi INTEGER")
+        if not has_column("templates", "tags"):
+            conn.execute("ALTER TABLE templates ADD COLUMN tags TEXT")
 
         conn.execute(
             """
