@@ -1,5 +1,6 @@
 """Imaging helpers for raster processing."""
 
+from .loader import load_image  # noqa: F401
 from .raster import (  # noqa: F401
     clear_raster_cache,
     fingerprint_image,
@@ -10,6 +11,7 @@ from .raster import (  # noqa: F401
 __all__ = [
     "clear_raster_cache",
     "fingerprint_image",
+    "load_image",
     "prepare_bitmap_for_tspl",
     "tspl_bitmap_command",
 ]
