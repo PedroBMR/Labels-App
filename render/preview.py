@@ -35,6 +35,7 @@ except Exception:  # pragma: no cover - fallback when barcode is missing
 
 from compile import Calibration, SafeDict
 from fonts import font_store
+from imaging import load_image
 
 __all__ = [
     "PreviewRenderer",
@@ -328,10 +329,7 @@ def _render_image(
     if not source:
         return None
     try:
-        if isinstance(source, Image.Image):
-            image = source.copy()
-        else:
-            image = Image.open(source)
+        image = load_image(source)
     except Exception:  # pragma: no cover - invalid image
         return None
     fit_mode = str(element.get("fit", element.get("mode", "contain"))).lower()

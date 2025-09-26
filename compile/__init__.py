@@ -23,7 +23,6 @@ backends can be registered through :func:`register_backend`.
 
 from __future__ import annotations
 
-import io
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Mapping
@@ -31,6 +30,7 @@ from typing import Any, Mapping
 from PIL import Image, ImageDraw, ImageFont
 
 from fonts import font_store
+from imaging import load_image
 
 __all__ = [
     "Backend",
@@ -79,15 +79,14 @@ def _dots_per_mm(template: Mapping[str, Any]) -> float:
 def image_from_source(source: Any) -> Image.Image:
     """Return a :class:`PIL.Image.Image` from ``source``."""
 
-    if isinstance(source, Image.Image):
-        return source.copy()
-    if isinstance(source, (bytes, bytearray)):
-        return Image.open(io.BytesIO(source))
-    if isinstance(source, str):
-        return Image.open(source)
-    if hasattr(source, "read"):
-        return Image.open(source)
-    raise CompilationError(f"Unsupported image source: {type(source)!r}")
+    try:
+        return load_image(source)
+    except TypeError as exc:
+        raise CompilationError(
+            f"Unsupported image source: {type(source)!r}"
+        ) from exc
+    except Exception as exc:  # pragma: no cover - passthrough for PIL errors
+        raise CompilationError("Failed to load image") from exc
 
 
 def render_text_bitmap(text: str, font_spec: Mapping[str, Any]) -> Image.Image:

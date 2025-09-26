@@ -22,6 +22,8 @@ from functools import lru_cache
 
 from PIL import Image
 
+from imaging import load_image
+
 
 def _base_dir() -> str:
     """Obtém o diretório base do aplicativo.
@@ -101,7 +103,7 @@ def melhorar_logo(
         tuple[bytes, int, int]: Dados do bitmap, largura em bytes e altura em pixels.
     """
 
-    logo = Image.open(path_logo).convert("L")  # escala de cinza
+    logo = load_image(path_logo).convert("L")  # escala de cinza
     proporcao = largura_desejada / logo.width
     nova_altura = int(round(logo.height * proporcao))
 

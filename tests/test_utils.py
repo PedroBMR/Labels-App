@@ -39,14 +39,14 @@ def test_melhorar_logo_cache(monkeypatch, tmp_path):
     img_path = tmp_path / "logo.png"
     Image.new("L", (8, 8), color=255).save(img_path)
 
-    original_open = utils.Image.open
+    original_open = utils.load_image
     calls = {"count": 0}
 
     def counting_open(path: str):
         calls["count"] += 1
         return original_open(path)
 
-    monkeypatch.setattr(utils.Image, "open", counting_open)
+    monkeypatch.setattr(utils, "load_image", counting_open)
     utils.melhorar_logo.cache_clear()
 
     utils.melhorar_logo(str(img_path), largura_desejada=8)
