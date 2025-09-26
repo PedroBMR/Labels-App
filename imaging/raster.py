@@ -339,17 +339,21 @@ def prepare_bitmap_for_tspl(
                 try:
                     from db import store as db_store
 
+                    # The raster cache is keyed by the rendering parameters to avoid
+                    # recomputing identical bitmaps. ``db.store`` exposes helpers for
+                    # inserting or querying cache entries and keeps the schema details
+                    # (column names, uniqueness rules, etc.) in one place.
                     db_store.insert_or_get_raster_cache(
                         asset_id=asset_id,
-                        width_px=padded_width,
-                        height_px=mono.height,
+                        width_dots=padded_width,
+                        height_dots=mono.height,
                         dpi=(rounded_x, rounded_y),
                         dither=method,
                         gamma=gamma_value,
                         sharpen=sharpen,
                         invert=invert,
                         threshold=threshold_value,
-                        path=cache_path,
+                        cache_path=cache_path,
                     )
                 except Exception:
                     pass

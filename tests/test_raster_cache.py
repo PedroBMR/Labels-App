@@ -79,7 +79,7 @@ def test_prepare_bitmap_disk_cache_miss(tmp_path, monkeypatch):
 
     def fake_insert(**kwargs):
         stored_calls["insert"] = kwargs
-        return kwargs["path"]
+        return kwargs["cache_path"]
 
     monkeypatch.setattr(db_store, "insert_or_get_raster_cache", fake_insert)
 
@@ -120,15 +120,15 @@ def test_prepare_bitmap_disk_cache_miss(tmp_path, monkeypatch):
     assert "insert" in stored_calls
     insert_args = stored_calls["insert"]
     assert insert_args["asset_id"] == 7
-    assert insert_args["width_px"] == 16
-    assert insert_args["height_px"] == 8
+    assert insert_args["width_dots"] == 16
+    assert insert_args["height_dots"] == 8
     assert insert_args["dpi"] == (203, 203)
     assert insert_args["dither"] == "floyd"
     assert insert_args["gamma"] == 0.0
     assert insert_args["sharpen"] is False
     assert insert_args["invert"] is False
     assert insert_args["threshold"] == 128
-    assert insert_args["path"].resolve() == cached_path.resolve()
+    assert insert_args["cache_path"].resolve() == cached_path.resolve()
 
     from imaging.raster import _RASTER_CACHE
 

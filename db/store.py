@@ -18,10 +18,10 @@ __all__ = [
     "backup",
     "configure_default_path",
     "default_db_path",
-    "find_raster_cache",
     "get_conn",
-    "get_asset_id_by_hash",
     "init",
+    "get_asset_id_by_hash",
+    "find_raster_cache",
     "insert_or_get_raster_cache",
     # upsert_asset(name, kind, data, path, file_hash, width_px, height_px,
     #              dpi_x, dpi_y, tags, updated_at, db_path)
@@ -311,8 +311,8 @@ def get_asset_id_by_hash(
 
 def find_raster_cache(
     asset_id: int,
-    width_px: int,
-    height_px: int,
+    width_dots: int,
+    height_dots: int,
     dpi: tuple[int, int],
     dither: str,
     gamma: float | int | None,
@@ -322,7 +322,13 @@ def find_raster_cache(
     *,
     db_path: str | Path | None = None,
 ) -> Path | None:
-    """Return the cached raster path matching the provided parameters."""
+    """Return the cached raster path matching the provided parameters.
+
+    The arguments are a thin abstraction over the ``raster_cache`` table and map
+    directly to the corresponding columns.  Callers such as
+    :mod:`imaging.raster` should use this helper instead of issuing SQL queries
+    directly so that schema changes remain encapsulated in this module.
+    """
 
     database = _resolve_db_path(db_path)
     _ensure_initialised(database)
@@ -330,8 +336,8 @@ def find_raster_cache(
     gamma_value = _normalise_gamma(gamma)
     params = (
         asset_id,
-        int(width_px),
-        int(height_px),
+        int(width_dots),
+        int(height_dots),
         int(dpi[0]),
         int(dpi[1]),
         dither,
@@ -344,11 +350,11 @@ def find_raster_cache(
     with contextlib.closing(get_conn(database)) as conn:
         row = conn.execute(
             """
-            SELECT path
+            SELECT cache_path
             FROM raster_cache
             WHERE asset_id = ?
-              AND width_px = ?
-              AND height_px = ?
+              AND width_dots = ?
+              AND height_dots = ?
               AND dpi_x = ?
               AND dpi_y = ?
               AND dither = ?
@@ -362,24 +368,30 @@ def find_raster_cache(
 
     if row is None:
         return None
-    return Path(row["path"])
+    return Path(row["cache_path"])
 
 
 def insert_or_get_raster_cache(
     *,
     asset_id: int,
-    width_px: int,
-    height_px: int,
+    width_dots: int,
+    height_dots: int,
     dpi: tuple[int, int],
     dither: str,
     gamma: float | int | None,
     sharpen: bool,
     invert: bool,
     threshold: int,
-    path: str | Path,
+    cache_path: str | Path,
     db_path: str | Path | None = None,
 ) -> Path:
-    """Insert or update a raster cache entry and return its path."""
+    """Insert or update a raster cache entry and return its canonical path.
+
+    The record is uniquely identified by the rendering parameters and the
+    resulting ``cache_path`` is stored using
+    :func:`utils.fs.canonical_path`.  Repeated invocations with the same
+    parameters update the cache path while keeping a single database row.
+    """
 
     database = _resolve_db_path(db_path)
     _ensure_initialised(database)
@@ -388,12 +400,12 @@ def insert_or_get_raster_cache(
     sharpen_value = int(bool(sharpen))
     invert_value = int(bool(invert))
     threshold_value = int(threshold)
-    resolved_path = canonical_file_path(path)
+    resolved_path = canonical_file_path(cache_path)
 
     params = (
         asset_id,
-        int(width_px),
-        int(height_px),
+        int(width_dots),
+        int(height_dots),
         int(dpi[0]),
         int(dpi[1]),
         dither,
@@ -410,8 +422,8 @@ def insert_or_get_raster_cache(
                 """
                 INSERT INTO raster_cache(
                     asset_id,
-                    width_px,
-                    height_px,
+                    width_dots,
+                    height_dots,
                     dpi_x,
                     dpi_y,
                     dither,
@@ -419,13 +431,13 @@ def insert_or_get_raster_cache(
                     sharpen,
                     invert,
                     threshold,
-                    path
+                    cache_path
                 )
                 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(
                     asset_id,
-                    width_px,
-                    height_px,
+                    width_dots,
+                    height_dots,
                     dpi_x,
                     dpi_y,
                     dither,
@@ -433,7 +445,7 @@ def insert_or_get_raster_cache(
                     sharpen,
                     invert,
                     threshold
-                ) DO UPDATE SET path = excluded.path
+                ) DO UPDATE SET cache_path = excluded.cache_path
                 """,
                 params,
             )

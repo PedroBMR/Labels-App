@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 from db import migrations, store
@@ -43,6 +44,45 @@ def test_init_creates_schema(tmp_path):
         ).fetchone()
         assert value is not None
         assert value[0] == str(migrations.SCHEMA_VERSION)
+
+
+def test_migration_upgrades_legacy_raster_cache(tmp_path):
+    db_path = tmp_path / "legacy.sqlite"
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE raster_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id INTEGER NOT NULL,
+                width_px INTEGER NOT NULL,
+                height_px INTEGER NOT NULL,
+                dpi_x INTEGER NOT NULL,
+                dpi_y INTEGER NOT NULL,
+                dither TEXT NOT NULL,
+                gamma REAL NOT NULL DEFAULT 0,
+                sharpen INTEGER NOT NULL,
+                invert INTEGER NOT NULL,
+                threshold INTEGER NOT NULL,
+                path TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+
+    store.init(db_path)
+
+    with store.get_conn(db_path) as conn:
+        columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(raster_cache)").fetchall()
+        }
+
+    assert "width_dots" in columns
+    assert "height_dots" in columns
+    assert "cache_path" in columns
+    assert "width_px" not in columns
+    assert "path" not in columns
 
 
 def test_upsert_template_persists_metadata(tmp_path):
@@ -228,19 +268,23 @@ def test_raster_cache_round_trip(tmp_path):
 
     stored_path = store.insert_or_get_raster_cache(
         asset_id=asset_id,
-        width_px=160,
-        height_px=80,
+        width_dots=160,
+        height_dots=80,
         dpi=(203, 203),
         dither="floyd",
         gamma=None,
         sharpen=False,
         invert=False,
         threshold=128,
-        path=cache_path,
+        cache_path=cache_path,
         db_path=db_path,
     )
 
     assert stored_path == canonical_file_path(cache_path)
+
+    with store.get_conn(db_path) as conn:
+        count = conn.execute("SELECT COUNT(*) FROM raster_cache").fetchone()[0]
+    assert count == 1
 
     located = store.find_raster_cache(
         asset_id,
@@ -276,19 +320,25 @@ def test_raster_cache_round_trip(tmp_path):
     updated_path.write_bytes(b"payload2")
     stored_updated = store.insert_or_get_raster_cache(
         asset_id=asset_id,
-        width_px=160,
-        height_px=80,
+        width_dots=160,
+        height_dots=80,
         dpi=(203, 203),
         dither="floyd",
         gamma=0.0,
         sharpen=False,
         invert=False,
         threshold=128,
-        path=updated_path,
+        cache_path=updated_path,
         db_path=db_path,
     )
 
     assert stored_updated == canonical_file_path(updated_path)
+
+    with store.get_conn(db_path) as conn:
+        count_after_update = conn.execute(
+            "SELECT COUNT(*) FROM raster_cache"
+        ).fetchone()[0]
+    assert count_after_update == 1
     refreshed = store.find_raster_cache(
         asset_id,
         160,
