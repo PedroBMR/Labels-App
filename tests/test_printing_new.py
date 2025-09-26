@@ -284,3 +284,57 @@ def test_printer_print_job_status_updates():
         assert row is not None
         assert row["status"] == "failed"
         assert row["error_text"] == "boom"
+
+
+def test_list_print_jobs_returns_recent_entries():
+    template = _simple_template()
+    config = PrinterConfig(backend="tspl")
+    printer = Printer(config)
+    stub = StubTransport()
+    printer.transport = stub
+
+    ok, error, job_id = printer.print_template(template, {"nome": "Teste", "volumes": 1})
+    assert ok and error is None and job_id is not None
+
+    jobs = db_store.list_print_jobs(limit=5)
+    assert any(job.get("id") == job_id for job in jobs)
+
+
+def test_reprint_uses_saved_payload():
+    template = _simple_template()
+    printer = Printer(PrinterConfig(backend="tspl"))
+    first_stub = StubTransport()
+    printer.transport = first_stub
+
+    ok, error, original_job_id = printer.print_template(
+        template, {"nome": "Primeiro", "volumes": 1}
+    )
+    assert ok and error is None and original_job_id is not None
+    assert first_stub.payloads, "A impressão inicial deve enviar comandos"
+    original_payload = first_stub.payloads[0]
+
+    stored_payload = db_store.get_job_payload(job_id=original_job_id)
+    assert stored_payload == original_payload
+
+    record = db_store.get_print_job(job_id=original_job_id)
+    assert record is not None
+
+    reprint_config = PrinterConfig(
+        backend=str(record.get("printer_backend") or "tspl"),
+        transport=str(record.get("printer_transport") or "win32"),
+        printer_name=str(record.get("printer_name") or "") or None,
+    )
+    reprint_printer = Printer(reprint_config)
+    reprint_stub = StubTransport()
+    reprint_printer.transport = reprint_stub
+
+    ok2, error2, new_job_id = reprint_printer.send_commands(
+        stored_payload,
+        backend=str(record.get("template_backend") or "tspl"),
+        template_name=str(record.get("template_name") or "") or None,
+        template_backend=str(record.get("template_backend") or "") or None,
+    )
+
+    assert ok2 and error2 is None and new_job_id is not None
+    assert reprint_stub.payloads == [original_payload]
+    assert new_job_id != original_job_id

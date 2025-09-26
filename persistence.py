@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+from db import store as db_store
 from model.template import TemplateDocument
 from utils import recurso_caminho
 from utils.fs import canonical_path as canonical_file_path
@@ -131,50 +132,6 @@ def salvar_contagem(contagem_total: int, contagem_mensal: int) -> None:
     os.replace(tmp_path, caminho)
 
 
-def salvar_historico(
-    saida: str,
-    categoria: str,
-    emissor: str,
-    municipio: str,
-    volumes: int,
-    data_hora: str,
-) -> None:
-    """Adiciona registro ao histórico de impressões.
-
-    Args:
-        saida (str): Número da saída.
-        categoria (str): Categoria da etiqueta.
-        emissor (str): Nome de quem emitiu a etiqueta.
-        municipio (str): Município de destino.
-        volumes (int): Quantidade de volumes impressos.
-        data_hora (str): Data e hora da impressão.
-    """
-
-    caminho = recurso_caminho("historico_impressoes.csv")
-    os.makedirs(os.path.dirname(caminho), exist_ok=True)
-    tmp_path = f"{caminho}.tmp"
-    bak_path = f"{caminho}.bak"
-    existe = os.path.exists(caminho)
-
-    if existe:
-        shutil.copyfile(caminho, tmp_path)
-    else:
-        with open(tmp_path, "w", newline="", encoding="utf-8-sig") as arquivo:
-            writer = csv.writer(arquivo, delimiter=";")
-            writer.writerow(
-                ["Data e Hora", "Saída", "Categoria", "Emissor", "Município", "Volumes"]
-            )
-
-    with open(tmp_path, "a", newline="", encoding="utf-8-sig") as arquivo:
-        writer = csv.writer(arquivo, delimiter=";")
-        writer.writerow([data_hora, saida, categoria, emissor, municipio, volumes])
-
-    if existe:
-        shutil.copy2(caminho, bak_path)
-
-    os.replace(tmp_path, caminho)
-
-
 def carregar_recentes() -> dict[str, dict[str, int]]:
     """Lê as listas de valores usados recentemente.
 
@@ -275,52 +232,88 @@ def carregar_historico_mensal() -> dict[str, int]:
     return {}
 
 
+def _format_timestamp(value: str | None) -> str:
+    if not value:
+        return ""
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    if dt.tzinfo is None:
+        return dt.strftime("%d/%m/%Y %H:%M:%S")
+    return dt.astimezone().strftime("%d/%m/%Y %H:%M:%S")
+
+
 def gerar_relatorio_mensal(mes: str) -> str:
-    """Gera um relatório consolidado de um mês específico.
+    """Gera um relatório mensal baseado nos registros da base de dados."""
 
-    O relatório contém os totais de etiquetas agrupados por categoria,
-    município e emissor. O arquivo é salvo na pasta ``reports`` na raiz do
-    aplicativo, com o nome ``relatorio_YYYY-MM.csv``.
+    database = db_store.default_db_path()
+    db_store.init(database)
 
-    Args:
-        mes (str): Mês desejado no formato ``YYYY-MM``.
-
-    Returns:
-        str: Caminho absoluto do relatório gerado.
-    """
-
-    hist_path = recurso_caminho("historico_impressoes.csv")
-    if not os.path.exists(hist_path):
-        raise FileNotFoundError("Histórico de impressões não encontrado")
-
-    totais: dict[tuple[str, str, str], int] = {}
-    with open(hist_path, newline="", encoding="utf-8-sig") as arquivo:
-        reader = csv.DictReader(arquivo, delimiter=";")
-        for row in reader:
-            texto = row["Data e Hora"]
-            for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M"):
-                try:
-                    data = datetime.strptime(texto, fmt)
-                    break
-                except ValueError:
-                    continue
-            else:
-                continue
-            if data.strftime("%Y-%m") != mes:
-                continue
-            chave = (row["Categoria"], row["Município"], row["Emissor"])
-            totais[chave] = totais.get(chave, 0) + int(row["Volumes"])
+    with db_store.get_conn(database) as conn:
+        cursor = conn.execute(
+            """
+            SELECT
+                id,
+                created_at,
+                status,
+                template_name,
+                template_backend,
+                printer_name,
+                printer_backend,
+                printer_transport,
+                pending_at,
+                running_at,
+                finished_at,
+                failed_at,
+                error_text
+            FROM print_jobs
+            WHERE substr(pending_at, 1, 7) = ?
+            ORDER BY pending_at ASC, id ASC
+            """,
+            (mes,),
+        )
+        rows = cursor.fetchall()
 
     base_dir = os.path.dirname(recurso_caminho(""))
     reports_dir = os.path.join(base_dir, "reports")
     os.makedirs(reports_dir, exist_ok=True)
     relatorio_path = os.path.join(reports_dir, f"relatorio_{mes}.csv")
 
+    headers = [
+        "ID",
+        "Criado em",
+        "Status",
+        "Template",
+        "Backend",
+        "Impressora",
+        "Transporte",
+        "Iniciado",
+        "Concluído",
+        "Falhou em",
+        "Erro",
+    ]
+
     with open(relatorio_path, "w", newline="", encoding="utf-8-sig") as arquivo:
         writer = csv.writer(arquivo, delimiter=";")
-        writer.writerow(["Categoria", "Município", "Emissor", "Volumes"])
-        for (categoria, municipio, emissor), total in sorted(totais.items()):
-            writer.writerow([categoria, municipio, emissor, total])
+        writer.writerow(headers)
+        for row in rows:
+            writer.writerow(
+                [
+                    row["id"],
+                    _format_timestamp(row["created_at"]),
+                    row["status"],
+                    row["template_name"] or "",
+                    row["template_backend"] or "",
+                    row["printer_name"] or "",
+                    row["printer_backend"] or "",
+                    row["printer_transport"] or "",
+                    _format_timestamp(row["running_at"]),
+                    _format_timestamp(row["finished_at"]),
+                    _format_timestamp(row["failed_at"]),
+                    row["error_text"] or "",
+                ]
+            )
 
     return relatorio_path
 

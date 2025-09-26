@@ -10,10 +10,10 @@ Exemplo:
     $ pytest tests/test_persistence.py
 """
 
-import csv
 import json
 import os
 import sys
+from datetime import datetime
 
 import pytest
 
@@ -22,12 +22,14 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 def _patch_paths(monkeypatch, tmp_path):
     import persistence
+    from db import store as db_store
 
     monkeypatch.setattr(
         persistence,
         "recurso_caminho",
         lambda p: os.path.join(tmp_path, p),
     )
+    db_store.configure_default_path(tmp_path / "app.sqlite")
     return persistence
 
 
@@ -67,60 +69,50 @@ def test_carregar_contagem_reseta_mes(monkeypatch, tmp_path):
     assert mensal == 0
 
 
-def test_salvar_historico_e_registrar(monkeypatch, tmp_path):
-    persistence = _patch_paths(monkeypatch, tmp_path)
-    persistence.salvar_historico("s", "c", "e", "m", 3, "data")
-
-    def falha(*_):
-        raise OSError
-
-    monkeypatch.setattr(persistence.os, "replace", falha)
-    with pytest.raises(OSError):
-        persistence.salvar_historico("s2", "c2", "e2", "m2", 4, "data2")
-
-    with open(
-        tmp_path / "historico_impressoes.csv",
-        newline="",
-        encoding="utf-8-sig",
-    ) as f:
-        rows = list(csv.reader(f, delimiter=";"))
-    assert rows[0] == [
-        "Data e Hora",
-        "Saída",
-        "Categoria",
-        "Emissor",
-        "Município",
-        "Volumes",
-    ]
-    assert rows[1] == ["data", "s", "c", "e", "m", "3"]
-    assert len(rows) == 2
-    assert (tmp_path / "historico_impressoes.csv.bak").exists()
-
-    persistence.registrar_contagem_mensal("05-2024", 3)
-    assert persistence.carregar_historico_mensal() == {"05-2024": 3}
-
-
 def test_gerar_relatorio_mensal(monkeypatch, tmp_path):
-    persistence = _patch_paths(monkeypatch, tmp_path)
-    with open(
-        tmp_path / "historico_impressoes.csv",
-        "w",
-        newline="",
-        encoding="utf-8-sig",
-    ) as f:
-        f.write("Data e Hora;Saída;Categoria;Emissor;Município;Volumes\n")
-        f.write("06/08/2025 09:30:13;1;Cat;Emi;Mun;1\n")
-        f.write("07/08/2025 10:00:00;2;Cat;Emi;Mun;2\n")
-        f.write("01/09/2025 00:00:00;3;Cat2;Emi2;Mun2;3\n")
+    import csv
+    from db import store as db_store
 
-    path = persistence.gerar_relatorio_mensal("2025-08")
-    assert (tmp_path / "reports" / "relatorio_2025-08.csv").exists()
+    persistence = _patch_paths(monkeypatch, tmp_path)
+
+    job_id = db_store.insert_print_job(
+        payload_hash="abc",
+        payload=b"TEST",
+        template_name="demo",
+        template_backend="tspl",
+        printer_name="IMP",
+        printer_backend="tspl",
+        printer_transport="win32",
+        media_settings=None,
+    )
+    db_store.update_print_job_status(job_id=job_id, status="done")
+
+    mes = datetime.now().strftime("%Y-%m")
+    path = persistence.gerar_relatorio_mensal(mes)
+    assert (tmp_path / "reports" / f"relatorio_{mes}.csv").exists()
     with open(path, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.reader(f, delimiter=";"))
-    assert rows == [
-        ["Categoria", "Município", "Emissor", "Volumes"],
-        ["Cat", "Mun", "Emi", "3"],
+    assert rows[0] == [
+        "ID",
+        "Criado em",
+        "Status",
+        "Template",
+        "Backend",
+        "Impressora",
+        "Transporte",
+        "Iniciado",
+        "Concluído",
+        "Falhou em",
+        "Erro",
     ]
+    assert len(rows) == 2
+    assert rows[1][2] == "done"
+
+
+def test_registrar_contagem_mensal(monkeypatch, tmp_path):
+    persistence = _patch_paths(monkeypatch, tmp_path)
+    persistence.registrar_contagem_mensal("05-2024", 3)
+    assert persistence.carregar_historico_mensal() == {"05-2024": 3}
 
 
 def test_atualizar_recentes(monkeypatch, tmp_path):
