@@ -5,14 +5,16 @@ from __future__ import annotations
 import io
 import uuid
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 from PIL import Image
 
-from db.store import upsert_asset
 from utils.fs import canonical_path, file_hash
 
 __all__ = ["load_image"]
+
+if TYPE_CHECKING:  # pragma: no cover - type checking only
+    from db import store as db_store_module
 
 
 def _guess_kind(name: str | None, image: Image.Image) -> str:
@@ -67,7 +69,9 @@ def _record_asset(
             digest = None
     else:
         digest = None
-    upsert_asset(
+    from db import store as db_store
+
+    db_store.upsert_asset(
         name=asset_name,
         kind=kind,
         data=data,

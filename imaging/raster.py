@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+from pathlib import Path
 from typing import Iterable, Mapping, MutableMapping
 
 from PIL import Image, ImageFilter, ImageOps
@@ -189,6 +190,10 @@ def _pack_msb_first(image: Image.Image, *, invert: bool) -> bytes:
     return bytes(data)
 
 
+def _default_cache_dir() -> Path:
+    return Path.home() / ".labels-app" / "cache"
+
+
 def prepare_bitmap_for_tspl(
     image: Image.Image,
     *,
@@ -206,7 +211,12 @@ def prepare_bitmap_for_tspl(
     file_hash: str | None = None,
     threshold: int | None = None,
 ) -> tuple[int, int, int, bytes]:
-    """Return TSPL compatible raster data for ``image``."""
+    """Return TSPL compatible raster data for ``image``.
+
+    The raster is cached in-memory and, when possible, on disk. The disk cache is
+    optional and silently ignored when the cache directory cannot be created or
+    accessed.
+    """
 
     dots_x = width_dots or _mm_to_dots(width_mm, dpi_x)
     dots_y = height_dots or _mm_to_dots(height_mm, dpi_y)
@@ -217,6 +227,7 @@ def prepare_bitmap_for_tspl(
         raise ValueError("Thermal raster only supports 203 or 300 DPI")
 
     cache_key = None
+    asset_id: int | None = None
     if file_hash:
         cache_key = (
             file_hash,
@@ -231,6 +242,12 @@ def prepare_bitmap_for_tspl(
         )
         if cache_key in _RASTER_CACHE:
             return _RASTER_CACHE[cache_key]
+        try:
+            from db import store as db_store
+
+            asset_id = db_store.get_asset_id_by_hash(file_hash)
+        except Exception:
+            asset_id = None
 
     fit_mode = fit.lower()
     if fit_mode not in {"fit", "fill", "stretch"}:
@@ -250,17 +267,93 @@ def prepare_bitmap_for_tspl(
     if sharpen:
         resized = resized.filter(ImageFilter.UnsharpMask())
 
+    width_bytes = (resized.width + 7) // 8
+    padded_width = width_bytes * 8
+    height_px = resized.height
+    gamma_value = float(gamma) if gamma and gamma > 0 else 0.0
+    threshold_value = int(threshold if threshold is not None else 128)
+
+    if asset_id is not None:
+        try:
+            from db import store as db_store
+
+            cache_path = db_store.find_raster_cache(
+                asset_id,
+                padded_width,
+                height_px,
+                (rounded_x, rounded_y),
+                method,
+                gamma_value,
+                sharpen,
+                invert,
+                threshold_value,
+            )
+        except Exception:
+            cache_path = None
+        if cache_path is not None:
+            try:
+                payload = cache_path.read_bytes()
+            except OSError:
+                payload = None
+            else:
+                result = (width_bytes, height_px, 0, payload)
+                if cache_key:
+                    _RASTER_CACHE[cache_key] = result
+                return result
+
     mono = _dither_to_mono(
         resized,
         method=method,
-        threshold=threshold if threshold is not None else 128,
+        threshold=threshold_value,
     )
     data = _pack_msb_first(mono, invert=invert)
 
-    width_bytes = (mono.width + 7) // 8
-    result = (width_bytes, mono.height, 0, data)
+    final_width_bytes = (mono.width + 7) // 8
+    padded_width = final_width_bytes * 8
+    result = (final_width_bytes, mono.height, 0, data)
+
     if cache_key:
         _RASTER_CACHE[cache_key] = result
+
+    if asset_id is not None:
+        cache_dir = _default_cache_dir()
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            cache_dir = None
+
+        if cache_dir is not None:
+            descriptor = (
+                f"{file_hash or asset_id}:{padded_width}:{mono.height}:{rounded_x}:{rounded_y}:"
+                f"{method}:{gamma_value}:{int(bool(sharpen))}:{int(bool(invert))}:{threshold_value}"
+            )
+            digest = hashlib.sha1(descriptor.encode("utf-8")).hexdigest()
+            prefix = file_hash or f"asset{asset_id}"
+            filename = f"{prefix}_{digest}.bin"
+            cache_path = cache_dir / filename
+            try:
+                cache_path.write_bytes(data)
+            except OSError:
+                pass
+            else:
+                try:
+                    from db import store as db_store
+
+                    db_store.insert_or_get_raster_cache(
+                        asset_id=asset_id,
+                        width_px=padded_width,
+                        height_px=mono.height,
+                        dpi=(rounded_x, rounded_y),
+                        dither=method,
+                        gamma=gamma_value,
+                        sharpen=sharpen,
+                        invert=invert,
+                        threshold=threshold_value,
+                        path=cache_path,
+                    )
+                except Exception:
+                    pass
+
     return result
 
 

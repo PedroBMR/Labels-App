@@ -94,12 +94,30 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             """
             CREATE TABLE IF NOT EXISTS raster_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                template_name TEXT NOT NULL,
-                fingerprint TEXT NOT NULL,
-                dpi INTEGER NOT NULL,
-                payload BLOB NOT NULL,
+                asset_id INTEGER NOT NULL,
+                width_px INTEGER NOT NULL,
+                height_px INTEGER NOT NULL,
+                dpi_x INTEGER NOT NULL,
+                dpi_y INTEGER NOT NULL,
+                dither TEXT NOT NULL,
+                gamma REAL NOT NULL DEFAULT 0,
+                sharpen INTEGER NOT NULL,
+                invert INTEGER NOT NULL,
+                threshold INTEGER NOT NULL,
+                path TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(fingerprint)
+                UNIQUE(
+                    asset_id,
+                    width_px,
+                    height_px,
+                    dpi_x,
+                    dpi_y,
+                    dither,
+                    gamma,
+                    sharpen,
+                    invert,
+                    threshold
+                )
             )
             """
         )
@@ -137,8 +155,8 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
 
         ensure_table(
             """
-            CREATE INDEX IF NOT EXISTS idx_raster_cache_template
-            ON raster_cache(template_name)
+            CREATE INDEX IF NOT EXISTS idx_raster_cache_asset
+            ON raster_cache(asset_id)
             """
         )
 

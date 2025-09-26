@@ -22,8 +22,6 @@ from functools import lru_cache
 
 from PIL import Image
 
-from imaging import load_image
-
 
 def _base_dir() -> str:
     """Obtém o diretório base do aplicativo.
@@ -67,6 +65,14 @@ def recurso_caminho(rel_path: str) -> str:
     if os.path.commonpath([full, base]) != base:
         raise ValueError("Caminho fora do diretório de assets")
     return full
+
+
+def load_image(*args, **kwargs):
+    """Wrapper that lazily imports :func:`imaging.load_image`."""
+
+    from imaging import load_image as _load_image
+
+    return _load_image(*args, **kwargs)
 
 
 def normalize_text(texto: str, *, max_len: int) -> tuple[str, str | None]:

@@ -180,3 +180,125 @@ def test_upsert_asset_persists_metadata(tmp_path):
     assert row["tags"] is None
     assert row["data"] == b"new"
     assert row["updated_at"] == "2024-04-01T12:00:00+00:00"
+
+
+def test_get_asset_id_by_hash(tmp_path):
+    db_path = tmp_path / "app.sqlite"
+
+    store.upsert_asset(
+        name="logo",
+        kind="image",
+        data=b"data",
+        path=None,
+        file_hash="asset-hash",
+        width_px=10,
+        height_px=10,
+        dpi_x=203,
+        dpi_y=203,
+        db_path=db_path,
+    )
+
+    asset_id = store.get_asset_id_by_hash("asset-hash", db_path=db_path)
+    assert isinstance(asset_id, int)
+    assert asset_id > 0
+    assert store.get_asset_id_by_hash("missing", db_path=db_path) is None
+
+
+def test_raster_cache_round_trip(tmp_path):
+    db_path = tmp_path / "app.sqlite"
+
+    store.upsert_asset(
+        name="logo",
+        kind="image",
+        data=b"data",
+        path=None,
+        file_hash="asset-hash",
+        width_px=10,
+        height_px=10,
+        dpi_x=203,
+        dpi_y=203,
+        db_path=db_path,
+    )
+
+    asset_id = store.get_asset_id_by_hash("asset-hash", db_path=db_path)
+    assert asset_id is not None
+
+    cache_path = tmp_path / "cache.bin"
+    cache_path.write_bytes(b"payload")
+
+    stored_path = store.insert_or_get_raster_cache(
+        asset_id=asset_id,
+        width_px=160,
+        height_px=80,
+        dpi=(203, 203),
+        dither="floyd",
+        gamma=None,
+        sharpen=False,
+        invert=False,
+        threshold=128,
+        path=cache_path,
+        db_path=db_path,
+    )
+
+    assert stored_path == canonical_file_path(cache_path)
+
+    located = store.find_raster_cache(
+        asset_id,
+        160,
+        80,
+        (203, 203),
+        "floyd",
+        0.0,
+        False,
+        False,
+        128,
+        db_path=db_path,
+    )
+
+    assert located == canonical_file_path(cache_path)
+    assert (
+        store.find_raster_cache(
+            asset_id,
+            160,
+            80,
+            (203, 203),
+            "floyd",
+            0.0,
+            False,
+            False,
+            129,
+            db_path=db_path,
+        )
+        is None
+    )
+
+    updated_path = tmp_path / "updated.bin"
+    updated_path.write_bytes(b"payload2")
+    stored_updated = store.insert_or_get_raster_cache(
+        asset_id=asset_id,
+        width_px=160,
+        height_px=80,
+        dpi=(203, 203),
+        dither="floyd",
+        gamma=0.0,
+        sharpen=False,
+        invert=False,
+        threshold=128,
+        path=updated_path,
+        db_path=db_path,
+    )
+
+    assert stored_updated == canonical_file_path(updated_path)
+    refreshed = store.find_raster_cache(
+        asset_id,
+        160,
+        80,
+        (203, 203),
+        "floyd",
+        0.0,
+        False,
+        False,
+        128,
+        db_path=db_path,
+    )
+    assert refreshed == canonical_file_path(updated_path)
