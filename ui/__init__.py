@@ -1,23 +1,8 @@
 """Elementos da interface gráfica do gerador de etiquetas.
 
-Responsabilidade:
-    Definir widgets e coordenar a interação do usuário com a impressão.
+"""Responsabilidade principal da interface de impressão."""
 
-Dependências:
-    - log
-    - persistence
-    - printing
-    - qt_compat
-    - utils
-
-Exemplo:
-    >>> from qt_compat import QApplication
-    >>> from ui import EtiquetaApp
-    >>> app = QApplication([])
-    >>> janela = EtiquetaApp()
-    >>> janela.show()
-"""
-
+import json
 import os
 import subprocess
 import sys
@@ -27,6 +12,7 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from _version import __version__
+from db import store as db_store
 from editor.window import LabelEditorWindow
 from log import LOG_FILE, logger, register_status_callback
 from model.template import TemplateDocument
@@ -41,7 +27,6 @@ from persistence import (
     registrar_contagem_mensal,
     salvar_config,
     salvar_contagem,
-    salvar_historico,
 )
 from printing import (
     Template,
@@ -49,6 +34,8 @@ from printing import (
     apply_media_settings,
     descobrir_impressora_padrao,
     export_labels,
+    Printer,
+    PrinterConfig,
     imprimir_etiqueta,
     imprimir_pagina_teste,
     listar_impressoras,
@@ -103,6 +90,7 @@ from qt_compat import (
 )
 from template_store import template_store
 from utils import backup_automatico, normalize_text, recurso_caminho
+from ui.print_history import PrintHistoryWidget
 
 CATEGORIAS_PADRAO = [
     "LIMPEZA, COPA, COZINHA",
@@ -568,6 +556,123 @@ class EtiquetaApp(QWidget):
         layout_quadro = QVBoxLayout(quadro)
         layout_quadro.setContentsMargins(40, 30, 40, 30)
         layout_central.addWidget(quadro)
+
+        self.print_history = PrintHistoryWidget(self)
+        self.print_history.reprintRequested.connect(self._reprint_from_history)
+        layout_central.addWidget(self.print_history)
+
+    def _refresh_print_history(self) -> None:
+        if hasattr(self, "print_history") and self.print_history is not None:
+            self.print_history.refresh()
+
+    def _resend_job(
+        self,
+        job_id: int,
+        *,
+        success_message: str,
+        error_message: str,
+    ) -> bool:
+        record = db_store.get_print_job(job_id=job_id)
+        if record is None:
+            QMessageBox.warning(
+                self,
+                "Reimpressão",
+                "Não foi possível localizar o trabalho de impressão selecionado.",
+            )
+            return False
+
+        payload = db_store.get_job_payload(job_id=job_id)
+        if payload is None:
+            QMessageBox.warning(
+                self,
+                "Reimpressão",
+                "O comando original desta impressão não está disponível.",
+            )
+            return False
+
+        raw_settings = record.get("media_settings")
+        media_settings = None
+        if isinstance(raw_settings, str) and raw_settings:
+            try:
+                media_settings = json.loads(raw_settings)
+            except json.JSONDecodeError:
+                media_settings = None
+
+        transport = str(record.get("printer_transport") or "win32")
+        backend = str(
+            record.get("printer_backend")
+            or record.get("template_backend")
+            or "tspl"
+        )
+        template_backend = (
+            str(record.get("template_backend"))
+            if record.get("template_backend")
+            else backend
+        )
+
+        config = PrinterConfig(
+            backend=backend,
+            transport=transport,
+            printer_name=str(record.get("printer_name") or "") or None,
+        )
+
+        if config.transport.lower() == "tcp":
+            host = record.get("printer_host")
+            port = record.get("printer_port")
+            if host:
+                config.host = str(host)
+            if port:
+                try:
+                    config.port = int(port)
+                except (TypeError, ValueError):
+                    pass
+
+        try:
+            printer = Printer(config, logger=logger)
+        except Exception as exc:
+            logger.exception("Falha ao preparar reimpressão")
+            QMessageBox.critical(
+                self,
+                "Reimpressão",
+                f"Não foi possível preparar a impressora selecionada:\n{exc}",
+            )
+            return False
+
+        try:
+            ok, erro, novo_job = printer.send_commands(
+                payload,
+                backend=template_backend,
+                template_name=str(record.get("template_name") or "") or None,
+                template_backend=str(record.get("template_backend") or "") or None,
+                media_settings=media_settings,
+            )
+        except Exception as exc:
+            logger.exception("Erro ao reenviar trabalho salvo")
+            QMessageBox.critical(
+                self, "Reimpressão", f"Ocorreu um erro ao reenviar o trabalho:\n{exc}"
+            )
+            return False
+
+        if not ok:
+            mensagem = "Erro desconhecido"
+            if erro:
+                mensagem = f"{erro['code']}: {erro['message']}"
+            self._atualizar_status(error_message, "orange")
+            QMessageBox.critical(self, "Reimpressão", mensagem)
+            return False
+
+        self._ultimo_job_id = novo_job
+        self._atualizar_status(success_message, "lightblue")
+        self._refresh_print_history()
+        return True
+
+    def _reprint_from_history(self, job_id: int) -> None:
+        self.cancel_event.clear()
+        self._resend_job(
+            job_id,
+            success_message="♻️ Reimpressão reenviada",
+            error_message="⚠️ Erro na reimpressão",
+        )
 
         grid = QGridLayout()
         layout_quadro.addLayout(grid)
@@ -1053,25 +1158,14 @@ class EtiquetaApp(QWidget):
     # Ações de impressão e utilitários
     # =========================
     def _abrir_historico(self) -> None:
-        caminho = recurso_caminho("historico_impressoes.csv")
-        if os.path.exists(caminho):
-            try:
-                if sys.platform.startswith("win"):
-                    os.startfile(caminho)  # type: ignore[attr-defined]
-                elif sys.platform == "darwin":
-                    subprocess.run(["open", caminho], check=True)
-                else:
-                    subprocess.run(["xdg-open", caminho], check=True)
-            except Exception as e:
-                QMessageBox.warning(
-                    self,
-                    "Histórico",
-                    f"Não foi possível abrir o arquivo de histórico:\n{e}",
-                )
-        else:
-            QMessageBox.information(
-                self, "Histórico", "O arquivo de histórico ainda não existe."
-            )
+        self._refresh_print_history()
+        if self.print_history is not None:
+            self.print_history.setFocus()
+        QMessageBox.information(
+            self,
+            "Histórico",
+            "O histórico recente está disponível no painel abaixo.",
+        )
 
     def _imprimir_etiqueta(self) -> None:
         self._update_print_button_state()
@@ -1280,10 +1374,6 @@ class EtiquetaApp(QWidget):
                 self.contagem_total += volumes
                 self.contagem_mensal += volumes
                 salvar_contagem(self.contagem_total, self.contagem_mensal)
-
-                salvar_historico(
-                    saida, categoria, emissor, municipio, volumes, data_hora
-                )
                 self.ultima_etiqueta = EtiquetaInfo(
                     saida=saida,
                     categoria=categoria,
@@ -1313,6 +1403,7 @@ class EtiquetaApp(QWidget):
 
         self.cancel_event.clear()
         self._impressao_context = None
+        self._refresh_print_history()
 
     def _cleanup_thread(self) -> None:
         if self._worker is not None:
@@ -1339,48 +1430,25 @@ class EtiquetaApp(QWidget):
             QMessageBox.critical(self, "Erro", f"{erro['code']}: {erro['message']}")
 
     def _reimprimir_ultima(self) -> None:
-        if self.ultima_etiqueta is None:
+        job_id: int | None = None
+        if self.ultima_etiqueta is not None:
+            maybe = self.ultima_etiqueta.get("job_id")
+            if isinstance(maybe, int):
+                job_id = maybe
+        if job_id is None:
+            job_id = self._ultimo_job_id
+        if job_id is None:
             QMessageBox.information(
                 self, "Nenhuma etiqueta", "Nenhuma etiqueta foi impressa ainda."
             )
             return
-        dados = self.ultima_etiqueta
-
-        # aplica o mesmo template da impressão original
-        tpl_name = (
-            dados.get("template", "")
-            or self.template_input.currentText().strip()
-        )
-        if tpl_name:
-            try:
-                self._aplicar_template(tpl_name)
-            except Exception:
-                pass
 
         self.cancel_event.clear()
-        if self._template is None:
-            QMessageBox.warning(self, "Modelo", "Selecione um modelo de etiqueta.")
-            return
-        dados_tspl = dict(dados)
-        dados_tspl["saida"] = str(dados_tspl.get("saida", ""))
-        media_settings = self._media_settings(consume=True)
-        tspl = montar_tspl(self._template, dados_tspl, media_settings)
-        printer_hint = str(self.config.get("ultima_impressora", "")).strip() or None
-        ok, erro, job_id = imprimir_etiqueta(
-            tspl,
-            repetir_em_falha=self.retry_checkbox.isChecked(),
-            nome_impressora=printer_hint,
-            logger=logger,
-            template_name=tpl_name,
-            media_settings=media_settings,
+        self._resend_job(
+            job_id,
+            success_message="♻️ Reimpressão concluída",
+            error_message="⚠️ Erro na reimpressão",
         )
-        if ok:
-            self._ultimo_job_id = job_id
-            self._atualizar_status("♻️ Reimpressão concluída", "lightblue")
-        else:
-            self._atualizar_status("⚠️ Erro na reimpressão", "orange")
-            logger.error("Erro na reimpressão: %s", erro)
-            QMessageBox.critical(self, "Erro", f"{erro['code']}: {erro['message']}")
 
     def _reimprimir_faltantes(self) -> None:
         if self.ultima_etiqueta is None:
@@ -1391,6 +1459,14 @@ class EtiquetaApp(QWidget):
 
         dados = self.ultima_etiqueta
         total = int(dados["volumes"])
+        job_id = dados.get("job_id") or self._ultimo_job_id
+        if job_id is None:
+            QMessageBox.information(
+                self,
+                "Nenhuma etiqueta",
+                "O registro da última impressão não está disponível.",
+            )
+            return
 
         faltantes, ok = QInputDialog.getInt(
             self,
@@ -1404,68 +1480,26 @@ class EtiquetaApp(QWidget):
         if not ok:
             return
 
-        inicio = total - faltantes + 1
-
-        try:
-            # aplica o mesmo template da impressão original
-            tpl_name = self.ultima_etiqueta.get("template", "")
-            if tpl_name:
-                try:
-                    self._aplicar_template(tpl_name)
-                except Exception:
-                    pass
-
-            self.cancel_event.clear()
-            dados_tspl = {
-                "saida": str(dados["saida"]),
-                "categoria": dados["categoria"],
-                "emissor": dados["emissor"],
-                "municipio": dados["municipio"],
-                "volumes": faltantes,
-                "data_hora": dados["data_hora"],
-                "inicio_indice": inicio,
-                "total_exibicao": total,
-            }
-            if self._template is None:
-                QMessageBox.warning(self, "Modelo", "Selecione um modelo de etiqueta.")
-                return
-            media_settings = self._media_settings(consume=True)
-            tspl = montar_tspl(self._template, dados_tspl, media_settings)
-            printer_hint = str(self.config.get("ultima_impressora", "")).strip() or None
-            ok, erro, job_id = imprimir_etiqueta(
-                tspl,
-                repetir_em_falha=self.retry_checkbox.isChecked(),
-                nome_impressora=printer_hint,
-                logger=logger,
-                template_name=tpl_name,
-                media_settings=media_settings,
+        if faltantes != total:
+            resposta = QMessageBox.question(
+                self,
+                "Reimpressão parcial",
+                "Apenas é possível reenviar o trabalho completo. Deseja "
+                "reimprimir todas as etiquetas deste lote?",
             )
-
-            if not ok:
-                self._atualizar_status("⚠️ Erro na reimpressão de faltantes", "orange")
-                logger.error("Erro na reimpressão de faltantes: %s", erro)
-                QMessageBox.critical(self, "Erro", f"{erro['code']}: {erro['message']}")
+            if resposta != QMessageBox.Yes:
                 return
 
-            self._ultimo_job_id = job_id
-            self.contagem_total += faltantes
-            self.contagem_mensal += faltantes
+        self.cancel_event.clear()
+        if self._resend_job(
+            int(job_id),
+            success_message="♻️ Faltantes reimpressas",
+            error_message="⚠️ Erro na reimpressão de faltantes",
+        ):
+            self.contagem_total += total
+            self.contagem_mensal += total
             salvar_contagem(self.contagem_total, self.contagem_mensal)
-            salvar_historico(
-                dados["saida"],
-                dados["categoria"],
-                dados["emissor"],
-                dados["municipio"],
-                faltantes,
-                datetime.now().strftime("%d/%m/%Y %H:%M"),
-            )
             self._atualizar_contagem_label()
-
-            self._atualizar_status("♻️ Faltantes reimpressas", "lightblue")
-        except Exception as e:
-            self._atualizar_status("⚠️ Erro na reimpressão de faltantes", "orange")
-            logger.exception("Erro na reimpressão de faltantes")
-            QMessageBox.critical(self, "Erro", str(e))
 
     def _reimprimir_intervalo(self) -> None:
         if self.ultima_etiqueta is None:
@@ -1476,6 +1510,14 @@ class EtiquetaApp(QWidget):
 
         dados = self.ultima_etiqueta
         total = int(dados["volumes"])
+        job_id = dados.get("job_id") or self._ultimo_job_id
+        if job_id is None:
+            QMessageBox.information(
+                self,
+                "Nenhuma etiqueta",
+                "O registro da última impressão não está disponível.",
+            )
+            return
 
         intervalo, ok = QInputDialog.getText(
             self,
@@ -1506,53 +1548,22 @@ class EtiquetaApp(QWidget):
             )
             return
 
-        volumes = fim - inicio + 1
-
-        try:
-            # aplica o mesmo template da impressão original
-            tpl_name = self.ultima_etiqueta.get("template", "")
-            if tpl_name:
-                try:
-                    self._aplicar_template(tpl_name)
-                except Exception:
-                    pass
-
-            self.cancel_event.clear()
-            dados_tspl = {
-                "saida": str(dados["saida"]),
-                "categoria": dados["categoria"],
-                "emissor": dados["emissor"],
-                "municipio": dados["municipio"],
-                "volumes": volumes,
-                "data_hora": dados["data_hora"],
-                "inicio_indice": inicio,
-                "total_exibicao": total,
-            }
-            if self._template is None:
-                QMessageBox.warning(self, "Modelo", "Selecione um modelo de etiqueta.")
-                return
-            media_settings = self._media_settings(consume=True)
-            tspl = montar_tspl(self._template, dados_tspl, media_settings)
-            printer_hint = str(self.config.get("ultima_impressora", "")).strip() or None
-            ok, erro, job_id = imprimir_etiqueta(
-                tspl,
-                repetir_em_falha=self.retry_checkbox.isChecked(),
-                nome_impressora=printer_hint,
-                logger=logger,
-                template_name=tpl_name,
-                media_settings=media_settings,
+        if inicio != 1 or fim != total:
+            resposta = QMessageBox.question(
+                self,
+                "Reimpressão parcial",
+                "Só é possível reenviar o trabalho completo pelo histórico. "
+                "Deseja reimprimir todas as etiquetas deste lote?",
             )
-            if ok:
-                self._ultimo_job_id = job_id
-                self._atualizar_status("♻️ Intervalo reimposto", "lightblue")
-            else:
-                self._atualizar_status("⚠️ Erro na reimpressão do intervalo", "orange")
-                logger.error("Erro na reimpressão do intervalo: %s", erro)
-                QMessageBox.critical(self, "Erro", f"{erro['code']}: {erro['message']}")
-        except Exception as e:
-            self._atualizar_status("⚠️ Erro na reimpressão do intervalo", "orange")
-            logger.exception("Erro na reimpressão do intervalo")
-            QMessageBox.critical(self, "Erro", str(e))
+            if resposta != QMessageBox.Yes:
+                return
+
+        self.cancel_event.clear()
+        self._resend_job(
+            int(job_id),
+            success_message="♻️ Intervalo reimpresso",
+            error_message="⚠️ Erro na reimpressão do intervalo",
+        )
 
     def _abrir_log(self) -> None:
         if not os.path.exists(LOG_FILE):

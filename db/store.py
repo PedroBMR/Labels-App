@@ -24,6 +24,8 @@ __all__ = [
     "find_raster_cache",
     "insert_or_get_raster_cache",
     "insert_print_job",
+    "list_print_jobs",
+    "get_print_job",
     # upsert_asset(name, kind, data, path, file_hash, width_px, height_px,
     #              dpi_x, dpi_y, tags, updated_at, db_path)
     "upsert_asset",
@@ -618,3 +620,101 @@ def get_job_payload(
     if isinstance(payload_value, memoryview):
         return bytes(payload_value)
     return bytes(payload_value)
+
+
+def _row_to_dict(row: sqlite3.Row) -> dict[str, object]:
+    return {key: row[key] for key in row.keys()}
+
+
+def get_print_job(
+    *, job_id: int, db_path: str | Path | None = None
+) -> dict[str, object] | None:
+    """Return the print job record identified by ``job_id``."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    with contextlib.closing(get_conn(database)) as conn:
+        cursor = conn.execute(
+            """
+            SELECT
+                id,
+                created_at,
+                payload_hash,
+                template_name,
+                template_backend,
+                printer_name,
+                printer_backend,
+                printer_transport,
+                media_settings,
+                status,
+                pending_at,
+                running_at,
+                finished_at,
+                failed_at,
+                error_text
+            FROM print_jobs
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (job_id,),
+        )
+        row = cursor.fetchone()
+    if row is None:
+        return None
+    return _row_to_dict(row)
+
+
+def list_print_jobs(
+    *,
+    limit: int = 50,
+    offset: int = 0,
+    status: Sequence[str] | None = None,
+    db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    """Return recent print jobs ordered from newest to oldest."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    filters: list[str] = []
+    params: list[object] = []
+    if status:
+        placeholders = ", ".join("?" for _ in status)
+        filters.append(f"status IN ({placeholders})")
+        params.extend(str(value).lower() for value in status)
+
+    where_clause = ""
+    if filters:
+        where_clause = "WHERE " + " AND ".join(filters)
+
+    query = f"""
+        SELECT
+            id,
+            created_at,
+            payload_hash,
+            template_name,
+            template_backend,
+            printer_name,
+            printer_backend,
+            printer_transport,
+            media_settings,
+            status,
+            pending_at,
+            running_at,
+            finished_at,
+            failed_at,
+            error_text
+        FROM print_jobs
+        {where_clause}
+        ORDER BY created_at DESC, id DESC
+        LIMIT ? OFFSET ?
+    """
+
+    params.extend([int(limit), int(offset)])
+
+    with contextlib.closing(get_conn(database)) as conn:
+        cursor = conn.execute(query, params)
+        rows = cursor.fetchall()
+
+    return [_row_to_dict(row) for row in rows]

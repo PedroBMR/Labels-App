@@ -20,6 +20,7 @@ from PIL import Image
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 import utils
+from db import store as db_store
 
 
 def test_melhorar_logo_shape(tmp_path):
@@ -60,14 +61,15 @@ def test_backup_limite(tmp_path, monkeypatch, caplog):
 
     assets = tmp_path / "assets"
     assets.mkdir()
-    for nome in [
-        "historico_impressoes.csv",
-        "contagem.json",
-        "contagem_mensal.json",
-    ]:
+    for nome in ["contagem.json", "contagem_mensal.json"]:
         (assets / nome).write_text("dados")
 
     (assets / "settings.json").write_text("{\"backup_quantidade\": 2}")
+
+    db_store.configure_default_path(tmp_path / "_data" / "app.sqlite")
+    db_path = db_store.default_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db_path.write_text("db")
 
     class FakeDateTime:
         counter = 0
@@ -90,7 +92,7 @@ def test_backup_limite(tmp_path, monkeypatch, caplog):
             app_logger.removeHandler(caplog.handler)
 
     destino = tmp_path / "_backup"
-    backups = sorted(destino.glob("historico_impressoes_*.csv"))
+    backups = sorted(destino.glob("app_*.sqlite"))
     assert len(backups) == 2
-    assert not (destino / "historico_impressoes_2024-01-01_00-00-01.csv").exists()
+    assert not (destino / "app_2024-01-01_00-00-01.sqlite").exists()
     assert any("Backup removido" in record.message for record in caplog.records)

@@ -145,6 +145,7 @@ def backup_automatico() -> None:
 
     from log import logger
     from persistence import carregar_config
+    from db import store as db_store
 
     base = _base_dir()
     origem = os.path.join(base, "assets")
@@ -155,23 +156,28 @@ def backup_automatico() -> None:
     config = carregar_config()
     max_backups = int(config.get("backup_quantidade", 7))
 
-    arquivos = ["historico_impressoes.csv", "contagem.json", "contagem_mensal.json"]
-    for arq in arquivos:
-        orig = os.path.join(origem, arq)
-        if os.path.exists(orig):
-            nome_backup = f"{arq.replace('.', f'_{agora}.')}"
-            shutil.copy2(orig, os.path.join(destino, nome_backup))
+    arquivos = [
+        os.path.join(origem, "contagem.json"),
+        os.path.join(origem, "contagem_mensal.json"),
+        str(db_store.default_db_path()),
+    ]
+    for caminho_origem in arquivos:
+        if not os.path.exists(caminho_origem):
+            continue
+        nome_base = os.path.basename(caminho_origem)
+        nome_backup = f"{nome_base.replace('.', f'_{agora}.')}"
+        shutil.copy2(caminho_origem, os.path.join(destino, nome_backup))
 
-            base_nome, ext = os.path.splitext(arq)
-            backups = sorted(
-                f
-                for f in os.listdir(destino)
-                if f.startswith(f"{base_nome}_") and f.endswith(ext)
-            )
-            excedente = len(backups) - max_backups
-            for antigo in backups[:excedente]:
-                os.remove(os.path.join(destino, antigo))
-                logger.info("Backup removido: %s", antigo)
+        base_nome, ext = os.path.splitext(nome_base)
+        backups = sorted(
+            f
+            for f in os.listdir(destino)
+            if f.startswith(f"{base_nome}_") and f.endswith(ext)
+        )
+        excedente = len(backups) - max_backups
+        for antigo in backups[:excedente]:
+            os.remove(os.path.join(destino, antigo))
+            logger.info("Backup removido: %s", antigo)
 
 
 def _install_dir() -> str:
