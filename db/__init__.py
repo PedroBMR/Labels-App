@@ -6,6 +6,7 @@ from .store import (
     default_db_path,
     get_conn,
     init,
+    upsert_asset,
     upsert_template,
     vacuum,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "default_db_path",
     "get_conn",
     "init",
+    "upsert_asset",
     "upsert_template",
     "vacuum",
 ]

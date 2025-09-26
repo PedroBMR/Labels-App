@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def apply_migrations(conn: sqlite3.Connection) -> None:
@@ -55,6 +55,7 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 data TEXT NOT NULL,
+                kind TEXT,
                 path TEXT,
                 file_hash TEXT,
                 width_mm REAL,
@@ -73,8 +74,16 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             CREATE TABLE IF NOT EXISTS assets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
-                type TEXT NOT NULL,
-                data BLOB NOT NULL,
+                kind TEXT NOT NULL,
+                path TEXT,
+                file_hash TEXT,
+                width_px INTEGER,
+                height_px INTEGER,
+                dpi_x REAL,
+                dpi_y REAL,
+                tags TEXT,
+                data BLOB,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(name)
             )
@@ -121,8 +130,8 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
 
         ensure_table(
             """
-            CREATE INDEX IF NOT EXISTS idx_assets_type
-            ON assets(type)
+            CREATE INDEX IF NOT EXISTS idx_assets_kind
+            ON assets(kind)
             """
         )
 
@@ -151,6 +160,8 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE templates ADD COLUMN path TEXT")
         if not has_column("templates", "file_hash"):
             conn.execute("ALTER TABLE templates ADD COLUMN file_hash TEXT")
+        if not has_column("templates", "kind"):
+            conn.execute("ALTER TABLE templates ADD COLUMN kind TEXT")
         if not has_column("templates", "width_mm"):
             conn.execute("ALTER TABLE templates ADD COLUMN width_mm REAL")
         if not has_column("templates", "height_mm"):
@@ -159,6 +170,35 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE templates ADD COLUMN dpi INTEGER")
         if not has_column("templates", "tags"):
             conn.execute("ALTER TABLE templates ADD COLUMN tags TEXT")
+
+        if not has_column("assets", "kind"):
+            conn.execute("ALTER TABLE assets ADD COLUMN kind TEXT")
+            if has_column("assets", "type"):
+                conn.execute("UPDATE assets SET kind = type WHERE kind IS NULL")
+        if not has_column("assets", "path"):
+            conn.execute("ALTER TABLE assets ADD COLUMN path TEXT")
+        if not has_column("assets", "file_hash"):
+            conn.execute("ALTER TABLE assets ADD COLUMN file_hash TEXT")
+        if not has_column("assets", "width_px"):
+            conn.execute("ALTER TABLE assets ADD COLUMN width_px INTEGER")
+        if not has_column("assets", "height_px"):
+            conn.execute("ALTER TABLE assets ADD COLUMN height_px INTEGER")
+        if not has_column("assets", "dpi_x"):
+            conn.execute("ALTER TABLE assets ADD COLUMN dpi_x REAL")
+        if not has_column("assets", "dpi_y"):
+            conn.execute("ALTER TABLE assets ADD COLUMN dpi_y REAL")
+        if not has_column("assets", "tags"):
+            conn.execute("ALTER TABLE assets ADD COLUMN tags TEXT")
+        if not has_column("assets", "created_at"):
+            conn.execute(
+                "ALTER TABLE assets ADD COLUMN created_at TEXT NOT NULL"
+                " DEFAULT CURRENT_TIMESTAMP"
+            )
+        if not has_column("assets", "updated_at"):
+            conn.execute(
+                "ALTER TABLE assets ADD COLUMN updated_at TEXT NOT NULL"
+                " DEFAULT CURRENT_TIMESTAMP"
+            )
 
         conn.execute(
             """

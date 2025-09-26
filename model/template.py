@@ -399,6 +399,7 @@ class TemplateDocument:
                 width_mm=width_mm,
                 height_mm=height_mm,
                 dpi=dpi,
+                kind=str(self.page.get("backend") or self.page.get("type") or "unknown"),
                 tags=tags,
                 updated_at=timestamp,
             )
