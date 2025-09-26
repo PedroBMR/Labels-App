@@ -12,6 +12,7 @@ from PIL.ImageQt import ImageQt
 from qt_compat import (
     QBrush,
     QCheckBox,
+    QComboBox,
     QColor,
     QGraphicsPixmapItem,
     QGraphicsScene,
@@ -38,6 +39,7 @@ from .history import UndoHistoryPanel
 from .items import GraphicsElementItem, TextGraphicsItem
 from .layers import LayerPanel
 from .properties import PropertyPanel
+from .roll_preview import PrinterRollPreviewWidget
 from .scene import LabelScene, build_model_from_scene
 from .view import LabelView
 
@@ -430,6 +432,25 @@ class LabelEditorWidget(QWidget):
         self.preview_widget.refresh_requested.connect(
             lambda: self.update_preview(immediate=True)
         )
+        self.roll_preview_widget = PrinterRollPreviewWidget()
+
+        self.preview_stack = QStackedWidget()
+        self.preview_stack.addWidget(self.preview_widget)
+        self.preview_stack.addWidget(self.roll_preview_widget)
+
+        self.preview_mode_combo = QComboBox()
+        self.preview_mode_combo.addItem("Visualização estática")
+        self.preview_mode_combo.addItem("Simulação do rolo")
+        self.preview_mode_combo.currentIndexChanged.connect(
+            self.preview_stack.setCurrentIndex
+        )
+
+        preview_panel = QWidget()
+        preview_layout = QVBoxLayout(preview_panel)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(6)
+        preview_layout.addWidget(self.preview_mode_combo)
+        preview_layout.addWidget(self.preview_stack, 1)
 
         self.h_ruler = RulerWidget(Qt.Horizontal, self.scene, self.view)
         self.v_ruler = RulerWidget(Qt.Vertical, self.scene, self.view)
@@ -455,7 +476,7 @@ class LabelEditorWidget(QWidget):
         self.splitter = QSplitter()
         self.splitter.setOrientation(Qt.Horizontal)
         self.splitter.addWidget(self.canvas_splitter)
-        self.splitter.addWidget(self.preview_widget)
+        self.splitter.addWidget(preview_panel)
         self.splitter.setStretchFactor(0, 3)
         self.splitter.setStretchFactor(1, 2)
 
@@ -541,6 +562,7 @@ class LabelEditorWidget(QWidget):
         self._last_preview_payload = payload_signature
         metadata = self._build_preview_metadata(backend_dict.get("page", {}))
         self.preview_widget.set_image(image, metadata)
+        self.roll_preview_widget.set_image(image, metadata)
 
     def _build_preview_metadata(self, page: Mapping[str, Any]) -> Mapping[str, Any]:
         def to_float(value: Any) -> float | None:
@@ -558,6 +580,8 @@ class LabelEditorWidget(QWidget):
             dots_per_mm = to_float(page.get("dots_per_mm"))
             if dots_per_mm:
                 dpi = dots_per_mm * MM_PER_INCH
+        gap_mm = to_float(page.get("gap_mm"))
+        dots_per_mm = to_float(page.get("dots_per_mm"))
         metadata: dict[str, Any] = {}
         if width_mm is not None:
             metadata["width_mm"] = width_mm
@@ -565,6 +589,14 @@ class LabelEditorWidget(QWidget):
             metadata["height_mm"] = height_mm
         if dpi is not None:
             metadata["dpi"] = dpi
+        if dots_per_mm is not None:
+            metadata["dots_per_mm"] = dots_per_mm
+        if gap_mm is not None:
+            metadata["gap_mm"] = gap_mm
+            if dots_per_mm is not None:
+                metadata["gap_px"] = gap_mm * dots_per_mm
+            elif dpi is not None:
+                metadata["gap_px"] = gap_mm * dpi / MM_PER_INCH
         return metadata
 
     def create_default(self, kind: str) -> dict[str, Any]:
