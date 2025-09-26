@@ -391,10 +391,11 @@ class EtiquetaInfo(TypedDict):
     volumes: int
     data_hora: str
     template: str  # <- modelo usado na impressão
+    job_id: int | None
 
 
 class PrintingWorker(QObject):
-    finished = pyqtSignal(bool, object)  # (ok, erro dict | None)
+    finished = pyqtSignal(bool, object, object)  # (ok, erro dict | None, job_id)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__()
@@ -404,11 +405,11 @@ class PrintingWorker(QObject):
     @pyqtSlot()
     def run(self) -> None:
         try:
-            ok, erro = imprimir_etiqueta(*self.args, **self.kwargs)
+            ok, erro, job_id = imprimir_etiqueta(*self.args, **self.kwargs)
         except Exception as e:  # pragma: no cover - segurança
             logger.exception("Erro no worker de impressão")
-            ok, erro = False, {"code": -1, "message": str(e)}
-        self.finished.emit(ok, erro)
+            ok, erro, job_id = False, {"code": -1, "message": str(e)}, None
+        self.finished.emit(ok, erro, job_id)
 
 
 class EtiquetaApp(QWidget):
@@ -423,6 +424,7 @@ class EtiquetaApp(QWidget):
         self.config = carregar_config()
         self.contagem_total, self.contagem_mensal = carregar_contagem()
         self.ultima_etiqueta: EtiquetaInfo | None = None
+        self._ultimo_job_id: int | None = None
         self.cancel_event = threading.Event()
         self._worker: PrintingWorker | None = None
         self._thread: QThread | None = None
@@ -1125,9 +1127,14 @@ class EtiquetaApp(QWidget):
             data_hora,
         )
 
+        printer_hint = str(self.config.get("ultima_impressora", "")).strip() or None
         self._worker = PrintingWorker(
             tspl,
             repetir_em_falha=self.retry_checkbox.isChecked(),
+            nome_impressora=printer_hint,
+            logger=logger,
+            template_name=tpl,
+            media_settings=media_settings,
         )
         self._thread = QThread()
         self._worker.moveToThread(self._thread)
@@ -1243,7 +1250,10 @@ class EtiquetaApp(QWidget):
             self._thread.quit()
         self._atualizar_status("❌ Impressão cancelada", "orange")
 
-    def _impressao_finalizada(self, ok: bool, erro: dict | None) -> None:
+    def _impressao_finalizada(
+        self, ok: bool, erro: dict | None, job_id: int | None
+    ) -> None:
+        self._ultimo_job_id = job_id
         if self._impressao_context is None:
             return
         (
@@ -1286,6 +1296,7 @@ class EtiquetaApp(QWidget):
                         or self.template_input.currentText().strip()
                         or ""
                     ),
+                    job_id=job_id,
                 )
 
                 self._atualizar_listas_recentes(categoria, emissor, municipio)
@@ -1316,10 +1327,11 @@ class EtiquetaApp(QWidget):
         if self._template is None:
             QMessageBox.warning(self, "Modelo", "Selecione um modelo de etiqueta.")
             return
-        ok, erro = imprimir_pagina_teste(
+        ok, erro, job_id = imprimir_pagina_teste(
             self._template, repetir_em_falha=self.retry_checkbox.isChecked()
         )
         if ok:
+            self._ultimo_job_id = job_id
             self._atualizar_status("✅ Página de teste impressa", "lightgreen")
         else:
             self._atualizar_status("⚠️ Erro na impressão de teste", "orange")
@@ -1353,11 +1365,17 @@ class EtiquetaApp(QWidget):
         dados_tspl["saida"] = str(dados_tspl.get("saida", ""))
         media_settings = self._media_settings(consume=True)
         tspl = montar_tspl(self._template, dados_tspl, media_settings)
-        ok, erro = imprimir_etiqueta(
+        printer_hint = str(self.config.get("ultima_impressora", "")).strip() or None
+        ok, erro, job_id = imprimir_etiqueta(
             tspl,
             repetir_em_falha=self.retry_checkbox.isChecked(),
+            nome_impressora=printer_hint,
+            logger=logger,
+            template_name=tpl_name,
+            media_settings=media_settings,
         )
         if ok:
+            self._ultimo_job_id = job_id
             self._atualizar_status("♻️ Reimpressão concluída", "lightblue")
         else:
             self._atualizar_status("⚠️ Erro na reimpressão", "orange")
@@ -1413,9 +1431,14 @@ class EtiquetaApp(QWidget):
                 return
             media_settings = self._media_settings(consume=True)
             tspl = montar_tspl(self._template, dados_tspl, media_settings)
-            ok, erro = imprimir_etiqueta(
+            printer_hint = str(self.config.get("ultima_impressora", "")).strip() or None
+            ok, erro, job_id = imprimir_etiqueta(
                 tspl,
                 repetir_em_falha=self.retry_checkbox.isChecked(),
+                nome_impressora=printer_hint,
+                logger=logger,
+                template_name=tpl_name,
+                media_settings=media_settings,
             )
 
             if not ok:
@@ -1424,6 +1447,7 @@ class EtiquetaApp(QWidget):
                 QMessageBox.critical(self, "Erro", f"{erro['code']}: {erro['message']}")
                 return
 
+            self._ultimo_job_id = job_id
             self.contagem_total += faltantes
             self.contagem_mensal += faltantes
             salvar_contagem(self.contagem_total, self.contagem_mensal)
@@ -1509,11 +1533,17 @@ class EtiquetaApp(QWidget):
                 return
             media_settings = self._media_settings(consume=True)
             tspl = montar_tspl(self._template, dados_tspl, media_settings)
-            ok, erro = imprimir_etiqueta(
+            printer_hint = str(self.config.get("ultima_impressora", "")).strip() or None
+            ok, erro, job_id = imprimir_etiqueta(
                 tspl,
                 repetir_em_falha=self.retry_checkbox.isChecked(),
+                nome_impressora=printer_hint,
+                logger=logger,
+                template_name=tpl_name,
+                media_settings=media_settings,
             )
             if ok:
+                self._ultimo_job_id = job_id
                 self._atualizar_status("♻️ Intervalo reimposto", "lightblue")
             else:
                 self._atualizar_status("⚠️ Erro na reimpressão do intervalo", "orange")

@@ -8,7 +8,7 @@ import os
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Sequence
+from typing import Mapping, Sequence
 
 from . import migrations
 from utils import recurso_caminho
@@ -23,12 +23,15 @@ __all__ = [
     "get_asset_id_by_hash",
     "find_raster_cache",
     "insert_or_get_raster_cache",
+    "insert_print_job",
     # upsert_asset(name, kind, data, path, file_hash, width_px, height_px,
     #              dpi_x, dpi_y, tags, updated_at, db_path)
     "upsert_asset",
     # upsert_template(name, data, path, file_hash, width_mm, height_mm,
     #                 dpi, tags, kind, updated_at, db_path)
     "upsert_template",
+    "update_print_job_status",
+    "get_job_payload",
     "vacuum",
 ]
 
@@ -451,3 +454,167 @@ def insert_or_get_raster_cache(
             )
 
     return resolved_path
+
+
+def insert_print_job(
+    *,
+    payload_hash: str,
+    payload: bytes | memoryview,
+    template_name: str | None = None,
+    template_backend: str | None = None,
+    printer_name: str | None = None,
+    printer_backend: str | None = None,
+    printer_transport: str | None = None,
+    media_settings: Mapping[str, object] | None = None,
+    db_path: str | Path | None = None,
+) -> int:
+    """Insert a new print job row returning its identifier."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    pending_at = datetime.now(UTC).isoformat()
+    media_blob = (
+        json.dumps(media_settings, ensure_ascii=False, sort_keys=True)
+        if media_settings
+        else None
+    )
+
+    payload_bytes = bytes(payload)
+
+    with contextlib.closing(get_conn(database)) as conn:
+        with conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO print_jobs(
+                    payload_hash,
+                    payload,
+                    template_name,
+                    template_backend,
+                    printer_name,
+                    printer_backend,
+                    printer_transport,
+                    media_settings,
+                    status,
+                    pending_at
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                """,
+                (
+                    payload_hash,
+                    sqlite3.Binary(payload_bytes),
+                    template_name,
+                    template_backend,
+                    printer_name,
+                    printer_backend,
+                    printer_transport,
+                    media_blob,
+                    pending_at,
+                ),
+            )
+            job_id = int(cursor.lastrowid)
+    return job_id
+
+
+def update_print_job_status(
+    *,
+    status: str,
+    job_id: int | None = None,
+    payload_hash: str | None = None,
+    error_text: str | None = None,
+    db_path: str | Path | None = None,
+) -> bool:
+    """Update ``status`` for the job identified by ``job_id`` or ``payload_hash``."""
+
+    if job_id is None and payload_hash is None:
+        raise ValueError("job_id or payload_hash must be provided")
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    status_value = status.lower()
+    timestamp_columns = {
+        "pending": "pending_at",
+        "running": "running_at",
+        "done": "finished_at",
+        "failed": "failed_at",
+    }
+    column = timestamp_columns.get(status_value)
+    timestamp = datetime.now(UTC).isoformat()
+
+    assignments: list[str] = ["status = ?"]
+    params: list[object] = [status_value]
+
+    if column is not None:
+        assignments.append(f"{column} = ?")
+        params.append(timestamp)
+
+    if status_value == "failed":
+        assignments.append("error_text = ?")
+        params.append(error_text or "")
+        assignments.append("finished_at = NULL")
+    elif status_value == "done":
+        assignments.append("error_text = NULL")
+        assignments.append("failed_at = NULL")
+    elif status_value == "running":
+        assignments.append("error_text = NULL")
+        assignments.append("failed_at = NULL")
+
+    filters: list[str] = []
+    if job_id is not None:
+        filters.append("id = ?")
+        params.append(job_id)
+    if payload_hash is not None:
+        filters.append("payload_hash = ?")
+        params.append(payload_hash)
+
+    where_clause = " AND ".join(filters)
+
+    with contextlib.closing(get_conn(database)) as conn:
+        with conn:
+            cursor = conn.execute(
+                f"UPDATE print_jobs SET {', '.join(assignments)} WHERE {where_clause}",
+                params,
+            )
+            return cursor.rowcount > 0
+
+
+def get_job_payload(
+    *,
+    job_id: int | None = None,
+    payload_hash: str | None = None,
+    db_path: str | Path | None = None,
+) -> bytes | None:
+    """Fetch the payload associated with ``job_id`` or ``payload_hash``."""
+
+    if job_id is None and payload_hash is None:
+        raise ValueError("job_id or payload_hash must be provided")
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    filters: list[str] = []
+    params: list[object] = []
+    if job_id is not None:
+        filters.append("id = ?")
+        params.append(job_id)
+    if payload_hash is not None:
+        filters.append("payload_hash = ?")
+        params.append(payload_hash)
+
+    where_clause = " AND ".join(filters)
+
+    with contextlib.closing(get_conn(database)) as conn:
+        cursor = conn.execute(
+            f"SELECT payload FROM print_jobs WHERE {where_clause} ORDER BY id DESC LIMIT 1",
+            params,
+        )
+        row = cursor.fetchone()
+    if row is None:
+        return None
+    payload_value = row[0]
+    if payload_value is None:
+        return None
+    if isinstance(payload_value, memoryview):
+        return bytes(payload_value)
+    return bytes(payload_value)

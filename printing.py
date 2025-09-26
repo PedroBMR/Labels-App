@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import csv
+import hashlib
 import importlib
 import io
 import json
@@ -14,10 +15,11 @@ import time
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol
 
 from PIL import Image
 
+from db import store as db_store
 from compile import Calibration, CompilationError, SafeDict, get_backend
 from fonts import font_store
 from model.template import TemplateDocument, TemplateValidationError
@@ -288,6 +290,21 @@ class Template:
 
     def with_calibration(self, calibration: Calibration) -> "Template":
         return Template(self.document.copy(), calibration)
+
+
+def _prepare_payload(
+    commands: bytes | str,
+    backend: str,
+    encoding: str | None,
+) -> bytes:
+    """Encode ``commands`` into bytes using transport defaults."""
+
+    if isinstance(commands, str):
+        codec = encoding
+        if not codec:
+            codec = "cp1252" if backend.lower() == "tspl" else "utf-8"
+        return commands.encode(codec, errors="replace")
+    return bytes(commands)
 
 
 def resolve_media_settings(config: Mapping[str, Any]) -> dict[str, Any]:
@@ -971,6 +988,52 @@ class TransportError(RuntimeError):
         self.code = code if code is not None else -1
 
 
+def _record_and_send(
+    *,
+    payload: bytes,
+    payload_hash: str,
+    template_name: str | None,
+    template_backend: str | None,
+    printer_name: str | None,
+    printer_backend: str | None,
+    printer_transport: str | None,
+    media_settings: Mapping[str, Any] | None,
+    send_callable: Callable[[bytes], None],
+    logger: logging.Logger | None,
+) -> tuple[bool, dict | None, int | None]:
+    job_id = db_store.insert_print_job(
+        payload_hash=payload_hash,
+        payload=payload,
+        template_name=template_name,
+        template_backend=template_backend,
+        printer_name=printer_name,
+        printer_backend=printer_backend,
+        printer_transport=printer_transport,
+        media_settings=media_settings,
+    )
+
+    db_store.update_print_job_status(job_id=job_id, status="running")
+    try:
+        send_callable(payload)
+    except TransportError as exc:
+        db_store.update_print_job_status(
+            job_id=job_id, status="failed", error_text=str(exc)
+        )
+        if logger:
+            logger.error("Falha ao enviar comandos para impressora: %s", exc)
+        return False, {"code": exc.code, "message": str(exc)}, job_id
+    except Exception as exc:
+        db_store.update_print_job_status(
+            job_id=job_id, status="failed", error_text=str(exc)
+        )
+        if logger:
+            logger.exception("Erro inesperado ao enviar para impressora")
+        raise
+
+    db_store.update_print_job_status(job_id=job_id, status="done")
+    return True, None, job_id
+
+
 class WindowsSpoolerTransport:
     def __init__(self, printer_name: str | None = None) -> None:
         self.printer_name = printer_name
@@ -1118,6 +1181,14 @@ class Printer:
         self.logger = logger or logging.getLogger("app")
         self.transport = self._make_transport()
 
+    @staticmethod
+    def _prepare_payload(
+        commands: bytes | str,
+        backend: str,
+        encoding: str | None,
+    ) -> bytes:
+        return _prepare_payload(commands, backend, encoding)
+
     def _make_transport(self) -> Transport:
         mode = self.config.transport.lower()
         if mode == "win32":
@@ -1145,46 +1216,77 @@ class Printer:
         )
         return backend_name, commands
 
-    def send_commands(self, commands: bytes | str, *, backend: str | None = None) -> None:
-        backend = backend or self.config.backend
-        if isinstance(commands, str):
-            encoding = self.config.encoding
-            if encoding is None:
-                encoding = "cp1252" if backend.lower() == "tspl" else "utf-8"
-            payload = commands.encode(encoding, errors="replace")
-        else:
-            payload = bytes(commands)
-        self.transport.send(payload)
+    def send_commands(
+        self,
+        commands: bytes | str,
+        *,
+        backend: str | None = None,
+        template_name: str | None = None,
+        template_backend: str | None = None,
+        media_settings: Mapping[str, Any] | None = None,
+    ) -> tuple[bool, dict | None, int | None]:
+        backend_name = backend or self.config.backend
+        payload = self._prepare_payload(commands, backend_name, self.config.encoding)
+        payload_hash = hashlib.sha256(payload).hexdigest()
+        return _record_and_send(
+            payload=payload,
+            payload_hash=payload_hash,
+            template_name=template_name,
+            template_backend=template_backend or backend_name,
+            printer_name=self.config.printer_name,
+            printer_backend=self.config.backend,
+            printer_transport=self.config.transport,
+            media_settings=media_settings,
+            send_callable=self.transport.send,
+            logger=self.logger,
+        )
 
     def print_job(
-        self, template: Template | Mapping[str, Any], variables: Mapping[str, Any]
-    ) -> tuple[bool, dict | None]:
+        self,
+        template: Template | Mapping[str, Any],
+        variables: Mapping[str, Any],
+        *,
+        media_settings: Mapping[str, Any] | None = None,
+    ) -> tuple[bool, dict | None, int | None]:
         try:
             backend_name, commands = self.compile_job(template, variables)
-            self.send_commands(commands, backend=backend_name)
-            return True, None
-        except TransportError as exc:
-            if self.logger:
-                self.logger.error("Falha ao enviar comandos para impressora: %s", exc)
-            return False, {"code": exc.code, "message": str(exc)}
         except CompilationError as exc:
-            return False, {"code": -1, "message": str(exc)}
+            return False, {"code": -1, "message": str(exc)}, None
+
+        template_name: str | None = None
+        if isinstance(template, Template):
+            template_name = template.name
+        elif isinstance(template, Mapping):
+            maybe = template.get("name")
+            if isinstance(maybe, str):
+                template_name = maybe
+
+        ok, error, job_id = self.send_commands(
+            commands,
+            backend=backend_name,
+            template_name=template_name,
+            template_backend=backend_name,
+            media_settings=media_settings,
+        )
+        return ok, error, job_id
 
     def print_template(
         self,
         template: Template,
         dados: Mapping[str, Any],
-    ) -> tuple[bool, dict | None]:
+        *,
+        media_settings: Mapping[str, Any] | None = None,
+    ) -> tuple[bool, dict | None, int | None]:
         variables = template.document.defaults(scope="template")
         variables["items"] = build_label_series(dados, template)
-        return self.print_job(template, variables)
+        return self.print_job(template, variables, media_settings=media_settings)
 
     def print_calibration(
         self,
         *,
         backend: str | None = None,
         square_mm: float = CALIBRATION_SQUARE_MM,
-    ) -> tuple[bool, dict | None]:
+    ) -> tuple[bool, dict | None, int | None]:
         tpl = build_calibration_template(
             square_mm=square_mm,
             backend=backend or self.config.backend,
@@ -1267,29 +1369,80 @@ def imprimir_etiqueta(
     *,
     nome_impressora: str | None = None,
     logger: logging.Logger | None = None,
-) -> tuple[bool, dict | None]:
+    backend: str = "tspl",
+    template_name: str | None = None,
+    media_settings: Mapping[str, Any] | None = None,
+) -> tuple[bool, dict | None, int | None]:
     config = PrinterConfig(
-        backend="tspl",
+        backend=backend,
         transport="win32",
         printer_name=nome_impressora,
     )
     printer = Printer(config, logger=logger)
+    payload = _prepare_payload(commands, backend, config.encoding)
+    payload_hash = hashlib.sha256(payload).hexdigest()
+    job_id = db_store.insert_print_job(
+        payload_hash=payload_hash,
+        payload=payload,
+        template_name=template_name,
+        template_backend=backend,
+        printer_name=nome_impressora,
+        printer_backend=backend,
+        printer_transport=config.transport,
+        media_settings=media_settings,
+    )
+
     tentativas = 3 if repetir_em_falha else 1
+    last_error: TransportError | None = None
     for tentativa in range(1, tentativas + 1):
+        db_store.update_print_job_status(job_id=job_id, status="running")
         try:
-            printer.send_commands(commands, backend="tspl")
-            return True, None
+            printer.transport.send(payload)
         except TransportError as exc:
+            last_error = exc
+            db_store.update_print_job_status(
+                job_id=job_id, status="failed", error_text=str(exc)
+            )
             if logger:
                 logger.warning("Falha na tentativa %s: %s", tentativa, exc)
             if tentativa == tentativas:
-                return False, {"code": exc.code, "message": str(exc)}
+                return False, {"code": exc.code, "message": str(exc)}, job_id
+            db_store.update_print_job_status(job_id=job_id, status="pending")
             time.sleep(0.5 * tentativa)
+            continue
+
+        db_store.update_print_job_status(job_id=job_id, status="done")
+        return True, None, job_id
+
+    if last_error is not None:
+        return False, {"code": last_error.code, "message": str(last_error)}, job_id
+    return False, None, job_id
 
 
-def send(printer_name: str | None, payload: bytes) -> None:
+def send(
+    printer_name: str | None,
+    payload: bytes,
+    *,
+    backend: str = "tspl",
+    template_name: str | None = None,
+    media_settings: Mapping[str, Any] | None = None,
+    logger: logging.Logger | None = None,
+) -> tuple[bool, dict | None, int | None]:
     transport = WindowsSpoolerTransport(printer_name)
-    transport.send(payload)
+    payload_bytes = bytes(payload)
+    payload_hash = hashlib.sha256(payload_bytes).hexdigest()
+    return _record_and_send(
+        payload=payload_bytes,
+        payload_hash=payload_hash,
+        template_name=template_name,
+        template_backend=backend,
+        printer_name=printer_name,
+        printer_backend=backend,
+        printer_transport="win32",
+        media_settings=media_settings,
+        send_callable=transport.send,
+        logger=logger or logging.getLogger("app"),
+    )
 
 
 def imprimir_pagina_teste(

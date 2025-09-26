@@ -35,6 +35,20 @@ def test_init_creates_schema(tmp_path):
         assert row is not None
         assert row[0] == str(migrations.SCHEMA_VERSION)
 
+        columns = {
+            info[1]
+            for info in conn.execute("PRAGMA table_info(print_jobs)").fetchall()
+        }
+        assert {
+            "payload_hash",
+            "payload",
+            "pending_at",
+            "running_at",
+            "finished_at",
+            "failed_at",
+            "error_text",
+        }.issubset(columns)
+
     # Second initialisation should be a no-op
     store.init(db_path)
 
@@ -352,3 +366,74 @@ def test_raster_cache_round_trip(tmp_path):
         db_path=db_path,
     )
     assert refreshed == canonical_file_path(updated_path)
+
+def test_print_job_lifecycle(tmp_path):
+    db_path = tmp_path / "app.sqlite"
+
+    job_id = store.insert_print_job(
+        payload_hash="hash-1",
+        payload=b"payload",
+        template_name="demo",
+        template_backend="tspl",
+        printer_name="printer-1",
+        printer_backend="tspl",
+        printer_transport="win32",
+        media_settings={"media_type": "gap"},
+        db_path=db_path,
+    )
+
+    with store.get_conn(db_path) as conn:
+        row = conn.execute(
+            "SELECT status, pending_at, running_at, finished_at, failed_at, error_text"
+            " FROM print_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+        assert row is not None
+        assert row["status"] == "pending"
+        assert row["pending_at"] is not None
+        assert row["running_at"] is None
+
+    assert store.update_print_job_status(
+        job_id=job_id, status="running", db_path=db_path
+    )
+    with store.get_conn(db_path) as conn:
+        row = conn.execute(
+            "SELECT status, running_at FROM print_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+        assert row is not None
+        assert row["status"] == "running"
+        assert row["running_at"] is not None
+
+    assert store.update_print_job_status(
+        job_id=job_id, status="failed", error_text="boom", db_path=db_path
+    )
+    with store.get_conn(db_path) as conn:
+        row = conn.execute(
+            "SELECT status, failed_at, error_text FROM print_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+        assert row is not None
+        assert row["status"] == "failed"
+        assert row["failed_at"] is not None
+        assert row["error_text"] == "boom"
+
+    assert store.update_print_job_status(job_id=job_id, status="done", db_path=db_path)
+    with store.get_conn(db_path) as conn:
+        row = conn.execute(
+            "SELECT status, finished_at, failed_at, error_text"
+            " FROM print_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+        assert row is not None
+        assert row["status"] == "done"
+        assert row["finished_at"] is not None
+        assert row["failed_at"] is None
+        assert row["error_text"] is None
+
+    payload = store.get_job_payload(job_id=job_id, db_path=db_path)
+    assert payload == b"payload"
+    payload_via_hash = store.get_job_payload(
+        payload_hash="hash-1", db_path=db_path
+    )
+    assert payload_via_hash == b"payload"

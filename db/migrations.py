@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def apply_migrations(conn: sqlite3.Connection) -> None:
@@ -153,17 +154,100 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             """
         )
 
-        ensure_table(
-            """
+        create_print_jobs_sql = """
             CREATE TABLE IF NOT EXISTS print_jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                template_name TEXT NOT NULL,
-                payload TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending'
+                payload_hash TEXT,
+                payload BLOB,
+                template_name TEXT,
+                template_backend TEXT,
+                printer_name TEXT,
+                printer_backend TEXT,
+                printer_transport TEXT,
+                media_settings TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                pending_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                running_at TEXT,
+                finished_at TEXT,
+                failed_at TEXT,
+                error_text TEXT
             )
-            """
-        )
+        """
+
+        expected_print_job_columns = {
+            "payload_hash",
+            "payload",
+            "template_backend",
+            "printer_name",
+            "printer_backend",
+            "printer_transport",
+            "media_settings",
+            "pending_at",
+            "running_at",
+            "finished_at",
+            "failed_at",
+            "error_text",
+        }
+
+        if table_exists("print_jobs"):
+            print_job_columns = table_columns("print_jobs")
+            needs_upgrade = not expected_print_job_columns <= print_job_columns
+        else:
+            print_job_columns = set()
+            needs_upgrade = True
+
+        if needs_upgrade and table_exists("print_jobs"):
+            conn.execute("DROP INDEX IF EXISTS idx_print_jobs_created_at_id")
+            conn.execute("ALTER TABLE print_jobs RENAME TO print_jobs_legacy")
+            conn.execute(create_print_jobs_sql)
+
+            cursor = conn.execute(
+                "SELECT id, created_at, template_name, payload, status FROM print_jobs_legacy"
+            )
+            for row in cursor.fetchall():
+                legacy_id, created_at, template_name, payload_value, status = row
+                if isinstance(payload_value, memoryview):
+                    payload_bytes = bytes(payload_value)
+                elif isinstance(payload_value, bytes):
+                    payload_bytes = payload_value
+                elif payload_value is None:
+                    payload_bytes = None
+                else:
+                    payload_bytes = str(payload_value).encode("utf-8", errors="ignore")
+
+                payload_hash = (
+                    hashlib.sha256(payload_bytes).hexdigest()
+                    if payload_bytes is not None
+                    else None
+                )
+                conn.execute(
+                    """
+                    INSERT INTO print_jobs(
+                        id,
+                        created_at,
+                        payload_hash,
+                        payload,
+                        template_name,
+                        status,
+                        pending_at
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        legacy_id,
+                        created_at,
+                        payload_hash,
+                        payload_bytes,
+                        template_name,
+                        status,
+                        created_at,
+                    ),
+                )
+
+            conn.execute("DROP TABLE print_jobs_legacy")
+        else:
+            ensure_table(create_print_jobs_sql)
 
         ensure_table(
             """
@@ -195,6 +279,18 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_print_jobs_created_at_id
             ON print_jobs(created_at, id)
+            """
+        )
+        ensure_table(
+            """
+            CREATE INDEX IF NOT EXISTS idx_print_jobs_status_created
+            ON print_jobs(status, created_at)
+            """
+        )
+        ensure_table(
+            """
+            CREATE INDEX IF NOT EXISTS idx_print_jobs_payload_hash
+            ON print_jobs(payload_hash)
             """
         )
 
