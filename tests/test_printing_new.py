@@ -3,8 +3,10 @@ from __future__ import annotations
 import pytest
 
 from compile import Calibration
+from db import store as db_store
 from model.template import TemplateDocument, TemplateVariable
 from printing import (
+    TransportError,
     Printer,
     PrinterConfig,
     Template,
@@ -19,6 +21,12 @@ from printing import (
     prepare_variable_contexts,
     resolve_media_settings,
 )
+
+
+@pytest.fixture(autouse=True)
+def _configure_store(tmp_path):
+    db_store.configure_default_path(tmp_path / "app.sqlite")
+
 
 
 class StubTransport:
@@ -132,8 +140,8 @@ def test_printer_print_template_uses_transport():
     stub = StubTransport()
     printer.transport = stub
 
-    ok, error = printer.print_template(template, {"nome": "Mundo", "volumes": 1})
-    assert ok and error is None
+    ok, error, job_id = printer.print_template(template, {"nome": "Mundo", "volumes": 1})
+    assert ok and error is None and job_id is not None
     assert stub.payloads, "nenhum payload enviado"
     texto = stub.payloads[0].decode("cp1252")
     assert "Ola Mundo" in texto
@@ -145,8 +153,8 @@ def test_printer_print_calibration(monkeypatch):
     stub = StubTransport()
     printer.transport = stub
 
-    ok, error = printer.print_calibration(square_mm=30)
-    assert ok and error is None
+    ok, error, job_id = printer.print_calibration(square_mm=30)
+    assert ok and error is None and job_id is not None
     texto = stub.payloads[0].decode("cp1252")
     assert "BOX" in texto
 
@@ -239,3 +247,40 @@ def test_apply_media_settings_updates_speed_and_darkness():
     assert page["print_rate"] == "7"
     assert page["print_speed"] == "7"
     assert page["calibrate_next_print"] is True
+
+def test_printer_print_job_status_updates():
+    template = _simple_template()
+    config = PrinterConfig(backend="tspl", transport="tcp", host="127.0.0.1")
+    printer = Printer(config)
+    stub = StubTransport()
+    printer.transport = stub
+
+    ok, error, job_id = printer.print_template(template, {"nome": "Ok", "volumes": 1})
+    assert ok and error is None and job_id is not None
+
+    with db_store.get_conn(db_store.default_db_path()) as conn:
+        row = conn.execute(
+            "SELECT status, error_text FROM print_jobs WHERE id = ?", (job_id,)
+        ).fetchone()
+        assert row is not None
+        assert row["status"] == "done"
+        assert row["error_text"] is None
+
+    class FailingTransport(StubTransport):
+        def send(self, payload: bytes) -> None:  # type: ignore[override]
+            raise TransportError("boom", code=99)
+
+    printer.transport = FailingTransport()
+    ok, error, failed_job_id = printer.print_template(
+        template, {"nome": "Fail", "volumes": 1}
+    )
+    assert not ok and failed_job_id is not None
+    assert error is not None and error["code"] == 99
+
+    with db_store.get_conn(db_store.default_db_path()) as conn:
+        row = conn.execute(
+            "SELECT status, error_text FROM print_jobs WHERE id = ?", (failed_job_id,)
+        ).fetchone()
+        assert row is not None
+        assert row["status"] == "failed"
+        assert row["error_text"] == "boom"

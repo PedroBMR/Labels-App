@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from PIL.ImageQt import ImageQt
 
+from db import store as db_store
 from log import logger
 from printing import (
     TransportError,
@@ -39,6 +40,9 @@ class QuickPrintDialog(QDialog):
 
     _last_payload: bytes | None = None
     _last_printer: str | None = None
+    _last_job_id: int | None = None
+    _last_backend: str = "tspl"
+    _last_template: str | None = None
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -223,20 +227,58 @@ class QuickPrintDialog(QDialog):
             QMessageBox.critical(self, "Erro", str(exc))
             return
 
+        backend_name = "tspl"
+        if hasattr(template, "backend"):
+            candidate = getattr(template, "backend")
+            if isinstance(candidate, str) and candidate:
+                backend_name = candidate
+        if hasattr(template, "document"):
+            page = getattr(template.document, "page", {})
+            if isinstance(page, Mapping):
+                maybe_backend = page.get("backend")
+                if isinstance(maybe_backend, str) and maybe_backend:
+                    backend_name = maybe_backend
+
+        printer = self._current_printer()
         try:
-            send(self._current_printer(), payload)
+            ok, error, job_id = send(
+                printer,
+                payload,
+                backend=backend_name,
+                template_name=model,
+                logger=logger,
+            )
         except TransportError as exc:
             self._update_status("Erro ao enviar para a impressora", "#f6ad55")
             logger.error("Falha ao enviar impressão rápida: %s", exc)
             QMessageBox.critical(self, "Erro na impressão", f"{exc.code}: {exc}")
             return
 
+        if not ok:
+            message = "Erro desconhecido"
+            if error:
+                message = f"{error['code']}: {error['message']}"
+            self._update_status("Erro ao enviar para a impressora", "#f6ad55")
+            QMessageBox.critical(self, "Erro na impressão", message)
+            return
+
         QuickPrintDialog._last_payload = payload
-        QuickPrintDialog._last_printer = self._current_printer()
+        QuickPrintDialog._last_printer = printer
+        QuickPrintDialog._last_job_id = job_id
+        QuickPrintDialog._last_backend = backend_name
+        QuickPrintDialog._last_template = model
         self._update_status("Impressão enviada", "#9ae6b4")
 
     def _on_reprint_last(self) -> None:
-        if QuickPrintDialog._last_payload is None:
+        payload = None
+        if QuickPrintDialog._last_job_id is not None:
+            try:
+                payload = db_store.get_job_payload(job_id=QuickPrintDialog._last_job_id)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("Não foi possível recuperar o payload: %s", exc)
+        if payload is None:
+            payload = QuickPrintDialog._last_payload
+        if payload is None:
             QMessageBox.information(
                 self,
                 "Nenhuma impressão",
@@ -245,14 +287,33 @@ class QuickPrintDialog(QDialog):
             return
 
         printer = self._current_printer() or QuickPrintDialog._last_printer
+        backend = QuickPrintDialog._last_backend
+        template_name = QuickPrintDialog._last_template
         try:
-            send(printer, QuickPrintDialog._last_payload)
+            ok, error, job_id = send(
+                printer,
+                payload,
+                backend=backend,
+                template_name=template_name,
+                logger=logger,
+            )
         except TransportError as exc:
             self._update_status("Erro ao reimprimir", "#f6ad55")
             logger.error("Falha ao reimprimir rápido: %s", exc)
             QMessageBox.critical(self, "Erro na reimpressão", f"{exc.code}: {exc}")
             return
 
+        if not ok:
+            message = "Erro desconhecido"
+            if error:
+                message = f"{error['code']}: {error['message']}"
+            self._update_status("Erro ao reimprimir", "#f6ad55")
+            QMessageBox.critical(self, "Erro na reimpressão", message)
+            return
+
+        QuickPrintDialog._last_job_id = job_id
+        QuickPrintDialog._last_payload = payload
+        QuickPrintDialog._last_printer = printer
         self._update_status("Reimpressão enviada", "#63b3ed")
 
     def _show_preview(self, template, variables: Mapping[str, Any]) -> bool:

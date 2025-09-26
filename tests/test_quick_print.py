@@ -10,6 +10,8 @@ except ModuleNotFoundError:  # pragma: no cover - environment without Qt
 import quick_print
 from quick_print import QuickPrintDialog
 
+from db import store as db_store
+
 
 def _ensure_app() -> QApplication:
     app = QApplication.instance()
@@ -18,10 +20,18 @@ def _ensure_app() -> QApplication:
     return app
 
 
+@pytest.fixture(autouse=True)
+def _configure_store(tmp_path):
+    db_store.configure_default_path(tmp_path / "app.sqlite")
+
+
 def test_quick_print_updates_templates(monkeypatch):
     _ensure_app()
     QuickPrintDialog._last_payload = None
     QuickPrintDialog._last_printer = None
+    QuickPrintDialog._last_job_id = None
+    QuickPrintDialog._last_backend = "tspl"
+    QuickPrintDialog._last_template = None
     templates = ["Modelo A"]
 
     def fake_templates() -> list[str]:
@@ -53,6 +63,9 @@ def test_quick_print_reprint_uses_last_payload(monkeypatch):
     _ensure_app()
     QuickPrintDialog._last_payload = None
     QuickPrintDialog._last_printer = None
+    QuickPrintDialog._last_job_id = None
+    QuickPrintDialog._last_backend = "tspl"
+    QuickPrintDialog._last_template = None
     sent: list[tuple[str | None, bytes]] = []
 
     monkeypatch.setattr(quick_print, "listar_templates", lambda: ["Modelo"])
@@ -64,13 +77,15 @@ def test_quick_print_reprint_uses_last_payload(monkeypatch):
         lambda *a, **k: (SimpleNamespace(document=SimpleNamespace(page={}, elements=[]), calibration=None), {}),
     )
 
-    def fake_send(printer, payload):
+    def fake_send(printer, payload, **kwargs):
         sent.append((printer, payload))
+        return True, None, 1
 
     monkeypatch.setattr(quick_print, "send", fake_send)
 
     QuickPrintDialog._last_payload = b"PRINT"
     QuickPrintDialog._last_printer = "Impressora X"
+    QuickPrintDialog._last_job_id = None
 
     dialog = QuickPrintDialog()
     try:
@@ -95,8 +110,9 @@ def test_quick_print_print_sends_payload(monkeypatch):
     monkeypatch.setattr(quick_print, "prepare_quick_job", fake_prepare)
     monkeypatch.setattr(quick_print, "compile_model_silent", lambda *a, **k: b"PRINT 1\r\n")
 
-    def fake_send(printer, payload):
+    def fake_send(printer, payload, **kwargs):
         sent.append((printer, payload))
+        return True, None, 42
 
     monkeypatch.setattr(quick_print, "send", fake_send)
 
@@ -109,5 +125,6 @@ def test_quick_print_print_sends_payload(monkeypatch):
 
         assert sent and sent[0] == ("IMP", b"PRINT 1\r\n")
         assert QuickPrintDialog._last_payload == b"PRINT 1\r\n"
+        assert QuickPrintDialog._last_job_id == 42
     finally:
         dialog.close()
