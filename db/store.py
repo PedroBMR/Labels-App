@@ -20,6 +20,11 @@ __all__ = [
     "default_db_path",
     "get_conn",
     "init",
+    # upsert_asset(name, kind, data, path, file_hash, width_px, height_px,
+    #              dpi_x, dpi_y, tags, updated_at, db_path)
+    "upsert_asset",
+    # upsert_template(name, data, path, file_hash, width_mm, height_mm,
+    #                 dpi, tags, kind, updated_at, db_path)
     "upsert_template",
     "vacuum",
 ]
@@ -112,11 +117,12 @@ def upsert_template(
     *,
     name: str,
     data: str,
-    path: str | Path,
+    path: str | Path | None,
     file_hash: str,
     width_mm: float | None,
     height_mm: float | None,
     dpi: int | None,
+    kind: str | None = None,
     tags: Sequence[str] | None = None,
     updated_at: datetime | str | None = None,
     db_path: str | Path | None = None,
@@ -135,6 +141,10 @@ def upsert_template(
         timestamp = datetime.now(UTC).isoformat()
 
     payload = json.dumps(list(tags)) if tags else None
+    path_value = (
+        str(canonical_file_path(path)) if path is not None else None
+    )
+    kind_value = str(kind) if kind is not None else None
 
     with contextlib.closing(get_conn(database)) as conn:
         with conn:
@@ -143,6 +153,7 @@ def upsert_template(
                 INSERT INTO templates(
                     name,
                     data,
+                    kind,
                     path,
                     file_hash,
                     width_mm,
@@ -151,9 +162,10 @@ def upsert_template(
                     tags,
                     updated_at
                 )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(name) DO UPDATE SET
                     data = excluded.data,
+                    kind = excluded.kind,
                     path = excluded.path,
                     file_hash = excluded.file_hash,
                     width_mm = excluded.width_mm,
@@ -165,11 +177,103 @@ def upsert_template(
                 (
                     name,
                     data,
-                    str(canonical_file_path(path)),
+                    kind_value,
+                    path_value,
                     file_hash,
                     width_mm,
                     height_mm,
                     dpi,
+                    payload,
+                    timestamp,
+                ),
+            )
+
+
+def upsert_asset(
+    *,
+    name: str,
+    kind: str,
+    data: bytes | memoryview | None,
+    path: str | Path | None,
+    file_hash: str | None,
+    width_px: int | None,
+    height_px: int | None,
+    dpi_x: float | int | None,
+    dpi_y: float | int | None,
+    tags: Sequence[str] | None = None,
+    updated_at: datetime | str | None = None,
+    db_path: str | Path | None = None,
+) -> None:
+    """Insert or update an asset record in the database."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    timestamp: str
+    if isinstance(updated_at, str):
+        timestamp = updated_at
+    elif isinstance(updated_at, datetime):
+        timestamp = updated_at.astimezone(UTC).isoformat()
+    else:
+        timestamp = datetime.now(UTC).isoformat()
+
+    payload = json.dumps(list(tags)) if tags else None
+    path_value = (
+        str(canonical_file_path(path)) if path is not None else None
+    )
+    data_value: bytes | None
+    if data is None:
+        data_value = None
+    elif isinstance(data, (bytes, bytearray)):
+        data_value = bytes(data)
+    else:
+        data_value = bytes(memoryview(data))
+
+    def _to_float(value: float | int | None) -> float | None:
+        if value is None:
+            return None
+        return float(value)
+
+    with contextlib.closing(get_conn(database)) as conn:
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO assets(
+                    name,
+                    kind,
+                    data,
+                    path,
+                    file_hash,
+                    width_px,
+                    height_px,
+                    dpi_x,
+                    dpi_y,
+                    tags,
+                    updated_at
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    kind = excluded.kind,
+                    data = excluded.data,
+                    path = excluded.path,
+                    file_hash = excluded.file_hash,
+                    width_px = excluded.width_px,
+                    height_px = excluded.height_px,
+                    dpi_x = excluded.dpi_x,
+                    dpi_y = excluded.dpi_y,
+                    tags = excluded.tags,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    name,
+                    kind,
+                    data_value,
+                    path_value,
+                    file_hash,
+                    width_px,
+                    height_px,
+                    _to_float(dpi_x),
+                    _to_float(dpi_y),
                     payload,
                     timestamp,
                 ),
