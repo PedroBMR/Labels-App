@@ -9,13 +9,13 @@ from PIL.ImageQt import ImageQt
 from db import store as db_store
 from log import logger
 from printing import (
-    TransportError,
+    WindowsSpoolerTransport,
     compile_model_silent,
     listar_impressoras,
     listar_templates,
     prepare_quick_job,
-    send,
 )
+from printing.queue import PrinterTarget, enqueue_job
 from qt_compat import (
     QCheckBox,
     QComboBox,
@@ -240,26 +240,35 @@ class QuickPrintDialog(QDialog):
                     backend_name = maybe_backend
 
         printer = self._current_printer()
-        try:
-            ok, error, job_id = send(
-                printer,
-                payload,
-                backend=backend_name,
-                template_name=model,
-                logger=logger,
-            )
-        except TransportError as exc:
-            self._update_status("Erro ao enviar para a impressora", "#f6ad55")
-            logger.error("Falha ao enviar impressão rápida: %s", exc)
-            QMessageBox.critical(self, "Erro na impressão", f"{exc.code}: {exc}")
-            return
+        transport = WindowsSpoolerTransport(printer)
+        target = PrinterTarget(
+            name=printer,
+            backend=backend_name,
+            transport="win32",
+            send=transport.send,
+            logger=logger,
+        )
 
-        if not ok:
-            message = "Erro desconhecido"
-            if error:
-                message = f"{error['code']}: {error['message']}"
-            self._update_status("Erro ao enviar para a impressora", "#f6ad55")
-            QMessageBox.critical(self, "Erro na impressão", message)
+        try:
+            job_id, status = enqueue_job(
+                model,
+                payload,
+                target,
+                copies=self.copies_spin.value(),
+                params={
+                    "template_backend": backend_name,
+                    "printer_backend": backend_name,
+                    "printer_transport": "win32",
+                },
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Falha ao enfileirar impressão rápida")
+            self._update_status("Erro ao enfileirar impressão", "#f6ad55")
+            QMessageBox.critical(
+                self,
+                "Erro na impressão",
+                f"Não foi possível enfileirar a impressão:\n{exc}",
+            )
             return
 
         QuickPrintDialog._last_payload = payload
@@ -267,15 +276,33 @@ class QuickPrintDialog(QDialog):
         QuickPrintDialog._last_job_id = job_id
         QuickPrintDialog._last_backend = backend_name
         QuickPrintDialog._last_template = model
-        self._update_status("Impressão enviada", "#9ae6b4")
+
+        status_text = str(status or "pending").lower()
+        if status_text == "failed":
+            self._update_status("Erro ao enfileirar impressão", "#f6ad55")
+            QMessageBox.critical(
+                self,
+                "Erro na impressão",
+                "Não foi possível iniciar o trabalho de impressão.",
+            )
+            return
+
+        message = f"Impressão enfileirada (#{job_id})"
+        color = "#9ae6b4" if status_text == "done" else "#63b3ed"
+        self._update_status(message, color)
 
     def _on_reprint_last(self) -> None:
         payload = None
+        record = None
         if QuickPrintDialog._last_job_id is not None:
             try:
                 payload = db_store.get_job_payload(job_id=QuickPrintDialog._last_job_id)
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning("Não foi possível recuperar o payload: %s", exc)
+            try:
+                record = db_store.get_print_job(job_id=QuickPrintDialog._last_job_id)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("Não foi possível recuperar metadados do job: %s", exc)
         if payload is None:
             payload = QuickPrintDialog._last_payload
         if payload is None:
@@ -289,32 +316,65 @@ class QuickPrintDialog(QDialog):
         printer = self._current_printer() or QuickPrintDialog._last_printer
         backend = QuickPrintDialog._last_backend
         template_name = QuickPrintDialog._last_template
-        try:
-            ok, error, job_id = send(
-                printer,
-                payload,
-                backend=backend,
-                template_name=template_name,
-                logger=logger,
+        if record:
+            record_backend = (
+                record.get("template_backend") or record.get("printer_backend")
             )
-        except TransportError as exc:
-            self._update_status("Erro ao reimprimir", "#f6ad55")
-            logger.error("Falha ao reimprimir rápido: %s", exc)
-            QMessageBox.critical(self, "Erro na reimpressão", f"{exc.code}: {exc}")
-            return
+            if isinstance(record_backend, str) and record_backend:
+                backend = record_backend
+            record_template = record.get("template_name")
+            if isinstance(record_template, str) and record_template:
+                template_name = record_template
+        target_printer = printer or QuickPrintDialog._last_printer
 
-        if not ok:
-            message = "Erro desconhecido"
-            if error:
-                message = f"{error['code']}: {error['message']}"
+        transport = WindowsSpoolerTransport(target_printer)
+        target = PrinterTarget(
+            name=target_printer,
+            backend=backend,
+            transport="win32",
+            send=transport.send,
+            logger=logger,
+        )
+
+        try:
+            job_id, status = enqueue_job(
+                template_name,
+                payload,
+                target,
+                copies=self.copies_spin.value(),
+                params={
+                    "template_backend": backend,
+                    "printer_backend": backend,
+                    "printer_transport": "win32",
+                },
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Falha ao reenfileirar impressão rápida")
             self._update_status("Erro ao reimprimir", "#f6ad55")
-            QMessageBox.critical(self, "Erro na reimpressão", message)
+            QMessageBox.critical(
+                self,
+                "Erro na reimpressão",
+                f"Não foi possível reenfileirar o trabalho:\n{exc}",
+            )
             return
 
         QuickPrintDialog._last_job_id = job_id
         QuickPrintDialog._last_payload = payload
-        QuickPrintDialog._last_printer = printer
-        self._update_status("Reimpressão enviada", "#63b3ed")
+        QuickPrintDialog._last_printer = target_printer
+
+        status_text = str(status or "pending").lower()
+        if status_text == "failed":
+            self._update_status("Erro ao reimprimir", "#f6ad55")
+            QMessageBox.critical(
+                self,
+                "Erro na reimpressão",
+                "Não foi possível iniciar o trabalho de reimpressão.",
+            )
+            return
+
+        message = f"Reimpressão enfileirada (#{job_id})"
+        color = "#63b3ed" if status_text != "done" else "#9ae6b4"
+        self._update_status(message, color)
 
     def _show_preview(self, template, variables: Mapping[str, Any]) -> bool:
         context = dict(variables)
