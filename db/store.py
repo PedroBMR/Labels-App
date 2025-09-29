@@ -307,7 +307,32 @@ def save_printer_profile(
     database = _resolve_db_path(db_path)
     _ensure_initialised(database)
 
-    normalised = _normalise_printer_settings(settings)
+    existing_settings: dict[str, object] = {}
+
+    with contextlib.closing(get_conn(database)) as conn:
+        row = conn.execute(
+            "SELECT settings FROM printer_profiles WHERE name = ?",
+            (name,),
+        ).fetchone()
+
+    if row is not None:
+        raw_settings = row["settings"]
+        loaded: object
+        if isinstance(raw_settings, str):
+            try:
+                loaded = json.loads(raw_settings)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                loaded = {}
+        else:
+            loaded = {}
+
+        if isinstance(loaded, dict):
+            existing_settings = dict(loaded)
+
+    merged_settings: dict[str, object] = dict(existing_settings)
+    merged_settings.update(settings)
+
+    normalised = _normalise_printer_settings(merged_settings)
     calibrate = bool(normalised.get("media_calibrate_next"))
     payload = _serialise_json(normalised)
     timestamp = datetime.now(UTC).isoformat()
