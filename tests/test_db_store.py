@@ -165,6 +165,102 @@ def test_upsert_template_persists_metadata(tmp_path):
     assert row["updated_at"] == "2024-02-02T00:00:00+00:00"
 
 
+def test_vars_presets_crud(tmp_path):
+    db_path = tmp_path / "app.sqlite"
+
+    store.upsert_template(
+        name="TemplateA",
+        data="{}",
+        path=None,
+        file_hash="hashA",
+        width_mm=None,
+        height_mm=None,
+        dpi=None,
+        db_path=db_path,
+    )
+    store.upsert_template(
+        name="TemplateB",
+        data="{}",
+        path=None,
+        file_hash="hashB",
+        width_mm=None,
+        height_mm=None,
+        dpi=None,
+        db_path=db_path,
+    )
+
+    template_a_id = store.get_template_id_by_name("TemplateA", db_path=db_path)
+    template_b_id = store.get_template_id_by_name("TemplateB", db_path=db_path)
+
+    assert template_a_id is not None
+    assert template_b_id is not None
+    assert store.get_template_id_by_name("Missing", db_path=db_path) is None
+
+    store.save_vars_preset(
+        template_id=template_a_id,
+        name="Default",
+        data={"foo": "bar"},
+        db_path=db_path,
+    )
+
+    loaded = store.load_vars_preset(
+        template_id=template_a_id,
+        name="Default",
+        db_path=db_path,
+    )
+    assert loaded == {"foo": "bar"}
+
+    store.save_vars_preset(
+        template_id=template_a_id,
+        name="Default",
+        data={"foo": "updated"},
+        db_path=db_path,
+    )
+
+    updated = store.load_vars_preset(
+        template_id=template_a_id,
+        name="Default",
+        db_path=db_path,
+    )
+    assert updated == {"foo": "updated"}
+
+    store.save_vars_preset(
+        template_id=template_b_id,
+        name="Default",
+        data={"bar": 1},
+        db_path=db_path,
+    )
+
+    presets_a = store.list_vars_presets(template_id=template_a_id, db_path=db_path)
+    assert [preset["name"] for preset in presets_a] == ["Default"]
+    assert presets_a[0]["data"] == {"foo": "updated"}
+
+    all_presets = store.list_vars_presets(db_path=db_path)
+    assert {preset["template_id"] for preset in all_presets} == {
+        template_a_id,
+        template_b_id,
+    }
+
+    assert store.delete_vars_preset(
+        template_id=template_a_id, name="Default", db_path=db_path
+    )
+    assert not store.delete_vars_preset(
+        template_id=template_a_id, name="Default", db_path=db_path
+    )
+    assert (
+        store.load_vars_preset(
+            template_id=template_a_id, name="Default", db_path=db_path
+        )
+        is None
+    )
+
+    remaining = store.list_vars_presets(db_path=db_path)
+    assert len(remaining) == 1
+    assert remaining[0]["template_id"] == template_b_id
+    assert remaining[0]["name"] == "Default"
+    assert remaining[0]["data"] == {"bar": 1}
+
+
 def test_upsert_asset_persists_metadata(tmp_path):
     db_path = tmp_path / "app.sqlite"
     asset_path = tmp_path / "logo.png"
