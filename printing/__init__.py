@@ -28,6 +28,8 @@ from render import PreviewRenderer
 from utils import recurso_caminho
 from utils.fs import canonical_path as canonical_file_path
 
+from .queue import PrinterTarget, enqueue_job, shutdown as shutdown_print_queue, start as start_print_queue, wait_for_all as wait_for_all_jobs
+
 # Retained for backwards compatibility with legacy code/tests that relied on
 # the constant when performing manual conversions.
 DOTS_MM: int = 8
@@ -1001,37 +1003,29 @@ def _record_and_send(
     send_callable: Callable[[bytes], None],
     logger: logging.Logger | None,
 ) -> tuple[bool, dict | None, int | None]:
-    job_id = db_store.insert_print_job(
-        payload_hash=payload_hash,
-        payload=payload,
-        template_name=template_name,
-        template_backend=template_backend,
-        printer_name=printer_name,
-        printer_backend=printer_backend,
-        printer_transport=printer_transport,
-        media_settings=media_settings,
+    target = PrinterTarget(
+        name=printer_name,
+        backend=printer_backend,
+        transport=printer_transport,
+        send=send_callable,
+        logger=logger,
+    )
+    params = {
+        "payload_hash": payload_hash,
+        "template_backend": template_backend,
+        "printer_backend": printer_backend,
+        "printer_transport": printer_transport,
+        "media_settings": media_settings,
+    }
+    job_id, status = enqueue_job(
+        template_name,
+        payload,
+        target,
+        copies=1,
+        params=params,
     )
 
-    db_store.update_print_job_status(job_id=job_id, status="running")
-    try:
-        send_callable(payload)
-    except TransportError as exc:
-        db_store.update_print_job_status(
-            job_id=job_id, status="failed", error_text=str(exc)
-        )
-        if logger:
-            logger.error("Falha ao enviar comandos para impressora: %s", exc)
-        return False, {"code": exc.code, "message": str(exc)}, job_id
-    except Exception as exc:
-        db_store.update_print_job_status(
-            job_id=job_id, status="failed", error_text=str(exc)
-        )
-        if logger:
-            logger.exception("Erro inesperado ao enviar para impressora")
-        raise
-
-    db_store.update_print_job_status(job_id=job_id, status="done")
-    return True, None, job_id
+    return True, {"status": status}, job_id
 
 
 class WindowsSpoolerTransport:
@@ -1381,42 +1375,18 @@ def imprimir_etiqueta(
     printer = Printer(config, logger=logger)
     payload = _prepare_payload(commands, backend, config.encoding)
     payload_hash = hashlib.sha256(payload).hexdigest()
-    job_id = db_store.insert_print_job(
-        payload_hash=payload_hash,
+    return _record_and_send(
         payload=payload,
+        payload_hash=payload_hash,
         template_name=template_name,
         template_backend=backend,
         printer_name=nome_impressora,
         printer_backend=backend,
         printer_transport=config.transport,
         media_settings=media_settings,
+        send_callable=printer.transport.send,
+        logger=logger,
     )
-
-    tentativas = 3 if repetir_em_falha else 1
-    last_error: TransportError | None = None
-    for tentativa in range(1, tentativas + 1):
-        db_store.update_print_job_status(job_id=job_id, status="running")
-        try:
-            printer.transport.send(payload)
-        except TransportError as exc:
-            last_error = exc
-            db_store.update_print_job_status(
-                job_id=job_id, status="failed", error_text=str(exc)
-            )
-            if logger:
-                logger.warning("Falha na tentativa %s: %s", tentativa, exc)
-            if tentativa == tentativas:
-                return False, {"code": exc.code, "message": str(exc)}, job_id
-            db_store.update_print_job_status(job_id=job_id, status="pending")
-            time.sleep(0.5 * tentativa)
-            continue
-
-        db_store.update_print_job_status(job_id=job_id, status="done")
-        return True, None, job_id
-
-    if last_error is not None:
-        return False, {"code": last_error.code, "message": str(last_error)}, job_id
-    return False, None, job_id
 
 
 def send(
