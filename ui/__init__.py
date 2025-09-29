@@ -172,10 +172,15 @@ class ConfigDialog(QDialog):
         self._mark_offset = float(
             settings.get("media_mark_offset_mm", self._gap_offset) or 0.0
         )
+        self._default_gap_size = float(self._gap_size)
+        self._default_gap_offset = float(self._gap_offset)
+        self._default_mark_size = float(self._mark_size)
+        self._default_mark_offset = float(self._mark_offset)
 
         form = QFormLayout()
         self.printer_combo = QComboBox()
         self.printer_combo.setEditable(True)
+        self.printer_combo.currentTextChanged.connect(self._on_printer_changed)
         form.addRow("Impressora:", self.printer_combo)
 
         self.template_combo = QComboBox()
@@ -224,6 +229,7 @@ class ConfigDialog(QDialog):
             )
         except (TypeError, ValueError):
             self.media_speed_spin.setValue(0)
+        self._default_media_speed = int(self.media_speed_spin.value())
 
         self.media_darkness_spin = QSpinBox()
         self.media_darkness_spin.setRange(0, 30)
@@ -242,6 +248,7 @@ class ConfigDialog(QDialog):
             )
         except (TypeError, ValueError):
             self.media_darkness_spin.setValue(0)
+        self._default_media_darkness = int(self.media_darkness_spin.value())
 
         self.media_fine_offset_spin = QDoubleSpinBox()
         self.media_fine_offset_spin.setRange(-20.0, 20.0)
@@ -250,6 +257,7 @@ class ConfigDialog(QDialog):
         self.media_fine_offset_spin.setValue(
             float(settings.get("media_fine_offset_mm", 0.0) or 0.0)
         )
+        self._default_media_fine_offset = float(self.media_fine_offset_spin.value())
 
         media_type = str(settings.get("media_type", "gap") or "gap").lower()
         idx = self.media_type_combo.findData(
@@ -257,9 +265,11 @@ class ConfigDialog(QDialog):
         )
         if idx >= 0:
             self.media_type_combo.setCurrentIndex(idx)
+        self._default_media_type = str(self.media_type_combo.currentData())
 
         self.media_calibrate_check = QCheckBox("Calibrar na próxima impressão")
         self.media_calibrate_check.setChecked(bool(settings.get("media_calibrate_next")))
+        self._default_media_calibrate = bool(self.media_calibrate_check.isChecked())
 
         media_form.addRow("Tipo de mídia:", self.media_type_combo)
         media_form.addRow(self.media_size_label, self.media_size_spin)
@@ -308,6 +318,8 @@ class ConfigDialog(QDialog):
         elif self.printer_combo.isEditable():
             self.printer_combo.clearEditText()
 
+        self._load_selected_printer_profile()
+
     def _preencher_templates(self) -> None:
         self.template_combo.clear()
         self.template_combo.addItems(listar_templates())
@@ -348,13 +360,83 @@ class ConfigDialog(QDialog):
             self._mark_size = self.media_size_spin.value()
             self._mark_offset = self.media_offset_spin.value()
 
+    def _on_printer_changed(self, _: str) -> None:
+        self._load_selected_printer_profile()
+
+    def _load_selected_printer_profile(self) -> None:
+        printer = self.printer_combo.currentText().strip()
+        profile: Mapping[str, Any] | None = None
+        if printer:
+            try:
+                profile = db_store.load_printer_profile(printer)
+            except Exception:  # pragma: no cover - defensive logging
+                logger.exception("Falha ao carregar perfil da impressora %s", printer)
+                profile = None
+        self._apply_profile_settings(profile)
+
+    def _apply_profile_settings(self, profile: Mapping[str, Any] | None) -> None:
+        data = dict(profile) if profile else {}
+
+        def _coerce_float(value: Any, default: float) -> float:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        def _coerce_int(value: Any, default: int) -> int:
+            try:
+                return int(float(value))
+            except (TypeError, ValueError):
+                return default
+
+        self._gap_size = _coerce_float(data.get("media_gap_mm"), self._default_gap_size)
+        self._gap_offset = _coerce_float(
+            data.get("media_gap_offset_mm"), self._default_gap_offset
+        )
+        self._mark_size = _coerce_float(data.get("media_mark_mm"), self._default_mark_size)
+        self._mark_offset = _coerce_float(
+            data.get("media_mark_offset_mm"), self._default_mark_offset
+        )
+
+        media_type = str(data.get("media_type", self._default_media_type) or "gap").lower()
+        media_type = "black_mark" if media_type in {"black_mark", "blackmark", "mark"} else "gap"
+        current_type = str(self.media_type_combo.currentData())
+        if media_type != current_type:
+            block = self.media_type_combo.blockSignals(True)
+            try:
+                idx = self.media_type_combo.findData(media_type)
+                if idx >= 0:
+                    self.media_type_combo.setCurrentIndex(idx)
+            finally:
+                self.media_type_combo.blockSignals(block)
+
+        speed = data.get("media_speed")
+        if speed in (None, ""):
+            speed_value = self._default_media_speed
+        else:
+            speed_value = _coerce_int(speed, self._default_media_speed)
+        self.media_speed_spin.setValue(speed_value)
+
+        darkness = data.get("media_darkness", data.get("darkness"))
+        if darkness in (None, ""):
+            darkness_value = self._default_media_darkness
+        else:
+            darkness_value = _coerce_int(darkness, self._default_media_darkness)
+        self.media_darkness_spin.setValue(darkness_value)
+
+        fine_offset_value = _coerce_float(
+            data.get("media_fine_offset_mm"), self._default_media_fine_offset
+        )
+        self.media_fine_offset_spin.setValue(fine_offset_value)
+
+        calibrate = bool(data.get("media_calibrate_next", self._default_media_calibrate))
+        self.media_calibrate_check.setChecked(calibrate)
+
+        self._update_media_fields()
+
     def obter_config(self) -> dict[str, Any]:
         self._store_media_values()
-        return {
-            "ultima_impressora": self.printer_combo.currentText().strip(),
-            "template": self.template_combo.currentText(),
-            "retry_automatico": self.retry_check.isChecked(),
-            "backup_horario": self.time_edit.time().toString("HH:mm"),
+        profile_settings = {
             "media_type": str(self.media_type_combo.currentData()),
             "media_gap_mm": float(self._gap_size),
             "media_gap_offset_mm": float(self._gap_offset),
@@ -363,8 +445,24 @@ class ConfigDialog(QDialog):
             "media_speed": int(self.media_speed_spin.value()),
             "media_darkness": int(self.media_darkness_spin.value()),
             "media_fine_offset_mm": float(self.media_fine_offset_spin.value()),
-            "media_calibrate_next": self.media_calibrate_check.isChecked(),
+            "media_calibrate_next": bool(self.media_calibrate_check.isChecked()),
         }
+
+        printer = self.printer_combo.currentText().strip()
+        if printer:
+            try:
+                db_store.save_printer_profile(printer, profile_settings)
+            except Exception:  # pragma: no cover - defensive logging
+                logger.exception("Falha ao salvar perfil da impressora %s", printer)
+
+        config = {
+            "ultima_impressora": printer,
+            "template": self.template_combo.currentText(),
+            "retry_automatico": self.retry_check.isChecked(),
+            "backup_horario": self.time_edit.time().toString("HH:mm"),
+        }
+        config.update(profile_settings)
+        return config
 
 
 class EtiquetaInfo(TypedDict):
