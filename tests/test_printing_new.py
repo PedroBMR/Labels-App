@@ -230,6 +230,38 @@ def test_resolve_media_settings_includes_speed_and_darkness():
     assert settings["calibrate_next_print"] is True
 
 
+def test_resolve_media_settings_prefers_printer_profile():
+    config = {
+        "media_gap_mm": 2.0,
+        "media_gap_offset_mm": 0.1,
+        "media_mark_mm": 5.0,
+        "media_mark_offset_mm": 0.2,
+        "media_speed": 4,
+        "media_darkness": 9,
+    }
+    profile = {
+        "media_gap_mm": 3.3,
+        "media_mark_mm": 6.6,
+        "media_mark_offset_mm": 1.5,
+        "media_fine_offset_mm": 0.25,
+        "media_calibrate_next": True,
+        "media_speed": 8,
+        "media_darkness": 17,
+    }
+
+    settings = resolve_media_settings(config, printer_profile=profile)
+
+    assert settings["gap_mm"] == pytest.approx(3.3)
+    assert settings["gap_offset_mm"] == pytest.approx(0.1)
+    assert settings["mark_mm"] == pytest.approx(6.6)
+    assert settings["mark_offset_mm"] == pytest.approx(1.5)
+    assert settings["fine_offset_mm"] == pytest.approx(0.25)
+    assert settings["calibrate_next_print"] is True
+    assert settings["speed"] == 8
+    assert settings["density"] == 17
+    assert settings["print_rate"] == "8"
+
+
 def test_apply_media_settings_updates_speed_and_darkness():
     template = _simple_template()
     updated = apply_media_settings(
@@ -254,6 +286,21 @@ def test_apply_media_settings_updates_speed_and_darkness():
     assert page["print_rate"] == "7"
     assert page["print_speed"] == "7"
     assert page["calibrate_next_print"] is True
+
+
+def test_compile_model_silent_consumes_printer_profile():
+    db_store.save_printer_profile("IMP", {"media_calibrate_next": True})
+
+    payload = compile_model_silent("100x30", printer_name="IMP")
+
+    assert isinstance(payload, bytes)
+    assert b"GAPDETECT" in payload or b"BLINEDETECT" in payload
+    assert b"FORMFEED" in payload
+
+    profile = db_store.load_printer_profile("IMP")
+    assert profile is not None
+    assert profile.get("media_calibrate_next") is False
+
 
 def test_printer_print_job_status_updates(monkeypatch):
     template = _simple_template()

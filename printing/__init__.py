@@ -30,6 +30,10 @@ from utils.fs import canonical_path as canonical_file_path
 
 from .queue import PrinterTarget, enqueue_job, shutdown as shutdown_print_queue, start as start_print_queue, wait_for_all as wait_for_all_jobs
 
+# ----------------------------------------------------------------------------
+
+LOGGER = logging.getLogger(__name__)
+
 # Retained for backwards compatibility with legacy code/tests that relied on
 # the constant when performing manual conversions.
 DOTS_MM: int = 8
@@ -309,22 +313,41 @@ def _prepare_payload(
     return bytes(commands)
 
 
-def resolve_media_settings(config: Mapping[str, Any]) -> dict[str, Any]:
-    """Extract media related settings from ``config`` with sane defaults."""
+def resolve_media_settings(
+    config: Mapping[str, Any],
+    printer_profile: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Extract media related settings from ``config`` and an optional profile."""
 
-    media_raw = str(config.get("media_type", "gap") or "gap").strip().lower()
-    if media_raw in {"mark", "black", "black_mark", "black-mark", "blackmark"}:
-        media_type = "black_mark"
-    else:
-        media_type = "gap"
+    profile = printer_profile if isinstance(printer_profile, Mapping) else None
 
-    def _float(value: Any, fallback: float = 0.0) -> float:
+    def _profile_value(*keys: str) -> Any:
+        if not profile:
+            return None
+        for key in keys:
+            if key in profile:
+                value = profile[key]
+                if value in (None, ""):
+                    continue
+                return value
+        return None
+
+    def _config_value(*keys: str) -> Any:
+        for key in keys:
+            if key in config:
+                value = config[key]
+                if value in (None, ""):
+                    continue
+                return value
+        return None
+
+    def _coerce_float(value: Any) -> float | None:
         try:
             return float(value)
         except (TypeError, ValueError):
-            return fallback
+            return None
 
-    def _int(value: Any) -> int | None:
+    def _coerce_positive_int(value: Any) -> int | None:
         try:
             if value in (None, "", False):
                 return None
@@ -333,21 +356,87 @@ def resolve_media_settings(config: Mapping[str, Any]) -> dict[str, Any]:
             return None
         return number if number > 0 else None
 
-    gap_mm = _float(config.get("media_gap_mm", config.get("gap_mm", 0.0)))
-    gap_offset = _float(config.get("media_gap_offset_mm", config.get("media_offset_mm", 0.0)))
-    mark_mm = _float(config.get("media_mark_mm", gap_mm))
-    mark_offset = _float(config.get("media_mark_offset_mm", gap_offset))
-    fine_offset = _float(config.get("media_fine_offset_mm", 0.0))
-    calibrate = bool(config.get("media_calibrate_next"))
+    def _coerce_bool(value: Any) -> bool | None:
+        if value in (None, ""):
+            return None
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"1", "true", "yes", "on"}:
+                return True
+            if lowered in {"0", "false", "no", "off"}:
+                return False
+        return bool(value)
 
-    speed = _int(config.get("media_speed", config.get("speed")))
-    darkness_source = config.get(
-        "media_darkness", config.get("density", config.get("darkness"))
+    media_raw = _profile_value("media_type") or _config_value("media_type") or "gap"
+    media_raw = str(media_raw).strip().lower()
+    media_type = (
+        "black_mark"
+        if media_raw in {"mark", "black", "black_mark", "black-mark", "blackmark"}
+        else "gap"
     )
-    darkness = _int(darkness_source)
 
-    raw_print_rate = config.get(
-        "media_print_rate", config.get("print_rate", config.get("print_speed")))
+    gap_candidate = _profile_value("gap_mm", "media_gap_mm")
+    if gap_candidate is None:
+        gap_candidate = _config_value("media_gap_mm", "gap_mm")
+    gap_mm = _coerce_float(gap_candidate)
+    if gap_mm is None:
+        gap_mm = 0.0
+
+    gap_offset_candidate = _profile_value("gap_offset_mm", "media_gap_offset_mm", "media_offset_mm")
+    if gap_offset_candidate is None:
+        gap_offset_candidate = _config_value(
+            "media_gap_offset_mm", "media_offset_mm"
+        )
+    gap_offset = _coerce_float(gap_offset_candidate)
+    if gap_offset is None:
+        gap_offset = 0.0
+
+    mark_candidate = _profile_value("mark_mm", "media_mark_mm")
+    if mark_candidate is None:
+        mark_candidate = _config_value("media_mark_mm")
+    mark_mm = _coerce_float(mark_candidate)
+    if mark_mm is None:
+        mark_mm = gap_mm
+
+    mark_offset_candidate = _profile_value(
+        "mark_offset_mm", "media_mark_offset_mm"
+    )
+    if mark_offset_candidate is None:
+        mark_offset_candidate = _config_value("media_mark_offset_mm")
+    mark_offset = _coerce_float(mark_offset_candidate)
+    if mark_offset is None:
+        mark_offset = gap_offset
+
+    fine_offset_candidate = _profile_value(
+        "fine_offset_mm", "media_fine_offset_mm"
+    )
+    if fine_offset_candidate is None:
+        fine_offset_candidate = _config_value("media_fine_offset_mm")
+    fine_offset = _coerce_float(fine_offset_candidate)
+    if fine_offset is None:
+        fine_offset = 0.0
+
+    profile_calibrate = _coerce_bool(
+        _profile_value("calibrate_next", "calibrate_next_print", "media_calibrate_next")
+    )
+    if profile_calibrate is None:
+        calibrate = bool(_coerce_bool(_config_value("media_calibrate_next")))
+    else:
+        calibrate = profile_calibrate
+
+    speed_candidate = _profile_value("media_speed", "speed")
+    if speed_candidate is None:
+        speed_candidate = _config_value("media_speed", "speed")
+    speed = _coerce_positive_int(speed_candidate)
+
+    darkness_candidate = _profile_value("media_darkness", "darkness")
+    if darkness_candidate is None:
+        darkness_candidate = _config_value("media_darkness", "density", "darkness")
+    darkness = _coerce_positive_int(darkness_candidate)
+
+    raw_print_rate = _profile_value("media_print_rate", "print_rate")
+    if raw_print_rate in (None, "", 0, 0.0):
+        raw_print_rate = _config_value("media_print_rate", "print_rate", "print_speed")
     if raw_print_rate in (None, "", 0, 0.0):
         print_rate = str(speed) if speed is not None else None
     else:
@@ -360,7 +449,7 @@ def resolve_media_settings(config: Mapping[str, Any]) -> dict[str, Any]:
         "mark_mm": mark_mm,
         "mark_offset_mm": mark_offset,
         "fine_offset_mm": fine_offset,
-        "calibrate_next_print": calibrate,
+        "calibrate_next_print": bool(calibrate),
         "speed": speed,
         "density": darkness,
         "darkness": darkness,
@@ -913,10 +1002,25 @@ def prepare_quick_job(
     *,
     silent: bool = True,
     config: Mapping[str, Any] | None = None,
+    printer_name: str | None = None,
+    printer_profile: Mapping[str, Any] | None = None,
 ) -> tuple[Template, dict[str, Any]]:
     cfg = config or carregar_config()
     template = aplicar_template(model_name)
-    media_settings = resolve_media_settings(cfg)
+
+    profile = printer_profile if printer_profile is not None else None
+    printer = printer_name
+    if printer is None:
+        hint = str(cfg.get("ultima_impressora", "")).strip()
+        printer = hint or None
+    if profile is None and printer:
+        try:
+            profile = db_store.load_printer_profile(printer)
+        except Exception:  # pragma: no cover - defensive logging only
+            LOGGER.exception("Falha ao carregar perfil da impressora %s", printer)
+            profile = None
+
+    media_settings = resolve_media_settings(cfg, printer_profile=profile)
     base_settings = dict(media_settings)
     base_settings["calibrate_next_print"] = False
     template = apply_media_settings(template, base_settings)
@@ -929,19 +1033,58 @@ def compile_model_silent(
     overrides: Mapping[str, Any] | None = None,
     *,
     silent: bool = True,
+    printer_name: str | None = None,
+    printer_profile: Mapping[str, Any] | None = None,
 ) -> bytes:
     cfg = carregar_config()
+
+    profile = printer_profile if printer_profile is not None else None
+    printer = printer_name
+    if printer is None:
+        hint = str(cfg.get("ultima_impressora", "")).strip()
+        printer = hint or None
+    if profile is None and printer:
+        try:
+            profile = db_store.load_printer_profile(printer)
+        except Exception:  # pragma: no cover - defensive logging only
+            LOGGER.exception("Falha ao carregar perfil da impressora %s", printer)
+            profile = None
+
     template, variables = prepare_quick_job(
         model_name,
         overrides,
         silent=silent,
         config=cfg,
+        printer_name=printer,
+        printer_profile=profile,
     )
-    media_settings = resolve_media_settings(cfg)
+    media_settings = resolve_media_settings(cfg, printer_profile=profile)
+
+    calibrate_from_profile = False
+    if profile:
+        raw_profile_flag = None
+        for key in ("media_calibrate_next", "calibrate_next", "calibrate_next_print"):
+            if key in profile:
+                raw_profile_flag = profile[key]
+                break
+        calibrate_from_profile = bool(raw_profile_flag)
+
     if media_settings.get("calibrate_next_print"):
-        cfg = dict(cfg)
-        cfg["media_calibrate_next"] = False
-        salvar_config(cfg)
+        if calibrate_from_profile and printer:
+            try:
+                db_store.save_printer_profile(
+                    printer,
+                    {"media_calibrate_next": False},
+                )
+            except Exception:  # pragma: no cover - defensive logging only
+                LOGGER.exception(
+                    "Falha ao atualizar calibracao da impressora %s", printer
+                )
+        else:
+            cfg = dict(cfg)
+            cfg["media_calibrate_next"] = False
+            salvar_config(cfg)
+
     template = apply_media_settings(template, media_settings)
     backend, commands = compile_template(
         template,

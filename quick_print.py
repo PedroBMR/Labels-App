@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Mapping
 
 from PIL.ImageQt import ImageQt
@@ -14,6 +15,7 @@ from printing import (
     listar_impressoras,
     listar_templates,
     prepare_quick_job,
+    resolve_media_settings,
 )
 from printing.queue import PrinterTarget, enqueue_job
 from qt_compat import (
@@ -34,6 +36,8 @@ from qt_compat import (
 from render import render_template
 from template_store import template_store
 
+from persistence import carregar_config
+
 
 class QuickPrintDialog(QDialog):
     """Allow users to print labels by selecting only the template."""
@@ -43,6 +47,7 @@ class QuickPrintDialog(QDialog):
     _last_job_id: int | None = None
     _last_backend: str = "tspl"
     _last_template: str | None = None
+    _last_media_settings: Mapping[str, Any] | None = None
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -208,8 +213,29 @@ class QuickPrintDialog(QDialog):
             return
 
         overrides = self._build_overrides()
+        config = carregar_config()
+        printer = self._current_printer()
+        if not printer:
+            hint = str(config.get("ultima_impressora", "")).strip()
+            printer = hint or None
+
+        profile = None
+        if printer:
+            try:
+                profile = db_store.load_printer_profile(printer)
+            except Exception:  # pragma: no cover - defensive logging only
+                logger.exception("Falha ao carregar perfil da impressora %s", printer)
+                profile = None
+
         try:
-            template, variables = prepare_quick_job(model, overrides, silent=True)
+            template, variables = prepare_quick_job(
+                model,
+                overrides,
+                silent=True,
+                config=config,
+                printer_name=printer,
+                printer_profile=profile,
+            )
         except Exception as exc:
             logger.exception("Falha ao preparar modelo para impressão rápida")
             QMessageBox.critical(self, "Erro", str(exc))
@@ -220,8 +246,16 @@ class QuickPrintDialog(QDialog):
                 self._update_status("Pré-visualização cancelada", "#f6ad55")
                 return
 
+        media_settings = resolve_media_settings(config, printer_profile=profile)
+
         try:
-            payload = compile_model_silent(model, overrides, silent=True)
+            payload = compile_model_silent(
+                model,
+                overrides,
+                silent=True,
+                printer_name=printer,
+                printer_profile=profile,
+            )
         except Exception as exc:
             logger.exception("Falha ao compilar modelo para impressão rápida")
             QMessageBox.critical(self, "Erro", str(exc))
@@ -239,7 +273,7 @@ class QuickPrintDialog(QDialog):
                 if isinstance(maybe_backend, str) and maybe_backend:
                     backend_name = maybe_backend
 
-        printer = self._current_printer()
+        printer = printer
         transport = WindowsSpoolerTransport(printer)
         target = PrinterTarget(
             name=printer,
@@ -259,6 +293,7 @@ class QuickPrintDialog(QDialog):
                     "template_backend": backend_name,
                     "printer_backend": backend_name,
                     "printer_transport": "win32",
+                    "media_settings": media_settings,
                 },
             )
         except Exception as exc:  # pragma: no cover - defensive
@@ -276,6 +311,7 @@ class QuickPrintDialog(QDialog):
         QuickPrintDialog._last_job_id = job_id
         QuickPrintDialog._last_backend = backend_name
         QuickPrintDialog._last_template = model
+        QuickPrintDialog._last_media_settings = media_settings
 
         status_text = str(status or "pending").lower()
         if status_text == "failed":
@@ -336,6 +372,22 @@ class QuickPrintDialog(QDialog):
             logger=logger,
         )
 
+        media_settings = QuickPrintDialog._last_media_settings
+        if record:
+            raw_settings = record.get("media_settings")
+            if isinstance(raw_settings, Mapping):
+                media_settings = raw_settings
+            elif isinstance(raw_settings, (bytes, bytearray, memoryview)):
+                try:
+                    media_settings = json.loads(raw_settings.decode("utf-8"))
+                except Exception:  # pragma: no cover - defensive
+                    media_settings = media_settings
+            elif isinstance(raw_settings, str):
+                try:
+                    media_settings = json.loads(raw_settings)
+                except Exception:  # pragma: no cover - defensive
+                    media_settings = media_settings
+
         try:
             job_id, status = enqueue_job(
                 template_name,
@@ -346,6 +398,7 @@ class QuickPrintDialog(QDialog):
                     "template_backend": backend,
                     "printer_backend": backend,
                     "printer_transport": "win32",
+                    "media_settings": media_settings,
                 },
             )
         except Exception as exc:  # pragma: no cover - defensive
@@ -361,6 +414,7 @@ class QuickPrintDialog(QDialog):
         QuickPrintDialog._last_job_id = job_id
         QuickPrintDialog._last_payload = payload
         QuickPrintDialog._last_printer = target_printer
+        QuickPrintDialog._last_media_settings = media_settings
 
         status_text = str(status or "pending").lower()
         if status_text == "failed":
