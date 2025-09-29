@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from editor.arrange_dialog import ArrangeGridDialog
+from editor.preset_dialog import PresetManagerDialog
+from editor.preset_manager import PresetManager
 from editor.widget import LabelEditorWidget
 from model.template import TemplateDocument, TemplateVariable
 from printing import (
@@ -36,6 +38,7 @@ from qt_compat import (
 from ui.tour import GuidedTourDialog, TourStep
 from .variables import VariablePanel
 from template_store import template_store
+from db import store
 
 __all__ = ["LabelEditorWindow"]
 
@@ -75,6 +78,15 @@ class LabelEditorWindow(QMainWindow):
 
         self.variable_panel = VariablePanel()
         self.variable_panel.changed.connect(self._on_variables_changed)
+        self.variable_panel.savePresetRequested.connect(
+            self._on_save_preset_requested
+        )
+        self.variable_panel.applyPresetRequested.connect(
+            self._on_apply_preset_requested
+        )
+        self.variable_panel.managePresetsRequested.connect(
+            self._on_manage_presets_requested
+        )
         self.property_dock = QDockWidget("Propriedades", self)
         self.property_dock.setWidget(self.editor.property_panel)
         self.property_dock.setObjectName("propertiesDock")
@@ -565,6 +577,121 @@ class LabelEditorWindow(QMainWindow):
 
     def _on_variables_changed(self, values: dict[str, Any]) -> None:
         self.editor.set_preview_data(values)
+
+    # ------------------------------------------------------------------
+    def _current_template_id(self) -> int | None:
+        name = (self.current_document.name or "").strip()
+        if not name:
+            return None
+        return store.get_template_id_by_name(name)
+
+    def _ensure_template_registered(self) -> int | None:
+        template_id = self._current_template_id()
+        if template_id is not None:
+            return template_id
+        QMessageBox.information(
+            self,
+            "Preset indisponível",
+            (
+                "Não foi possível localizar este modelo no banco de dados. "
+                "Salve-o no catálogo antes de gerenciar presets de variáveis."
+            ),
+        )
+        return None
+
+    def _on_save_preset_requested(self) -> None:
+        template_id = self._ensure_template_registered()
+        if template_id is None:
+            return
+        name, ok = QInputDialog.getText(
+            self,
+            "Salvar preset",
+            "Nome do preset:",
+        )
+        if not ok:
+            return
+        cleaned = name.strip()
+        if not cleaned:
+            QMessageBox.warning(
+                self,
+                "Nome inválido",
+                "Informe um nome para o preset.",
+            )
+            return
+        values = self.variable_panel.values()
+        try:
+            store.save_vars_preset(
+                template_id=template_id,
+                name=cleaned,
+                data=values,
+            )
+        except Exception as exc:  # pragma: no cover - feedback ao usuário
+            QMessageBox.critical(
+                self,
+                "Erro",
+                f"Não foi possível salvar o preset: {exc}",
+            )
+            return
+        self.status.showMessage(f"Preset '{cleaned}' salvo", 4000)
+
+    def _on_apply_preset_requested(self) -> None:
+        template_id = self._ensure_template_registered()
+        if template_id is None:
+            return
+        presets = store.list_vars_presets(template_id=template_id)
+        if not presets:
+            QMessageBox.information(
+                self,
+                "Aplicar preset",
+                "Não há presets salvos para este modelo.",
+            )
+            return
+        options = [str(preset.get("name") or "") for preset in presets]
+        name, ok = QInputDialog.getItem(
+            self,
+            "Aplicar preset",
+            "Selecione o preset:",
+            options,
+            editable=False,
+        )
+        if not ok:
+            return
+        selected = name.strip()
+        if not selected:
+            return
+        data = store.load_vars_preset(
+            template_id=template_id,
+            name=selected,
+        )
+        if not isinstance(data, dict):
+            QMessageBox.warning(
+                self,
+                "Aplicar preset",
+                "Não foi possível carregar o preset selecionado.",
+            )
+            if data is None:
+                store.delete_vars_preset(
+                    template_id=template_id,
+                    name=selected,
+                )
+            return
+        merged_values = self.current_document.defaults(scope="template")
+        merged_values.update(self.current_document.defaults(scope="item"))
+        merged_values.update(data)
+        self.variable_panel.set_variables(
+            self.current_document.variables,
+            merged_values,
+        )
+        self.editor.set_preview_data(merged_values)
+        self.status.showMessage(f"Preset '{selected}' aplicado", 4000)
+
+    def _on_manage_presets_requested(self) -> None:
+        template_id = self._ensure_template_registered()
+        if template_id is None:
+            return
+        manager = PresetManager(template_id)
+        dialog = PresetManagerDialog(manager, self)
+        dialog.exec()
 
     def _sync_variable_definitions(self) -> None:
         if self._loading_state:
