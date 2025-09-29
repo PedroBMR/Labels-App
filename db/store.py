@@ -114,9 +114,20 @@ def backup(db_path: str | Path, out_path: str | Path) -> None:
         dest.commit()
 
 
-def integrity_check(conn: sqlite3.Connection) -> bool:
-    """Return ``True`` if ``conn`` passes SQLite's integrity check."""
+def integrity_check(
+    target: sqlite3.Connection | str | Path | None = None,
+) -> bool:
+    """Return ``True`` if the database passes SQLite's integrity check."""
 
+    if isinstance(target, sqlite3.Connection):
+        return _integrity_check_conn(target)
+
+    path = _resolve_db_path(target)
+    with contextlib.closing(get_conn(path)) as conn:
+        return _integrity_check_conn(conn)
+
+
+def _integrity_check_conn(conn: sqlite3.Connection) -> bool:
     try:
         rows = conn.execute("PRAGMA integrity_check").fetchall()
     except sqlite3.DatabaseError:

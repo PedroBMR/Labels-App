@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import logging
+
 import pytest
 
 try:
@@ -170,5 +172,118 @@ def test_config_dialog_accept_persists_profiles(monkeypatch):
         profile_a_again = db_store.load_printer_profile("IMP_A")
         assert profile_a_again is not None
         assert profile_a_again["media_gap_mm"] == pytest.approx(4.2)
+    finally:
+        dialog.close()
+
+
+def test_config_dialog_backup_button_runs_worker(monkeypatch, tmp_path, caplog):
+    _ensure_app()
+
+    backup_target = tmp_path / "backup.sqlite"
+
+    monkeypatch.setattr(ui.QFileDialog, "getSaveFileName", lambda *a, **k: (str(backup_target), ""))
+    monkeypatch.setattr(ui, "listar_impressoras", lambda: [])
+    monkeypatch.setattr(ui, "listar_templates", lambda: [])
+    monkeypatch.setattr(ui, "descobrir_impressora_padrao", lambda: "")
+
+    dialog = ConfigDialog(None, _base_settings())
+    statuses: list[tuple[str, str]] = []
+    dialog._status_callback = lambda msg, color="white": statuses.append((msg, color))
+
+    called: dict[str, Any] = {}
+
+    def _fake_start(action, function, args, kwargs, context):
+        called["action"] = action
+        called["function"] = function
+        called["args"] = args
+        called["context"] = context
+        dialog._handle_worker_success(None, None, action, None, context or {})
+
+    dialog._start_worker = _fake_start  # type: ignore[assignment]
+    caplog.set_level(logging.INFO, logger="app")
+
+    try:
+        dialog.backup_button.click()
+        QApplication.processEvents()
+
+        assert called["action"] == "backup"
+        assert called["function"] is db_store.backup
+        assert called["args"][0] == dialog._db_path
+        assert called["context"]["out_path"] == backup_target
+        assert statuses[-1][0].startswith("💾 Backup concluído")
+        assert any("Backup do banco de dados" in record.message for record in caplog.records)
+    finally:
+        dialog.close()
+
+
+def test_config_dialog_vacuum_worker_error_reports(monkeypatch, caplog):
+    _ensure_app()
+
+    monkeypatch.setattr(ui, "listar_impressoras", lambda: [])
+    monkeypatch.setattr(ui, "listar_templates", lambda: [])
+    monkeypatch.setattr(ui, "descobrir_impressora_padrao", lambda: "")
+
+    dialog = ConfigDialog(None, _base_settings())
+    statuses: list[tuple[str, str]] = []
+    dialog._status_callback = lambda msg, color="white": statuses.append((msg, color))
+
+    caplog.set_level(logging.ERROR, logger="app")
+    message_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    monkeypatch.setattr(
+        ui.QMessageBox,
+        "critical",
+        lambda *args, **kwargs: message_calls.append((args, kwargs)),
+    )
+
+    def _fake_start(action, function, args, kwargs, context):
+        dialog._handle_worker_error(
+            None,
+            None,
+            action,
+            RuntimeError("boom"),
+            context,
+        )
+
+    dialog._start_worker = _fake_start  # type: ignore[assignment]
+
+    try:
+        dialog.vacuum_button.click()
+        QApplication.processEvents()
+
+        assert statuses[-1] == ("⚠️ Erro ao executar o vacuum", "orange")
+        assert any("Falha ao executar" in record.message for record in caplog.records)
+        assert message_calls, "QMessageBox.critical should be called"
+    finally:
+        dialog.close()
+
+
+def test_config_dialog_integrity_failure(monkeypatch, caplog):
+    _ensure_app()
+
+    monkeypatch.setattr(ui, "listar_impressoras", lambda: [])
+    monkeypatch.setattr(ui, "listar_templates", lambda: [])
+    monkeypatch.setattr(ui, "descobrir_impressora_padrao", lambda: "")
+
+    dialog = ConfigDialog(None, _base_settings())
+    statuses: list[tuple[str, str]] = []
+    dialog._status_callback = lambda msg, color="white": statuses.append((msg, color))
+
+    caplog.set_level(logging.ERROR, logger="app")
+
+    def _fake_start(action, function, args, kwargs, context):
+        dialog._handle_worker_success(None, None, action, False, context)
+
+    dialog._start_worker = _fake_start  # type: ignore[assignment]
+
+    try:
+        dialog.integrity_button.click()
+        QApplication.processEvents()
+
+        assert statuses[-1] == ("⚠️ Banco de dados com inconsistências", "orange")
+        assert any(
+            "Verificação de integridade do banco encontrou inconsistências"
+            in record.message
+            for record in caplog.records
+        )
     finally:
         dialog.close()

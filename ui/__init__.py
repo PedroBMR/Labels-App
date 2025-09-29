@@ -8,7 +8,8 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping, TypedDict
+from functools import partial
+from typing import Any, Callable, Mapping, TypedDict
 
 from _version import __version__
 from db import store as db_store
@@ -58,6 +59,7 @@ from qt_compat import (
     QFrame,
     QGridLayout,
     QGroupBox,
+    QHBoxLayout,
     QIcon,
     QInputDialog,
     QLabel,
@@ -83,6 +85,9 @@ from qt_compat import (
     QUrl,
     QVBoxLayout,
     QWidget,
+    QThread,
+    pyqtSignal,
+    pyqtSlot,
 )
 from template_store import template_store
 from utils import backup_automatico, normalize_text, recurso_caminho
@@ -157,6 +162,35 @@ MUNICIPIOS_PADRAO = [
 ]
 
 
+class _DatabaseWorker(QObject):
+    finished = pyqtSignal(str, object, object)
+    error = pyqtSignal(str, Exception, object)
+
+    def __init__(
+        self,
+        action: str,
+        function: Callable[..., Any],
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        context: dict[str, Any] | None,
+    ) -> None:
+        super().__init__()
+        self._action = action
+        self._function = function
+        self._args = args
+        self._kwargs = kwargs
+        self._context = context or {}
+
+    @pyqtSlot()
+    def run(self) -> None:
+        try:
+            result = self._function(*self._args, **self._kwargs)
+        except Exception as exc:  # pragma: no cover - defensive
+            self.error.emit(self._action, exc, self._context)
+        else:
+            self.finished.emit(self._action, result, self._context)
+
+
 class ConfigDialog(QDialog):
     """Janela de configurações do aplicativo."""
 
@@ -166,6 +200,45 @@ class ConfigDialog(QDialog):
         layout = QVBoxLayout(self)
 
         self._settings = settings
+        self._status_callback: Callable[[str, str], None] | None = None
+        if parent is not None:
+            status_cb = getattr(parent, "_atualizar_status", None)
+            if callable(status_cb):
+                self._status_callback = status_cb
+        self._active_threads: list[QThread] = []
+        self._workers: dict[QThread, _DatabaseWorker] = {}
+        self.destroyed.connect(lambda *_: self._teardown_workers())
+
+        self._db_path = db_store.default_db_path()
+
+        db_group = QGroupBox("Banco de dados")
+        db_layout = QGridLayout(db_group)
+        db_layout.setColumnStretch(1, 1)
+
+        self.db_path_label = QLabel()
+        self.db_path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.db_size_label = QLabel()
+        self.db_size_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+
+        db_layout.addWidget(QLabel("Arquivo:"), 0, 0)
+        db_layout.addWidget(self.db_path_label, 0, 1, 1, 2)
+        db_layout.addWidget(QLabel("Tamanho:"), 1, 0)
+        db_layout.addWidget(self.db_size_label, 1, 1, 1, 2)
+
+        button_row = QHBoxLayout()
+        self.backup_button = QPushButton("Backup…")
+        self.vacuum_button = QPushButton("Vacuum")
+        self.integrity_button = QPushButton("Integrity Check")
+
+        button_row.addWidget(self.backup_button)
+        button_row.addWidget(self.vacuum_button)
+        button_row.addWidget(self.integrity_button)
+        button_row.addStretch(1)
+
+        db_layout.addLayout(button_row, 2, 0, 1, 3)
+
+        layout.addWidget(db_group)
+
         self._gap_size = float(settings.get("media_gap_mm", 2.0) or 0.0)
         self._gap_offset = float(settings.get("media_gap_offset_mm", 0.0) or 0.0)
         self._mark_size = float(settings.get("media_mark_mm", self._gap_size) or 0.0)
@@ -200,6 +273,11 @@ class ConfigDialog(QDialog):
         form.addRow("Horário backup:", self.time_edit)
 
         layout.addLayout(form)
+
+        self.backup_button.clicked.connect(self._on_backup_clicked)
+        self.vacuum_button.clicked.connect(self._on_vacuum_clicked)
+        self.integrity_button.clicked.connect(self._on_integrity_clicked)
+        self._refresh_db_info()
 
         media_group = QGroupBox("Configurações da mídia")
         media_form = QFormLayout(media_group)
@@ -294,6 +372,191 @@ class ConfigDialog(QDialog):
     def showEvent(self, event: QCloseEvent) -> None:
         super().showEvent(event)
         QTimer.singleShot(0, self._preparar_campos)
+
+    def _refresh_db_info(self) -> None:
+        self._db_path = db_store.default_db_path()
+        self.db_path_label.setText(str(self._db_path))
+        try:
+            if self._db_path.exists():
+                size = self._db_path.stat().st_size
+                self.db_size_label.setText(self._format_size(size))
+            else:
+                self.db_size_label.setText("Arquivo não encontrado")
+        except OSError:
+            self.db_size_label.setText("Erro ao ler tamanho")
+
+    @staticmethod
+    def _format_size(size: int) -> str:
+        if size < 1024:
+            return f"{size} B"
+        units = ["KB", "MB", "GB", "TB"]
+        value = float(size)
+        for unit in units:
+            value /= 1024.0
+            if value < 1024.0:
+                return f"{value:.2f} {unit}"
+        return f"{value:.2f} PB"
+
+    def _set_db_buttons_enabled(self, enabled: bool) -> None:
+        self.backup_button.setEnabled(enabled)
+        self.vacuum_button.setEnabled(enabled)
+        self.integrity_button.setEnabled(enabled)
+
+    def _emit_status(self, message: str, color: str) -> None:
+        if self._status_callback is None:
+            return
+        try:
+            self._status_callback(message, color)
+        except TypeError:
+            self._status_callback(message)
+
+    def _describe_action(self, action: str) -> str:
+        descriptions = {
+            "backup": "o backup",
+            "vacuum": "o vacuum",
+            "integrity": "a verificação de integridade",
+        }
+        return descriptions.get(action, action)
+
+    def _submit_db_task(
+        self,
+        action: str,
+        function: Callable[..., Any],
+        *args: Any,
+        context: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        self._set_db_buttons_enabled(False)
+        self._start_worker(action, function, args, kwargs, context)
+
+    def _start_worker(
+        self,
+        action: str,
+        function: Callable[..., Any],
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        context: dict[str, Any] | None,
+    ) -> None:
+        worker = _DatabaseWorker(action, function, args, kwargs, context)
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(partial(self._handle_worker_success, thread, worker))
+        worker.error.connect(partial(self._handle_worker_error, thread, worker))
+        self._active_threads.append(thread)
+        self._workers[thread] = worker
+        thread.start()
+
+    def _handle_worker_success(
+        self,
+        thread: QThread | None,
+        worker: _DatabaseWorker | None,
+        action: str,
+        result: object,
+        context: object,
+    ) -> None:
+        self._cleanup_worker(thread, worker)
+        self._set_db_buttons_enabled(True)
+        payload = context if isinstance(context, dict) else {}
+        if action == "backup":
+            out_path = payload.get("out_path")
+            message = "💾 Backup concluído"
+            if out_path:
+                message = f"{message} ({out_path})"
+                logger.info("Backup do banco de dados salvo em %s", out_path)
+            else:
+                logger.info("Backup do banco de dados concluído")
+            self._emit_status(message, "lightblue")
+        elif action == "vacuum":
+            self._emit_status("🧹 Vacuum concluído", "lightgreen")
+            logger.info("Vacuum do banco de dados concluído")
+        elif action == "integrity":
+            ok = bool(result)
+            if ok:
+                self._emit_status("✅ Banco de dados íntegro", "lightgreen")
+                logger.info("Verificação de integridade do banco concluída sem erros")
+            else:
+                self._emit_status("⚠️ Banco de dados com inconsistências", "orange")
+                logger.error(
+                    "Verificação de integridade do banco encontrou inconsistências"
+                )
+        self._refresh_db_info()
+
+    def _handle_worker_error(
+        self,
+        thread: QThread | None,
+        worker: _DatabaseWorker | None,
+        action: str,
+        error: Exception,
+        context: object,
+    ) -> None:
+        self._cleanup_worker(thread, worker)
+        self._set_db_buttons_enabled(True)
+        description = self._describe_action(action)
+        message = f"⚠️ Erro ao executar {description}"
+        self._emit_status(message, "orange")
+        logger.error("Falha ao executar %s: %s", description, error)
+        QMessageBox.critical(
+            self,
+            "Banco de dados",
+            f"Não foi possível executar {description} do banco de dados.\n\n{error}",
+        )
+        self._refresh_db_info()
+
+    def _cleanup_worker(
+        self,
+        thread: QThread | None,
+        worker: _DatabaseWorker | None,
+    ) -> None:
+        if thread is None:
+            return
+        managed_worker = worker or self._workers.pop(thread, None)
+        if thread in self._active_threads:
+            self._active_threads.remove(thread)
+        thread.quit()
+        thread.wait(2000)
+        thread.deleteLater()
+        if managed_worker is not None:
+            managed_worker.deleteLater()
+
+    def _teardown_workers(self) -> None:
+        for thread in list(self._active_threads):
+            worker = self._workers.pop(thread, None)
+            self._cleanup_worker(thread, worker)
+        self._active_threads.clear()
+        self._workers.clear()
+
+    def _on_backup_clicked(self) -> None:
+        self._refresh_db_info()
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        default_name = f"{self._db_path.stem}-{timestamp}.sqlite"
+        initial_path = str(self._db_path.with_name(default_name))
+        out_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Salvar backup do banco de dados",
+            initial_path,
+            "SQLite (*.sqlite);;Todos os arquivos (*)",
+        )
+        if not out_path:
+            self._set_db_buttons_enabled(True)
+            return
+        save_path = Path(out_path)
+        context = {"out_path": save_path}
+        self._submit_db_task(
+            "backup",
+            db_store.backup,
+            self._db_path,
+            save_path,
+            context=context,
+        )
+
+    def _on_vacuum_clicked(self) -> None:
+        self._refresh_db_info()
+        self._submit_db_task("vacuum", db_store.vacuum, self._db_path)
+
+    def _on_integrity_clicked(self) -> None:
+        self._refresh_db_info()
+        self._submit_db_task("integrity", db_store.integrity_check, self._db_path)
 
     def _preparar_campos(self) -> None:
         self._preencher_impressoras()
