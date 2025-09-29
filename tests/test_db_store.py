@@ -605,6 +605,8 @@ def test_printer_profiles_crud(tmp_path):
     assert loaded_again["media_mark_offset_mm"] == 3.4
     assert loaded_again["media_fine_offset_mm"] == 0.25
     assert loaded_again["media_calibrate_next"] is False
+    assert loaded_again["media_gap_mm"] == 2.5
+    assert loaded_again["media_mark_mm"] == 2.5
     assert "media_speed" not in loaded_again
     assert "media_darkness" not in loaded_again
 
@@ -613,7 +615,12 @@ def test_printer_profiles_crud(tmp_path):
             "SELECT updated_at FROM printer_profiles WHERE name = ?",
             ("Zebra",),
         ).fetchone()[0]
+        calibrate_flag = conn.execute(
+            "SELECT calibrate_next_print FROM printer_profiles WHERE name = ?",
+            ("Zebra",),
+        ).fetchone()[0]
 
     assert second_updated != first_updated
+    assert calibrate_flag == 0
 
     assert store.load_printer_profile("Missing", db_path=db_path) is None
