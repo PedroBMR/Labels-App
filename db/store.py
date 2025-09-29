@@ -18,13 +18,16 @@ __all__ = [
     "backup",
     "configure_default_path",
     "default_db_path",
+    "delete_vars_preset",
     "get_conn",
+    "get_template_id_by_name",
     "init",
     "get_asset_id_by_hash",
     "find_raster_cache",
     "insert_or_get_raster_cache",
     "insert_print_job",
     "list_print_jobs",
+    "list_vars_presets",
     "get_print_job",
     # upsert_asset(name, kind, data, path, file_hash, width_px, height_px,
     #              dpi_x, dpi_y, tags, updated_at, db_path)
@@ -32,6 +35,8 @@ __all__ = [
     # upsert_template(name, data, path, file_hash, width_mm, height_mm,
     #                 dpi, tags, kind, updated_at, db_path)
     "upsert_template",
+    "load_vars_preset",
+    "save_vars_preset",
     "update_print_job_status",
     "get_job_payload",
     "vacuum",
@@ -125,6 +130,31 @@ def _normalise_gamma(value: float | int | None) -> float:
     if value is None:
         return 0.0
     return float(value) if float(value) > 0 else 0.0
+
+
+def _serialise_json(data: Mapping[str, object] | Sequence[object] | str) -> str:
+    if isinstance(data, str):
+        return data
+    return json.dumps(data, separators=(",", ":"), sort_keys=True)
+
+
+def get_template_id_by_name(
+    name: str, *, db_path: str | Path | None = None
+) -> int | None:
+    """Return the template identifier for ``name`` or ``None`` if it does not exist."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    with contextlib.closing(get_conn(database)) as conn:
+        row = conn.execute(
+            "SELECT id FROM templates WHERE name = ?",
+            (name,),
+        ).fetchone()
+
+    if row is None:
+        return None
+    return int(row[0])
 
 
 def upsert_template(
@@ -312,6 +342,131 @@ def get_asset_id_by_hash(
         if row is None:
             return None
         return int(row["id"])
+
+
+def save_vars_preset(
+    *,
+    template_id: int,
+    name: str,
+    data: Mapping[str, object] | Sequence[object] | str,
+    updated_at: datetime | str | None = None,
+    db_path: str | Path | None = None,
+) -> None:
+    """Create or update a variables preset for the given template."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    if isinstance(updated_at, str):
+        timestamp = updated_at
+    elif isinstance(updated_at, datetime):
+        timestamp = updated_at.astimezone(UTC).isoformat()
+    else:
+        timestamp = datetime.now(UTC).isoformat()
+
+    payload = _serialise_json(data)
+
+    with contextlib.closing(get_conn(database)) as conn:
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO vars_presets(template_id, name, data, updated_at)
+                VALUES(?, ?, ?, ?)
+                ON CONFLICT(template_id, name) DO UPDATE SET
+                    data = excluded.data,
+                    updated_at = excluded.updated_at
+                """,
+                (template_id, name, payload, timestamp),
+            )
+
+
+def load_vars_preset(
+    *,
+    template_id: int,
+    name: str,
+    db_path: str | Path | None = None,
+) -> Mapping[str, object] | Sequence[object] | None:
+    """Load a variables preset for ``template_id`` and ``name``."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    with contextlib.closing(get_conn(database)) as conn:
+        row = conn.execute(
+            """
+            SELECT data FROM vars_presets
+            WHERE template_id = ? AND name = ?
+            """,
+            (template_id, name),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    try:
+        return json.loads(row[0])
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def list_vars_presets(
+    *,
+    template_id: int | None = None,
+    db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    """Return variables presets optionally filtered by ``template_id``."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    query = "SELECT id, template_id, name, data, updated_at FROM vars_presets"
+    params: tuple[object, ...]
+    if template_id is not None:
+        query += " WHERE template_id = ?"
+        params = (template_id,)
+    else:
+        params = ()
+    query += " ORDER BY name, id"
+
+    with contextlib.closing(get_conn(database)) as conn:
+        rows = conn.execute(query, params).fetchall()
+
+    presets: list[dict[str, object]] = []
+    for row in rows:
+        try:
+            decoded = json.loads(row["data"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            decoded = None
+        presets.append(
+            {
+                "id": row["id"],
+                "template_id": row["template_id"],
+                "name": row["name"],
+                "data": decoded,
+                "updated_at": row["updated_at"],
+            }
+        )
+    return presets
+
+
+def delete_vars_preset(
+    *,
+    template_id: int,
+    name: str,
+    db_path: str | Path | None = None,
+) -> bool:
+    """Delete a variables preset returning ``True`` if it existed."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    with contextlib.closing(get_conn(database)) as conn:
+        with conn:
+            cursor = conn.execute(
+                "DELETE FROM vars_presets WHERE template_id = ? AND name = ?",
+                (template_id, name),
+            )
+    return cursor.rowcount > 0
 
 
 def find_raster_cache(

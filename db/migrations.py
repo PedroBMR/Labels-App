@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def apply_migrations(conn: sqlite3.Connection) -> None:
@@ -249,17 +250,128 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
         else:
             ensure_table(create_print_jobs_sql)
 
-        ensure_table(
-            """
-            CREATE TABLE IF NOT EXISTS vars_presets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                data TEXT NOT NULL,
-                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(name)
+        def create_vars_presets_schema() -> None:
+            ensure_table(
+                """
+                CREATE TABLE IF NOT EXISTS vars_presets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    template_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    data TEXT NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(template_id) REFERENCES templates(id) ON DELETE CASCADE
+                )
+                """
             )
-            """
-        )
+            ensure_table(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_vars_presets_template_name
+                ON vars_presets(template_id, name)
+                """
+            )
+            ensure_table(
+                """
+                CREATE INDEX IF NOT EXISTS idx_vars_presets_template
+                ON vars_presets(template_id)
+                """
+            )
+
+        if table_exists("vars_presets"):
+            vars_preset_columns = table_columns("vars_presets")
+            if "template_id" not in vars_preset_columns:
+                conn.execute("ALTER TABLE vars_presets RENAME TO vars_presets_legacy")
+                create_vars_presets_schema()
+
+                template_rows = conn.execute(
+                    "SELECT id, name FROM templates"
+                ).fetchall()
+                template_by_name = {row[1]: row[0] for row in template_rows}
+                fallback_template_id = None
+                if len(template_rows) == 1:
+                    fallback_template_id = template_rows[0][0]
+
+                legacy_rows = conn.execute(
+                    "SELECT id, name, data, updated_at FROM vars_presets_legacy"
+                ).fetchall()
+
+                def resolve_template_id(data_value: str) -> int | None:
+                    if not data_value:
+                        return None
+                    try:
+                        payload = json.loads(data_value)
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        return None
+
+                    template_name: str | None = None
+                    if isinstance(payload, dict):
+                        template_id_value = payload.get("template_id")
+                        if isinstance(template_id_value, int):
+                            return template_id_value
+
+                        name_keys = (
+                            "template_name",
+                            "templateName",
+                            "template",
+                        )
+                        for key in name_keys:
+                            value = payload.get(key)
+                            if isinstance(value, str):
+                                template_name = value
+                                break
+                            if isinstance(value, dict):
+                                nested_name = value.get("name")
+                                if isinstance(nested_name, str):
+                                    template_name = nested_name
+                                    break
+
+                        if template_name is None and "meta" in payload:
+                            meta = payload.get("meta")
+                            if isinstance(meta, dict):
+                                for key in name_keys:
+                                    value = meta.get(key)
+                                    if isinstance(value, str):
+                                        template_name = value
+                                        break
+                                    if isinstance(value, dict):
+                                        nested_name = value.get("name")
+                                        if isinstance(nested_name, str):
+                                            template_name = nested_name
+                                            break
+
+                    if template_name is not None:
+                        return template_by_name.get(template_name)
+
+                    return None
+
+                for row in legacy_rows:
+                    row_id, name, data_value, updated_at = row
+                    template_id = resolve_template_id(data_value)
+                    if template_id is None:
+                        if fallback_template_id is not None:
+                            template_id = fallback_template_id
+                        else:
+                            raise RuntimeError(
+                                "Unable to determine template for vars preset"
+                                f" '{name}' during migration"
+                            )
+
+                    conn.execute(
+                        """
+                        INSERT INTO vars_presets(
+                            id, template_id, name, data, updated_at
+                        )
+                        VALUES(?, ?, ?, ?, ?)
+                        """,
+                        (row_id, template_id, name, data_value, updated_at),
+                    )
+
+                conn.execute("DROP TABLE vars_presets_legacy")
+            else:
+                create_vars_presets_schema()
+        else:
+            create_vars_presets_schema()
+
+        conn.execute("DROP INDEX IF EXISTS idx_vars_presets_name")
 
         ensure_table(
             """
@@ -291,13 +403,6 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_print_jobs_payload_hash
             ON print_jobs(payload_hash)
-            """
-        )
-
-        ensure_table(
-            """
-            CREATE INDEX IF NOT EXISTS idx_vars_presets_name
-            ON vars_presets(name)
             """
         )
 
