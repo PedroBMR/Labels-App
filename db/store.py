@@ -18,15 +18,19 @@ __all__ = [
     "backup",
     "configure_default_path",
     "default_db_path",
+    "delete_printer_profile",
     "delete_vars_preset",
     "get_conn",
+    "get_printer_profile",
     "get_template_id_by_name",
     "init",
+    "list_printer_profiles",
     "get_asset_id_by_hash",
     "find_raster_cache",
     "insert_or_get_raster_cache",
     "insert_print_job",
     "list_print_jobs",
+    "save_printer_profile",
     "list_vars_presets",
     "get_print_job",
     # upsert_asset(name, kind, data, path, file_hash, width_px, height_px,
@@ -136,6 +140,314 @@ def _serialise_json(data: Mapping[str, object] | Sequence[object] | str) -> str:
     if isinstance(data, str):
         return data
     return json.dumps(data, separators=(",", ":"), sort_keys=True)
+
+
+_PRINTER_SETTINGS_DEFAULTS: dict[str, object | None] = {
+    "media_type": None,
+    "gap_mm": None,
+    "offset_mm": None,
+    "mark_mm": None,
+    "darkness": None,
+    "speed": None,
+    "mark_offset_mm": None,
+    "fine_offset_mm": None,
+    "calibrate_next_print": False,
+}
+
+_PRINTER_SETTINGS_ALIASES = {
+    "media_gap_mm": "gap_mm",
+    "media_gap_offset_mm": "offset_mm",
+    "media_mark_mm": "mark_mm",
+    "media_mark_offset_mm": "mark_offset_mm",
+    "media_fine_offset_mm": "fine_offset_mm",
+    "media_darkness": "darkness",
+    "media_speed": "speed",
+    "media_calibrate_next": "calibrate_next_print",
+    "calibrate_next": "calibrate_next_print",
+}
+
+
+def _coerce_float(value: object | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    if result != result:  # NaN check
+        return None
+    return result
+
+
+def _coerce_int(value: object | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _decode_printer_settings(payload: object | None) -> dict[str, object]:
+    if not payload or not isinstance(payload, (bytes, bytearray, str)):
+        if isinstance(payload, Mapping):
+            return dict(payload)
+        return {}
+    try:
+        if isinstance(payload, (bytes, bytearray)):
+            text = payload.decode("utf-8")
+        else:
+            text = str(payload)
+        loaded = json.loads(text)
+    except (UnicodeDecodeError, TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    if isinstance(loaded, Mapping):
+        return dict(loaded)
+    return {}
+
+
+def _normalise_printer_settings(settings: Mapping[str, object] | None) -> dict[str, object]:
+    base = dict(_PRINTER_SETTINGS_DEFAULTS)
+    if not settings:
+        return base
+
+    extras: dict[str, object] = {}
+    for key, value in settings.items():
+        canonical = _PRINTER_SETTINGS_ALIASES.get(key, key)
+        if canonical == "media_type":
+            if value is None:
+                base[canonical] = None
+            else:
+                text = str(value).strip()
+                base[canonical] = text or None
+        elif canonical in {
+            "gap_mm",
+            "offset_mm",
+            "mark_mm",
+            "mark_offset_mm",
+            "fine_offset_mm",
+        }:
+            base[canonical] = _coerce_float(value)
+        elif canonical in {"darkness", "speed"}:
+            base[canonical] = _coerce_int(value)
+        elif canonical == "calibrate_next_print":
+            base[canonical] = bool(value)
+        else:
+            extras[key] = value
+
+    base.update(extras)
+    return base
+
+
+def save_printer_profile(
+    *,
+    name: str,
+    settings: Mapping[str, object],
+    db_path: str | Path | None = None,
+) -> None:
+    """Create or update a printer profile record."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    with contextlib.closing(get_conn(database)) as conn:
+        row = conn.execute(
+            "SELECT settings FROM printer_profiles WHERE name = ?",
+            (name,),
+        ).fetchone()
+
+    existing_settings = _decode_printer_settings(row["settings"]) if row else {}
+    merged_settings: dict[str, object] = dict(existing_settings)
+    merged_settings.update(dict(settings))
+    normalised = _normalise_printer_settings(merged_settings)
+
+    payload = _serialise_json(normalised)
+    timestamp = datetime.now(UTC).isoformat()
+    calibrate_flag = int(bool(normalised.get("calibrate_next_print")))
+
+    params = (
+        name,
+        payload,
+        normalised.get("media_type"),
+        _coerce_float(normalised.get("gap_mm")),
+        _coerce_float(normalised.get("offset_mm")),
+        _coerce_float(normalised.get("mark_mm")),
+        _coerce_int(normalised.get("darkness")),
+        _coerce_int(normalised.get("speed")),
+        _coerce_float(normalised.get("mark_offset_mm")),
+        _coerce_float(normalised.get("fine_offset_mm")),
+        calibrate_flag,
+        timestamp,
+    )
+
+    with contextlib.closing(get_conn(database)) as conn:
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO printer_profiles(
+                    name,
+                    settings,
+                    media_type,
+                    gap_mm,
+                    offset_mm,
+                    mark_mm,
+                    darkness,
+                    speed,
+                    mark_offset_mm,
+                    fine_offset_mm,
+                    calibrate_next_print,
+                    updated_at
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    settings = excluded.settings,
+                    media_type = excluded.media_type,
+                    gap_mm = excluded.gap_mm,
+                    offset_mm = excluded.offset_mm,
+                    mark_mm = excluded.mark_mm,
+                    darkness = excluded.darkness,
+                    speed = excluded.speed,
+                    mark_offset_mm = excluded.mark_offset_mm,
+                    fine_offset_mm = excluded.fine_offset_mm,
+                    calibrate_next_print = excluded.calibrate_next_print,
+                    updated_at = excluded.updated_at
+                """,
+                params,
+            )
+
+
+def get_printer_profile(
+    *,
+    name: str,
+    db_path: str | Path | None = None,
+) -> dict[str, object] | None:
+    """Return the printer profile identified by ``name``."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    with contextlib.closing(get_conn(database)) as conn:
+        row = conn.execute(
+            """
+            SELECT
+                id,
+                name,
+                media_type,
+                gap_mm,
+                offset_mm,
+                mark_mm,
+                darkness,
+                speed,
+                mark_offset_mm,
+                fine_offset_mm,
+                calibrate_next_print,
+                settings,
+                updated_at
+            FROM printer_profiles
+            WHERE name = ?
+            LIMIT 1
+            """,
+            (name,),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    decoded = _decode_printer_settings(row["settings"])
+    normalised = _normalise_printer_settings(decoded)
+    calibrate_flag = bool(row["calibrate_next_print"])
+    normalised["calibrate_next_print"] = calibrate_flag
+
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "media_type": row["media_type"],
+        "gap_mm": row["gap_mm"],
+        "offset_mm": row["offset_mm"],
+        "mark_mm": row["mark_mm"],
+        "darkness": row["darkness"],
+        "speed": row["speed"],
+        "mark_offset_mm": row["mark_offset_mm"],
+        "fine_offset_mm": row["fine_offset_mm"],
+        "calibrate_next_print": calibrate_flag,
+        "settings": normalised,
+        "updated_at": row["updated_at"],
+    }
+
+
+def list_printer_profiles(
+    *, db_path: str | Path | None = None
+) -> list[dict[str, object]]:
+    """Return all printer profiles ordered by name and identifier."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    with contextlib.closing(get_conn(database)) as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                id,
+                name,
+                media_type,
+                gap_mm,
+                offset_mm,
+                mark_mm,
+                darkness,
+                speed,
+                mark_offset_mm,
+                fine_offset_mm,
+                calibrate_next_print,
+                settings,
+                updated_at
+            FROM printer_profiles
+            ORDER BY name, id
+            """
+        ).fetchall()
+
+    profiles: list[dict[str, object]] = []
+    for row in rows:
+        decoded = _decode_printer_settings(row["settings"])
+        normalised = _normalise_printer_settings(decoded)
+        calibrate_flag = bool(row["calibrate_next_print"])
+        normalised["calibrate_next_print"] = calibrate_flag
+        profiles.append(
+            {
+                "id": row["id"],
+                "name": row["name"],
+                "media_type": row["media_type"],
+                "gap_mm": row["gap_mm"],
+                "offset_mm": row["offset_mm"],
+                "mark_mm": row["mark_mm"],
+                "darkness": row["darkness"],
+                "speed": row["speed"],
+                "mark_offset_mm": row["mark_offset_mm"],
+                "fine_offset_mm": row["fine_offset_mm"],
+                "calibrate_next_print": calibrate_flag,
+                "settings": normalised,
+                "updated_at": row["updated_at"],
+            }
+        )
+    return profiles
+
+
+def delete_printer_profile(
+    *,
+    name: str,
+    db_path: str | Path | None = None,
+) -> bool:
+    """Remove the printer profile identified by ``name`` returning a boolean."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    with contextlib.closing(get_conn(database)) as conn:
+        with conn:
+            cursor = conn.execute(
+                "DELETE FROM printer_profiles WHERE name = ?",
+                (name,),
+            )
+            return cursor.rowcount > 0
 
 
 def get_template_id_by_name(
