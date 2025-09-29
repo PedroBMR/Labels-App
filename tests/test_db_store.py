@@ -64,7 +64,8 @@ def test_init_creates_schema(tmp_path):
             "speed",
             "mark_offset_mm",
             "fine_offset_mm",
-            "calibrate_next",
+            "calibrate_next_print",
+            "settings",
             "updated_at",
         } <= printer_columns
 
@@ -78,6 +79,67 @@ def test_init_creates_schema(tmp_path):
         assert value is not None
         assert value[0] == str(migrations.SCHEMA_VERSION)
 
+
+def test_printer_profiles_crud(tmp_path):
+    db_path = tmp_path / "app.sqlite"
+
+    base_settings = {
+        "media_type": "gap",
+        "gap_mm": 2.5,
+        "offset_mm": 0.1,
+        "mark_mm": 5.0,
+        "mark_offset_mm": 0.3,
+        "fine_offset_mm": 0.05,
+        "darkness": 12,
+        "speed": 4,
+        "calibrate_next_print": True,
+    }
+
+    store.save_printer_profile(
+        name="Thermal A",
+        settings=base_settings,
+        db_path=db_path,
+    )
+
+    created = store.get_printer_profile(name="Thermal A", db_path=db_path)
+    assert created is not None
+    assert created["settings"]["gap_mm"] == 2.5
+    assert created["settings"]["darkness"] == 12
+    assert created["settings"]["calibrate_next_print"] is True
+    first_updated_at = created["updated_at"]
+
+    store.save_printer_profile(
+        name="Thermal A",
+        settings={"darkness": 8},
+        db_path=db_path,
+    )
+
+    updated = store.get_printer_profile(name="Thermal A", db_path=db_path)
+    assert updated is not None
+    assert updated["settings"]["darkness"] == 8
+    assert updated["settings"]["gap_mm"] == 2.5
+    assert updated["settings"]["mark_mm"] == 5.0
+    assert updated["settings"]["calibrate_next_print"] is True
+    assert updated["calibrate_next_print"] is True
+    assert updated["updated_at"] != first_updated_at
+
+    profiles = store.list_printer_profiles(db_path=db_path)
+    assert len(profiles) == 1
+    assert profiles[0]["settings"]["darkness"] == 8
+    assert profiles[0]["settings"]["gap_mm"] == 2.5
+
+    with store.get_conn(db_path) as conn:
+        row = conn.execute(
+            "SELECT calibrate_next_print, settings FROM printer_profiles WHERE name = ?",
+            ("Thermal A",),
+        ).fetchone()
+
+    assert row is not None
+    assert row["calibrate_next_print"] == 1
+    persisted = json.loads(row["settings"])
+    assert persisted["calibrate_next_print"] is True
+    assert persisted["gap_mm"] == 2.5
+    assert persisted["mark_mm"] == 5.0
 
 def test_migration_upgrades_legacy_raster_cache(tmp_path):
     db_path = tmp_path / "legacy.sqlite"

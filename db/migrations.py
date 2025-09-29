@@ -116,7 +116,8 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
                 speed INTEGER,
                 mark_offset_mm REAL,
                 fine_offset_mm REAL,
-                calibrate_next INTEGER NOT NULL DEFAULT 0,
+                calibrate_next_print INTEGER NOT NULL DEFAULT 0,
+                settings TEXT,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(name)
             )
@@ -479,11 +480,18 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
                 conn.execute(
                     "ALTER TABLE printer_profiles ADD COLUMN fine_offset_mm REAL"
                 )
-            if not has_column("printer_profiles", "calibrate_next"):
+            if not has_column("printer_profiles", "calibrate_next_print"):
                 conn.execute(
-                    "ALTER TABLE printer_profiles ADD COLUMN calibrate_next INTEGER"
-                    " NOT NULL DEFAULT 0"
+                    "ALTER TABLE printer_profiles"
+                    " ADD COLUMN calibrate_next_print INTEGER NOT NULL DEFAULT 0"
                 )
+                if has_column("printer_profiles", "calibrate_next"):
+                    conn.execute(
+                        "UPDATE printer_profiles"
+                        " SET calibrate_next_print = COALESCE(calibrate_next, 0)"
+                    )
+            if not has_column("printer_profiles", "settings"):
+                conn.execute("ALTER TABLE printer_profiles ADD COLUMN settings TEXT")
             if not has_column("printer_profiles", "updated_at"):
                 conn.execute(
                     "ALTER TABLE printer_profiles ADD COLUMN updated_at TEXT NOT NULL"
