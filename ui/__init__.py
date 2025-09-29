@@ -1299,12 +1299,44 @@ class EtiquetaApp(QWidget):
         self._impressao_template = nome  # lembra o modelo atual
 
     def _media_settings(self, *, consume: bool) -> dict[str, Any]:
-        settings = resolve_media_settings(self.config)
+        printer_hint = str(self.config.get("ultima_impressora", "")).strip() or None
+        profile = None
+        if printer_hint:
+            try:
+                profile = db_store.load_printer_profile(printer_hint)
+            except Exception:  # pragma: no cover - defensive logging only
+                logger.exception(
+                    "Falha ao carregar perfil da impressora %s", printer_hint
+                )
+                profile = None
+
+        settings = resolve_media_settings(self.config, printer_profile=profile)
         calibrate = bool(settings.get("calibrate_next_print"))
+
+        profile_calibrate = False
+        if profile:
+            raw_flag = None
+            for key in ("media_calibrate_next", "calibrate_next", "calibrate_next_print"):
+                if key in profile:
+                    raw_flag = profile[key]
+                    break
+            profile_calibrate = bool(raw_flag)
+
         if consume:
             if calibrate:
-                self.config["media_calibrate_next"] = False
-                salvar_config(self.config)
+                if profile_calibrate and printer_hint:
+                    try:
+                        db_store.save_printer_profile(
+                            printer_hint, {"media_calibrate_next": False}
+                        )
+                    except Exception:  # pragma: no cover - defensive logging only
+                        logger.exception(
+                            "Falha ao atualizar calibracao da impressora %s",
+                            printer_hint,
+                        )
+                else:
+                    self.config["media_calibrate_next"] = False
+                    salvar_config(self.config)
         else:
             settings["calibrate_next_print"] = False
         return settings

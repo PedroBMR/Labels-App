@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -65,23 +66,19 @@ def test_quick_print_reprint_uses_last_payload(monkeypatch):
     QuickPrintDialog._last_printer = None
     QuickPrintDialog._last_job_id = None
     QuickPrintDialog._last_backend = "tspl"
-    QuickPrintDialog._last_template = None
-    sent: list[tuple[str | None, bytes]] = []
+    QuickPrintDialog._last_template = "Modelo"
+    QuickPrintDialog._last_media_settings = {"media_type": "gap"}
 
     monkeypatch.setattr(quick_print, "listar_templates", lambda: ["Modelo"])
     monkeypatch.setattr(quick_print, "listar_impressoras", lambda: [])
-    monkeypatch.setattr(quick_print, "compile_model_silent", lambda *a, **k: b"")
-    monkeypatch.setattr(
-        quick_print,
-        "prepare_quick_job",
-        lambda *a, **k: (SimpleNamespace(document=SimpleNamespace(page={}, elements=[]), calibration=None), {}),
-    )
 
-    def fake_send(printer, payload, **kwargs):
-        sent.append((printer, payload))
-        return True, None, 1
+    jobs: list[tuple[str | None, bytes, quick_print.PrinterTarget, int, dict]] = []
 
-    monkeypatch.setattr(quick_print, "send", fake_send)
+    def fake_enqueue(template, payload, target, copies, params):
+        jobs.append((template, payload, target, copies, dict(params)))
+        return 7, "pending"
+
+    monkeypatch.setattr(quick_print, "enqueue_job", fake_enqueue)
 
     QuickPrintDialog._last_payload = b"PRINT"
     QuickPrintDialog._last_printer = "Impressora X"
@@ -90,7 +87,13 @@ def test_quick_print_reprint_uses_last_payload(monkeypatch):
     dialog = QuickPrintDialog()
     try:
         dialog._on_reprint_last()
-        assert sent and sent[0] == ("Impressora X", b"PRINT")
+        assert jobs, "Nenhum job reenfileirado"
+        template, payload, target, copies, params = jobs[0]
+        assert template == "Modelo"
+        assert payload == b"PRINT"
+        assert target.name == "Impressora X"
+        assert copies == dialog.copies_spin.value()
+        assert params.get("media_settings") == {"media_type": "gap"}
     finally:
         dialog.close()
 
@@ -99,22 +102,62 @@ def test_quick_print_print_sends_payload(monkeypatch):
     _ensure_app()
     QuickPrintDialog._last_payload = None
     QuickPrintDialog._last_printer = None
-    sent: list[tuple[str | None, bytes]] = []
+    QuickPrintDialog._last_media_settings = None
 
     monkeypatch.setattr(quick_print, "listar_templates", lambda: ["Modelo"])
     monkeypatch.setattr(quick_print, "listar_impressoras", lambda: ["IMP"])
 
-    def fake_prepare(model, overrides, silent=True):
-        return SimpleNamespace(document=SimpleNamespace(page={}, elements=[]), calibration=None), overrides
+    config = {"ultima_impressora": "PADRAO"}
+    profile = {"media_speed": 5}
+    media_settings = {"media_type": "gap", "calibrate_next_print": False}
+
+    monkeypatch.setattr(quick_print, "carregar_config", lambda: dict(config))
+    monkeypatch.setattr(quick_print.db_store, "load_printer_profile", lambda name: profile)
+
+    captured_prepare: dict[str, Any] = {}
+
+    def fake_prepare(model, overrides, *, silent, config, printer_name, printer_profile):
+        captured_prepare.update(
+            {
+                "model": model,
+                "overrides": overrides,
+                "silent": silent,
+                "config": config,
+                "printer_name": printer_name,
+                "printer_profile": printer_profile,
+            }
+        )
+        return (
+            SimpleNamespace(document=SimpleNamespace(page={}, elements=[]), calibration=None),
+            overrides,
+        )
 
     monkeypatch.setattr(quick_print, "prepare_quick_job", fake_prepare)
-    monkeypatch.setattr(quick_print, "compile_model_silent", lambda *a, **k: b"PRINT 1\r\n")
 
-    def fake_send(printer, payload, **kwargs):
-        sent.append((printer, payload))
-        return True, None, 42
+    captured_compile: dict[str, Any] = {}
 
-    monkeypatch.setattr(quick_print, "send", fake_send)
+    def fake_compile(model, overrides, *, silent, printer_name, printer_profile):
+        captured_compile.update(
+            {
+                "model": model,
+                "overrides": overrides,
+                "silent": silent,
+                "printer_name": printer_name,
+                "printer_profile": printer_profile,
+            }
+        )
+        return b"PRINT 1\r\n"
+
+    monkeypatch.setattr(quick_print, "compile_model_silent", fake_compile)
+    monkeypatch.setattr(quick_print, "resolve_media_settings", lambda *a, **k: dict(media_settings))
+
+    jobs: list[tuple[str | None, bytes, quick_print.PrinterTarget, int, dict]] = []
+
+    def fake_enqueue(template, payload, target, copies, params):
+        jobs.append((template, payload, target, copies, dict(params)))
+        return 42, "pending"
+
+    monkeypatch.setattr(quick_print, "enqueue_job", fake_enqueue)
 
     dialog = QuickPrintDialog()
     try:
@@ -123,8 +166,20 @@ def test_quick_print_print_sends_payload(monkeypatch):
         dialog.preview_check.setChecked(False)
         dialog._on_print()
 
-        assert sent and sent[0] == ("IMP", b"PRINT 1\r\n")
+        assert jobs, "Nenhum job enfileirado"
+        template, payload, target, copies, params = jobs[0]
+        assert template == "Modelo"
+        assert payload == b"PRINT 1\r\n"
+        assert target.name == "IMP"
+        assert copies == dialog.copies_spin.value()
+        assert params.get("media_settings") == media_settings
         assert QuickPrintDialog._last_payload == b"PRINT 1\r\n"
         assert QuickPrintDialog._last_job_id == 42
+        assert QuickPrintDialog._last_media_settings == media_settings
+        assert captured_prepare["printer_name"] == "IMP"
+        assert captured_prepare["printer_profile"] == profile
+        assert captured_prepare["config"] == config
+        assert captured_compile["printer_name"] == "IMP"
+        assert captured_compile["printer_profile"] == profile
     finally:
         dialog.close()
