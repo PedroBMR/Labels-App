@@ -18,6 +18,7 @@ from qt_compat import (
     QLabel,
     QLineEdit,
     QPlainTextEdit,
+    QPushButton,
     QStyle,
     QTreeWidget,
     QTreeWidgetItem,
@@ -41,6 +42,9 @@ class VariablePanel(QWidget):
     """Panel listing template variables with rich editing capabilities."""
 
     changed = pyqtSignal(dict)
+    savePresetRequested = pyqtSignal()
+    applyPresetRequested = pyqtSignal()
+    managePresetsRequested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -74,6 +78,24 @@ class VariablePanel(QWidget):
         self.scope_combo.addItem("Item", "item")
         self.scope_combo.currentIndexChanged.connect(self._apply_filters)
         controls.addWidget(self.scope_combo)
+
+        self.save_preset_button = QPushButton("Save preset…", self)
+        self.save_preset_button.clicked.connect(
+            lambda _checked=False: self.savePresetRequested.emit()
+        )
+        controls.addWidget(self.save_preset_button)
+
+        self.apply_preset_button = QPushButton("Apply preset…", self)
+        self.apply_preset_button.clicked.connect(
+            lambda _checked=False: self.applyPresetRequested.emit()
+        )
+        controls.addWidget(self.apply_preset_button)
+
+        self.manage_presets_button = QPushButton("Manage presets…", self)
+        self.manage_presets_button.clicked.connect(
+            lambda _checked=False: self.managePresetsRequested.emit()
+        )
+        controls.addWidget(self.manage_presets_button)
 
         layout.addLayout(controls)
 
