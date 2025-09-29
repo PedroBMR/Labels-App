@@ -8,6 +8,32 @@ import json
 import sqlite3
 
 
+def add_column_if_missing(
+    conn: sqlite3.Connection, table: str, column: str, definition: str
+) -> bool:
+    """Add ``column`` to ``table`` using ``definition`` if it does not exist."""
+
+    cursor = conn.execute(f"PRAGMA table_info({table})")
+    if any(row[1] == column for row in cursor.fetchall()):
+        return False
+
+    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+    return True
+
+
+def create_index_if_missing(conn: sqlite3.Connection, name: str, sql: str) -> bool:
+    """Create an index named ``name`` using ``sql`` if it does not exist."""
+
+    cursor = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' AND name=?", (name,)
+    )
+    if cursor.fetchone() is not None:
+        return False
+
+    conn.execute(sql)
+    return True
+
+
 def _migration_1(conn: sqlite3.Connection) -> None:
     def ensure_table(sql: str) -> None:
         conn.execute(sql)
@@ -22,10 +48,6 @@ def _migration_1(conn: sqlite3.Connection) -> None:
     def table_columns(name: str) -> set[str]:
         cursor = conn.execute(f"PRAGMA table_info({name})")
         return {row[1] for row in cursor.fetchall()}
-
-    def has_column(table: str, column: str) -> bool:
-        cursor = conn.execute(f"PRAGMA table_info({table})")
-        return any(row[1] == column for row in cursor.fetchall())
 
     ensure_table(
         """
@@ -252,15 +274,19 @@ def _migration_1(conn: sqlite3.Connection) -> None:
             )
             """
         )
-        ensure_table(
+        create_index_if_missing(
+            conn,
+            "idx_vars_presets_template_name",
             """
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_vars_presets_template_name
+            CREATE UNIQUE INDEX idx_vars_presets_template_name
             ON vars_presets(template_id, name)
             """
         )
-        ensure_table(
+        create_index_if_missing(
+            conn,
+            "idx_vars_presets_template",
             """
-            CREATE INDEX IF NOT EXISTS idx_vars_presets_template
+            CREATE INDEX idx_vars_presets_template
             ON vars_presets(template_id)
             """
         )
@@ -362,114 +388,107 @@ def _migration_1(conn: sqlite3.Connection) -> None:
 
     conn.execute("DROP INDEX IF EXISTS idx_vars_presets_name")
 
-    ensure_table(
+    create_index_if_missing(
+        conn,
+        "idx_assets_kind",
         """
-        CREATE INDEX IF NOT EXISTS idx_assets_kind
+        CREATE INDEX idx_assets_kind
         ON assets(kind)
         """
     )
 
-    ensure_table(
+    create_index_if_missing(
+        conn,
+        "idx_raster_cache_asset",
         """
-        CREATE INDEX IF NOT EXISTS idx_raster_cache_asset
+        CREATE INDEX idx_raster_cache_asset
         ON raster_cache(asset_id)
         """
     )
 
-    ensure_table(
+    create_index_if_missing(
+        conn,
+        "idx_print_jobs_created_at_id",
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_print_jobs_created_at_id
+        CREATE UNIQUE INDEX idx_print_jobs_created_at_id
         ON print_jobs(created_at, id)
         """
     )
-    ensure_table(
+    create_index_if_missing(
+        conn,
+        "idx_print_jobs_status_created",
         """
-        CREATE INDEX IF NOT EXISTS idx_print_jobs_status_created
+        CREATE INDEX idx_print_jobs_status_created
         ON print_jobs(status, created_at)
         """
     )
-    ensure_table(
+    create_index_if_missing(
+        conn,
+        "idx_print_jobs_payload_hash",
         """
-        CREATE INDEX IF NOT EXISTS idx_print_jobs_payload_hash
+        CREATE INDEX idx_print_jobs_payload_hash
         ON print_jobs(payload_hash)
         """
     )
 
-    if not has_column("templates", "path"):
-        conn.execute("ALTER TABLE templates ADD COLUMN path TEXT")
-    if not has_column("templates", "file_hash"):
-        conn.execute("ALTER TABLE templates ADD COLUMN file_hash TEXT")
-    if not has_column("templates", "kind"):
-        conn.execute("ALTER TABLE templates ADD COLUMN kind TEXT")
-    if not has_column("templates", "width_mm"):
-        conn.execute("ALTER TABLE templates ADD COLUMN width_mm REAL")
-    if not has_column("templates", "height_mm"):
-        conn.execute("ALTER TABLE templates ADD COLUMN height_mm REAL")
-    if not has_column("templates", "dpi"):
-        conn.execute("ALTER TABLE templates ADD COLUMN dpi INTEGER")
-    if not has_column("templates", "tags"):
-        conn.execute("ALTER TABLE templates ADD COLUMN tags TEXT")
+    add_column_if_missing(conn, "templates", "path", "TEXT")
+    add_column_if_missing(conn, "templates", "file_hash", "TEXT")
+    add_column_if_missing(conn, "templates", "kind", "TEXT")
+    add_column_if_missing(conn, "templates", "width_mm", "REAL")
+    add_column_if_missing(conn, "templates", "height_mm", "REAL")
+    add_column_if_missing(conn, "templates", "dpi", "INTEGER")
+    add_column_if_missing(conn, "templates", "tags", "TEXT")
 
-    if not has_column("assets", "kind"):
-        conn.execute("ALTER TABLE assets ADD COLUMN kind TEXT")
-        if has_column("assets", "type"):
+    added_kind = add_column_if_missing(conn, "assets", "kind", "TEXT")
+    if added_kind:
+        asset_columns = table_columns("assets")
+        if "type" in asset_columns:
             conn.execute("UPDATE assets SET kind = type WHERE kind IS NULL")
-    if not has_column("assets", "path"):
-        conn.execute("ALTER TABLE assets ADD COLUMN path TEXT")
-    if not has_column("assets", "file_hash"):
-        conn.execute("ALTER TABLE assets ADD COLUMN file_hash TEXT")
-    if not has_column("assets", "width_px"):
-        conn.execute("ALTER TABLE assets ADD COLUMN width_px INTEGER")
-    if not has_column("assets", "height_px"):
-        conn.execute("ALTER TABLE assets ADD COLUMN height_px INTEGER")
-    if not has_column("assets", "dpi_x"):
-        conn.execute("ALTER TABLE assets ADD COLUMN dpi_x REAL")
-    if not has_column("assets", "dpi_y"):
-        conn.execute("ALTER TABLE assets ADD COLUMN dpi_y REAL")
-    if not has_column("assets", "tags"):
-        conn.execute("ALTER TABLE assets ADD COLUMN tags TEXT")
-    if not has_column("assets", "created_at"):
-        conn.execute(
-            "ALTER TABLE assets ADD COLUMN created_at TEXT NOT NULL"
-            " DEFAULT CURRENT_TIMESTAMP"
-        )
-    if not has_column("assets", "updated_at"):
-        conn.execute(
-            "ALTER TABLE assets ADD COLUMN updated_at TEXT NOT NULL"
-            " DEFAULT CURRENT_TIMESTAMP"
-        )
+    add_column_if_missing(conn, "assets", "path", "TEXT")
+    add_column_if_missing(conn, "assets", "file_hash", "TEXT")
+    add_column_if_missing(conn, "assets", "width_px", "INTEGER")
+    add_column_if_missing(conn, "assets", "height_px", "INTEGER")
+    add_column_if_missing(conn, "assets", "dpi_x", "REAL")
+    add_column_if_missing(conn, "assets", "dpi_y", "REAL")
+    add_column_if_missing(conn, "assets", "tags", "TEXT")
+    add_column_if_missing(
+        conn,
+        "assets",
+        "created_at",
+        "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
+    )
+    add_column_if_missing(
+        conn,
+        "assets",
+        "updated_at",
+        "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
+    )
 
     if table_exists("printer_profiles"):
-        if not has_column("printer_profiles", "media_type"):
-            conn.execute("ALTER TABLE printer_profiles ADD COLUMN media_type TEXT")
-        if not has_column("printer_profiles", "gap_mm"):
-            conn.execute("ALTER TABLE printer_profiles ADD COLUMN gap_mm REAL")
-        if not has_column("printer_profiles", "offset_mm"):
-            conn.execute("ALTER TABLE printer_profiles ADD COLUMN offset_mm REAL")
-        if not has_column("printer_profiles", "mark_mm"):
-            conn.execute("ALTER TABLE printer_profiles ADD COLUMN mark_mm REAL")
-        if not has_column("printer_profiles", "darkness"):
-            conn.execute("ALTER TABLE printer_profiles ADD COLUMN darkness INTEGER")
-        if not has_column("printer_profiles", "speed"):
-            conn.execute("ALTER TABLE printer_profiles ADD COLUMN speed INTEGER")
-        if not has_column("printer_profiles", "mark_offset_mm"):
-            conn.execute(
-                "ALTER TABLE printer_profiles ADD COLUMN mark_offset_mm REAL"
-            )
-        if not has_column("printer_profiles", "fine_offset_mm"):
-            conn.execute(
-                "ALTER TABLE printer_profiles ADD COLUMN fine_offset_mm REAL"
-            )
-        if not has_column("printer_profiles", "calibrate_next"):
-            conn.execute(
-                "ALTER TABLE printer_profiles ADD COLUMN calibrate_next INTEGER"
-                " NOT NULL DEFAULT 0"
-            )
-        if not has_column("printer_profiles", "updated_at"):
-            conn.execute(
-                "ALTER TABLE printer_profiles ADD COLUMN updated_at TEXT NOT NULL"
-                " DEFAULT CURRENT_TIMESTAMP"
-            )
+        add_column_if_missing(conn, "printer_profiles", "media_type", "TEXT")
+        add_column_if_missing(conn, "printer_profiles", "gap_mm", "REAL")
+        add_column_if_missing(conn, "printer_profiles", "offset_mm", "REAL")
+        add_column_if_missing(conn, "printer_profiles", "mark_mm", "REAL")
+        add_column_if_missing(conn, "printer_profiles", "darkness", "INTEGER")
+        add_column_if_missing(conn, "printer_profiles", "speed", "INTEGER")
+        add_column_if_missing(
+            conn, "printer_profiles", "mark_offset_mm", "REAL"
+        )
+        add_column_if_missing(
+            conn, "printer_profiles", "fine_offset_mm", "REAL"
+        )
+        add_column_if_missing(
+            conn,
+            "printer_profiles",
+            "calibrate_next",
+            "INTEGER NOT NULL DEFAULT 0",
+        )
+        add_column_if_missing(
+            conn,
+            "printer_profiles",
+            "updated_at",
+            "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        )
 
 
 MIGRATIONS: list[Callable[[sqlite3.Connection], None]] = [_migration_1]

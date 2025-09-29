@@ -152,6 +152,46 @@ def test_migrations_apply_pending_upgrades_once(monkeypatch, tmp_path):
     assert len(calls) == 1
 
 
+def test_add_column_if_missing_is_idempotent():
+    with sqlite3.connect(":memory:") as conn:
+        conn.execute("CREATE TABLE example(id INTEGER PRIMARY KEY)")
+
+        assert migrations.add_column_if_missing(conn, "example", "name", "TEXT")
+        columns = {
+            info[1] for info in conn.execute("PRAGMA table_info(example)").fetchall()
+        }
+        assert "name" in columns
+
+        assert not migrations.add_column_if_missing(conn, "example", "name", "TEXT")
+
+
+def test_create_index_if_missing_is_idempotent():
+    with sqlite3.connect(":memory:") as conn:
+        conn.execute(
+            "CREATE TABLE example(id INTEGER PRIMARY KEY, value TEXT)"
+        )
+
+        assert migrations.create_index_if_missing(
+            conn,
+            "idx_example_value",
+            "CREATE INDEX idx_example_value ON example(value)",
+        )
+        indexes = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=?",
+                ("example",),
+            )
+        }
+        assert "idx_example_value" in indexes
+
+        assert not migrations.create_index_if_missing(
+            conn,
+            "idx_example_value",
+            "CREATE INDEX idx_example_value ON example(value)",
+        )
+
+
 def test_integrity_check_passes_for_healthy_db(tmp_path):
     db_path = tmp_path / "healthy.sqlite"
 
