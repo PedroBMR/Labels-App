@@ -20,6 +20,7 @@ from printing import (
     prepare_quick_job,
     prepare_variable_contexts,
     resolve_media_settings,
+    wait_for_all_jobs,
 )
 
 
@@ -140,8 +141,12 @@ def test_printer_print_template_uses_transport():
     stub = StubTransport()
     printer.transport = stub
 
-    ok, error, job_id = printer.print_template(template, {"nome": "Mundo", "volumes": 1})
-    assert ok and error is None and job_id is not None
+    ok, status, job_id = printer.print_template(
+        template, {"nome": "Mundo", "volumes": 1}
+    )
+    assert ok and status is not None and status.get("status") == "pending"
+    assert job_id is not None
+    assert wait_for_all_jobs(2.0)
     assert stub.payloads, "nenhum payload enviado"
     texto = stub.payloads[0].decode("cp1252")
     assert "Ola Mundo" in texto
@@ -153,8 +158,10 @@ def test_printer_print_calibration(monkeypatch):
     stub = StubTransport()
     printer.transport = stub
 
-    ok, error, job_id = printer.print_calibration(square_mm=30)
-    assert ok and error is None and job_id is not None
+    ok, status, job_id = printer.print_calibration(square_mm=30)
+    assert ok and status is not None and status.get("status") == "pending"
+    assert job_id is not None
+    assert wait_for_all_jobs(2.0)
     texto = stub.payloads[0].decode("cp1252")
     assert "BOX" in texto
 
@@ -248,15 +255,19 @@ def test_apply_media_settings_updates_speed_and_darkness():
     assert page["print_speed"] == "7"
     assert page["calibrate_next_print"] is True
 
-def test_printer_print_job_status_updates():
+def test_printer_print_job_status_updates(monkeypatch):
     template = _simple_template()
     config = PrinterConfig(backend="tspl", transport="tcp", host="127.0.0.1")
     printer = Printer(config)
     stub = StubTransport()
     printer.transport = stub
 
-    ok, error, job_id = printer.print_template(template, {"nome": "Ok", "volumes": 1})
-    assert ok and error is None and job_id is not None
+    ok, status, job_id = printer.print_template(
+        template, {"nome": "Ok", "volumes": 1}
+    )
+    assert ok and status is not None and status.get("status") == "pending"
+    assert job_id is not None
+    assert wait_for_all_jobs(2.0)
 
     with db_store.get_conn(db_store.default_db_path()) as conn:
         row = conn.execute(
@@ -270,12 +281,17 @@ def test_printer_print_job_status_updates():
         def send(self, payload: bytes) -> None:  # type: ignore[override]
             raise TransportError("boom", code=99)
 
+    from printing import queue as print_queue
+
+    monkeypatch.setattr(print_queue, "_RETRY_DELAYS", (0.01, 0.02, 0.04))
+
     printer.transport = FailingTransport()
-    ok, error, failed_job_id = printer.print_template(
+    ok, status_info, failed_job_id = printer.print_template(
         template, {"nome": "Fail", "volumes": 1}
     )
-    assert not ok and failed_job_id is not None
-    assert error is not None and error["code"] == 99
+    assert ok and status_info is not None and status_info.get("status") == "pending"
+    assert failed_job_id is not None
+    assert wait_for_all_jobs(1.0)
 
     with db_store.get_conn(db_store.default_db_path()) as conn:
         row = conn.execute(
@@ -293,8 +309,12 @@ def test_list_print_jobs_returns_recent_entries():
     stub = StubTransport()
     printer.transport = stub
 
-    ok, error, job_id = printer.print_template(template, {"nome": "Teste", "volumes": 1})
-    assert ok and error is None and job_id is not None
+    ok, status, job_id = printer.print_template(
+        template, {"nome": "Teste", "volumes": 1}
+    )
+    assert ok and status is not None and status.get("status") == "pending"
+    assert job_id is not None
+    assert wait_for_all_jobs(2.0)
 
     jobs = db_store.list_print_jobs(limit=5)
     assert any(job.get("id") == job_id for job in jobs)
@@ -306,10 +326,12 @@ def test_reprint_uses_saved_payload():
     first_stub = StubTransport()
     printer.transport = first_stub
 
-    ok, error, original_job_id = printer.print_template(
+    ok, status, original_job_id = printer.print_template(
         template, {"nome": "Primeiro", "volumes": 1}
     )
-    assert ok and error is None and original_job_id is not None
+    assert ok and status is not None and status.get("status") == "pending"
+    assert original_job_id is not None
+    assert wait_for_all_jobs(2.0)
     assert first_stub.payloads, "A impressão inicial deve enviar comandos"
     original_payload = first_stub.payloads[0]
 
@@ -328,13 +350,15 @@ def test_reprint_uses_saved_payload():
     reprint_stub = StubTransport()
     reprint_printer.transport = reprint_stub
 
-    ok2, error2, new_job_id = reprint_printer.send_commands(
+    ok2, status2, new_job_id = reprint_printer.send_commands(
         stored_payload,
         backend=str(record.get("template_backend") or "tspl"),
         template_name=str(record.get("template_name") or "") or None,
         template_backend=str(record.get("template_backend") or "") or None,
     )
 
-    assert ok2 and error2 is None and new_job_id is not None
+    assert ok2 and status2 is not None and status2.get("status") == "pending"
+    assert new_job_id is not None
+    assert wait_for_all_jobs(2.0)
     assert reprint_stub.payloads == [original_payload]
     assert new_job_id != original_job_id
