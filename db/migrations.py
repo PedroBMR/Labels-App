@@ -111,6 +111,7 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
                 settings TEXT NOT NULL,
                 calibrate_next_print INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(name)
             )
@@ -463,6 +464,26 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
                 "ALTER TABLE assets ADD COLUMN updated_at TEXT NOT NULL"
                 " DEFAULT CURRENT_TIMESTAMP"
             )
+
+        if table_exists("printer_profiles"):
+            if not has_column("printer_profiles", "mark_offset_mm"):
+                conn.execute(
+                    "ALTER TABLE printer_profiles ADD COLUMN mark_offset_mm REAL"
+                )
+            if not has_column("printer_profiles", "fine_offset_mm"):
+                conn.execute(
+                    "ALTER TABLE printer_profiles ADD COLUMN fine_offset_mm REAL"
+                )
+            if not has_column("printer_profiles", "calibrate_next"):
+                conn.execute(
+                    "ALTER TABLE printer_profiles ADD COLUMN calibrate_next INTEGER"
+                    " NOT NULL DEFAULT 0"
+                )
+            if not has_column("printer_profiles", "updated_at"):
+                conn.execute(
+                    "ALTER TABLE printer_profiles ADD COLUMN updated_at TEXT NOT NULL"
+                    " DEFAULT CURRENT_TIMESTAMP"
+                )
 
         conn.execute(
             """

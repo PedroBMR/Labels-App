@@ -50,6 +50,25 @@ def test_init_creates_schema(tmp_path):
             "error_text",
         }.issubset(columns)
 
+        printer_columns = {
+            info[1]
+            for info in conn.execute("PRAGMA table_info(printer_profiles)").fetchall()
+        }
+        assert {
+            "id",
+            "name",
+            "media_type",
+            "gap_mm",
+            "offset_mm",
+            "mark_mm",
+            "darkness",
+            "speed",
+            "mark_offset_mm",
+            "fine_offset_mm",
+            "calibrate_next",
+            "updated_at",
+        } <= printer_columns
+
     # Second initialisation should be a no-op
     store.init(db_path)
 
