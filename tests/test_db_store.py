@@ -108,6 +108,50 @@ def test_init_creates_schema(tmp_path):
         assert value[0] == str(migrations.SCHEMA_VERSION)
 
 
+def test_migrations_apply_pending_upgrades_once(monkeypatch, tmp_path):
+    db_path = tmp_path / "needs-upgrade.sqlite"
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO meta(key, value) VALUES(?, ?)",
+            ("schema_version", "0"),
+        )
+        conn.commit()
+
+    calls: list[None] = []
+    original = migrations.MIGRATIONS[0]
+
+    def wrapped(conn: sqlite3.Connection) -> None:
+        calls.append(None)
+        original(conn)
+
+    monkeypatch.setattr(migrations, "MIGRATIONS", [wrapped])
+
+    store.init(db_path)
+
+    assert len(calls) == 1
+
+    with store.get_conn(db_path) as conn:
+        value = conn.execute(
+            "SELECT value FROM meta WHERE key = ?", ("schema_version",)
+        ).fetchone()
+
+    assert value is not None
+    assert value[0] == str(migrations.SCHEMA_VERSION)
+
+    store.init(db_path)
+
+    assert len(calls) == 1
+
+
 def test_integrity_check_passes_for_healthy_db(tmp_path):
     db_path = tmp_path / "healthy.sqlite"
 
