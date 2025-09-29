@@ -108,15 +108,10 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             CREATE TABLE IF NOT EXISTS printer_profiles (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
-                media_type TEXT,
-                gap_mm REAL,
-                offset_mm REAL,
-                mark_mm REAL,
-                darkness INTEGER,
-                speed INTEGER,
-                mark_offset_mm REAL,
-                fine_offset_mm REAL,
-                calibrate_next INTEGER NOT NULL DEFAULT 0,
+                settings TEXT NOT NULL,
+                calibrate_next_print INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(name)
             )
