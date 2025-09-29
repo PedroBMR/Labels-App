@@ -2,7 +2,35 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
+import types
 from pathlib import Path
+
+
+if "PIL" not in sys.modules:
+    pil_module = types.ModuleType("PIL")
+    image_module = types.ModuleType("PIL.Image")
+
+    class _Resampling:
+        LANCZOS = 1
+
+    class _Dither:
+        FLOYDSTEINBERG = 1
+
+    image_module.Resampling = _Resampling
+    image_module.Dither = _Dither
+
+    def _unavailable(*_args, **_kwargs):  # pragma: no cover - stub helper
+        raise RuntimeError("PIL stub does not implement image operations")
+
+    image_module.open = _unavailable
+    image_module.new = _unavailable
+    image_module.Image = image_module
+
+    pil_module.Image = image_module
+
+    sys.modules["PIL"] = pil_module
+    sys.modules["PIL.Image"] = image_module
 
 from db import migrations, store
 from utils.fs import canonical_path as canonical_file_path
@@ -78,6 +106,28 @@ def test_init_creates_schema(tmp_path):
         ).fetchone()
         assert value is not None
         assert value[0] == str(migrations.SCHEMA_VERSION)
+
+
+def test_integrity_check_passes_for_healthy_db(tmp_path):
+    db_path = tmp_path / "healthy.sqlite"
+
+    store.init(db_path)
+
+    with store.get_conn(db_path) as conn:
+        assert store.integrity_check(conn) is True
+
+
+def test_integrity_check_fails_for_corrupted_db(tmp_path):
+    db_path = tmp_path / "corrupted.sqlite"
+
+    store.init(db_path)
+
+    # Corrupt the file header so the integrity check fails.
+    with open(db_path, "r+b") as handle:
+        handle.write(b"corrupted-header-data")
+
+    with store.get_conn(db_path) as conn:
+        assert store.integrity_check(conn) is False
 
 
 def test_migration_upgrades_legacy_raster_cache(tmp_path):

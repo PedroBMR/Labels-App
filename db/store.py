@@ -42,6 +42,7 @@ __all__ = [
     "update_print_job_status",
     "get_job_payload",
     "vacuum",
+    "integrity_check",
 ]
 
 DEFAULT_DB_FILENAME = "app.sqlite"
@@ -111,6 +112,16 @@ def backup(db_path: str | Path, out_path: str | Path) -> None:
     ) as dest:
         src.backup(dest)
         dest.commit()
+
+
+def integrity_check(conn: sqlite3.Connection) -> bool:
+    """Return ``True`` if ``conn`` passes SQLite's integrity check."""
+
+    try:
+        rows = conn.execute("PRAGMA integrity_check").fetchall()
+    except sqlite3.DatabaseError:
+        return False
+    return len(rows) == 1 and rows[0][0] == "ok"
 
 
 def _resolve_db_path(db_path: str | Path | None) -> Path:
