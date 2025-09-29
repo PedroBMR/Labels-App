@@ -29,6 +29,8 @@ __all__ = [
     "list_print_jobs",
     "list_vars_presets",
     "get_print_job",
+    "load_printer_profile",
+    "save_printer_profile",
     # upsert_asset(name, kind, data, path, file_hash, width_px, height_px,
     #              dpi_x, dpi_y, tags, updated_at, db_path)
     "upsert_asset",
@@ -138,6 +140,68 @@ def _serialise_json(data: Mapping[str, object] | Sequence[object] | str) -> str:
     return json.dumps(data, separators=(",", ":"), sort_keys=True)
 
 
+def _coerce_media_float(value: object, default: float = 0.0) -> float:
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    if number == 0:
+        return 0.0
+    return number
+
+
+def _coerce_optional_int(value: object) -> int | None:
+    if value in (None, "", False):
+        return None
+    try:
+        number = int(float(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _normalise_printer_settings(settings: Mapping[str, object]) -> dict[str, object]:
+    payload = dict(settings)
+
+    gap_mm = _coerce_media_float(payload.get("media_gap_mm"), 0.0)
+    mark_mm = _coerce_media_float(payload.get("media_mark_mm"), gap_mm)
+    payload["media_gap_mm"] = gap_mm
+    payload["media_mark_mm"] = mark_mm
+
+    gap_offset = _coerce_media_float(payload.get("media_gap_offset_mm"), 0.0)
+    mark_offset = _coerce_media_float(
+        payload.get("media_mark_offset_mm"), gap_offset
+    )
+    fine_offset = _coerce_media_float(payload.get("media_fine_offset_mm"), 0.0)
+
+    payload["media_gap_offset_mm"] = gap_offset
+    payload["media_mark_offset_mm"] = mark_offset
+    payload["media_fine_offset_mm"] = fine_offset
+
+    calibrate = bool(payload.get("media_calibrate_next"))
+    payload["media_calibrate_next"] = calibrate
+
+    speed = _coerce_optional_int(payload.get("media_speed"))
+    if speed is None:
+        payload.pop("media_speed", None)
+    else:
+        payload["media_speed"] = speed
+
+    darkness = _coerce_optional_int(
+        payload.get("media_darkness", payload.get("darkness"))
+    )
+    if darkness is None:
+        payload.pop("media_darkness", None)
+    else:
+        payload["media_darkness"] = darkness
+
+    print_rate = payload.get("media_print_rate")
+    if print_rate in (None, "", 0, 0.0):
+        payload.pop("media_print_rate", None)
+
+    return payload
+
+
 def get_template_id_by_name(
     name: str, *, db_path: str | Path | None = None
 ) -> int | None:
@@ -156,6 +220,121 @@ def get_template_id_by_name(
         return None
     return int(row[0])
 
+
+def load_printer_profile(
+    name: str, *, db_path: str | Path | None = None
+) -> dict[str, object] | None:
+    """Load normalised printer settings for ``name`` if it exists."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    with contextlib.closing(get_conn(database)) as conn:
+        row = conn.execute(
+            "SELECT settings, calibrate_next_print FROM printer_profiles WHERE name = ?",
+            (name,),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    raw_settings = row["settings"]
+    payload: dict[str, object]
+    if isinstance(raw_settings, str):
+        try:
+            loaded = json.loads(raw_settings)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            loaded = {}
+    else:
+        loaded = {}
+
+    if isinstance(loaded, dict):
+        payload = dict(loaded)
+    else:
+        payload = {}
+
+    gap_mm = _coerce_media_float(payload.get("media_gap_mm"), 0.0)
+    mark_mm = _coerce_media_float(payload.get("media_mark_mm"), gap_mm)
+    payload["media_gap_mm"] = gap_mm
+    payload["media_mark_mm"] = mark_mm
+
+    gap_offset = _coerce_media_float(payload.get("media_gap_offset_mm"), 0.0)
+    mark_offset = _coerce_media_float(
+        payload.get("media_mark_offset_mm"), gap_offset
+    )
+    fine_offset = _coerce_media_float(payload.get("media_fine_offset_mm"), 0.0)
+
+    payload["media_gap_offset_mm"] = gap_offset
+    payload["media_mark_offset_mm"] = mark_offset
+    payload["media_fine_offset_mm"] = fine_offset
+
+    calibrate = bool(payload.get("media_calibrate_next")) or bool(
+        row["calibrate_next_print"]
+    )
+    payload["media_calibrate_next"] = calibrate
+
+    speed = _coerce_optional_int(payload.get("media_speed"))
+    if speed is not None:
+        payload["media_speed"] = speed
+    elif "media_speed" in payload:
+        payload.pop("media_speed")
+
+    darkness = _coerce_optional_int(
+        payload.get("media_darkness", payload.get("darkness"))
+    )
+    if darkness is not None:
+        payload["media_darkness"] = darkness
+    elif "media_darkness" in payload:
+        payload.pop("media_darkness")
+
+    payload.pop("darkness", None)
+
+    print_rate = payload.get("media_print_rate")
+    if print_rate in (None, "", 0, 0.0):
+        payload.pop("media_print_rate", None)
+
+    return payload
+
+
+def save_printer_profile(
+    name: str,
+    settings: Mapping[str, object],
+    *,
+    db_path: str | Path | None = None,
+) -> None:
+    """Persist ``settings`` for ``name`` inserting or updating as needed."""
+
+    database = _resolve_db_path(db_path)
+    _ensure_initialised(database)
+
+    normalised = _normalise_printer_settings(settings)
+    calibrate = bool(normalised.get("media_calibrate_next"))
+    payload = _serialise_json(normalised)
+    timestamp = datetime.now(UTC).isoformat()
+
+    with contextlib.closing(get_conn(database)) as conn:
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO printer_profiles(
+                    name,
+                    settings,
+                    calibrate_next_print,
+                    updated_at
+                )
+                VALUES(?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    settings = excluded.settings,
+                    calibrate_next_print = excluded.calibrate_next_print,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    name,
+                    payload,
+                    int(calibrate),
+                    timestamp,
+                ),
+            )
 
 def upsert_template(
     *,

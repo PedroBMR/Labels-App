@@ -27,6 +27,7 @@ def test_init_creates_schema(tmp_path):
             "raster_cache",
             "print_jobs",
             "vars_presets",
+            "printer_profiles",
         }.issubset(tables)
 
         row = conn.execute(
@@ -533,3 +534,67 @@ def test_print_job_lifecycle(tmp_path):
         payload_hash="hash-1", db_path=db_path
     )
     assert payload_via_hash == b"payload"
+
+def test_printer_profiles_crud(tmp_path):
+    db_path = tmp_path / "app.sqlite"
+
+    initial = {
+        "media_gap_mm": "2.5",
+        "media_mark_mm": None,
+        "media_gap_offset_mm": "1.2",
+        "media_mark_offset_mm": None,
+        "media_fine_offset_mm": "",
+        "media_calibrate_next": True,
+        "media_speed": "6",
+        "media_darkness": "10",
+        "media_print_rate": "",
+    }
+
+    store.save_printer_profile("Zebra", initial, db_path=db_path)
+
+    loaded = store.load_printer_profile("Zebra", db_path=db_path)
+    assert loaded is not None
+    assert loaded["media_gap_mm"] == 2.5
+    assert loaded["media_mark_mm"] == 2.5
+    assert loaded["media_gap_offset_mm"] == 1.2
+    assert loaded["media_mark_offset_mm"] == 1.2
+    assert loaded["media_fine_offset_mm"] == 0.0
+    assert loaded["media_calibrate_next"] is True
+    assert loaded["media_speed"] == 6
+    assert "media_print_rate" not in loaded
+
+    with store.get_conn(db_path) as conn:
+        first_updated = conn.execute(
+            "SELECT updated_at FROM printer_profiles WHERE name = ?",
+            ("Zebra",),
+        ).fetchone()[0]
+
+    updated_settings = {
+        "media_gap_offset_mm": 0,
+        "media_mark_offset_mm": "3.4",
+        "media_fine_offset_mm": 0.25,
+        "media_calibrate_next": False,
+        "media_speed": None,
+        "media_darkness": 0,
+    }
+
+    store.save_printer_profile("Zebra", updated_settings, db_path=db_path)
+
+    loaded_again = store.load_printer_profile("Zebra", db_path=db_path)
+    assert loaded_again is not None
+    assert loaded_again["media_gap_offset_mm"] == 0.0
+    assert loaded_again["media_mark_offset_mm"] == 3.4
+    assert loaded_again["media_fine_offset_mm"] == 0.25
+    assert loaded_again["media_calibrate_next"] is False
+    assert "media_speed" not in loaded_again
+    assert "media_darkness" not in loaded_again
+
+    with store.get_conn(db_path) as conn:
+        second_updated = conn.execute(
+            "SELECT updated_at FROM printer_profiles WHERE name = ?",
+            ("Zebra",),
+        ).fetchone()[0]
+
+    assert second_updated != first_updated
+
+    assert store.load_printer_profile("Missing", db_path=db_path) is None

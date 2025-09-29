@@ -6,7 +6,7 @@ import hashlib
 import json
 import sqlite3
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 def apply_migrations(conn: sqlite3.Connection) -> None:
@@ -96,6 +96,20 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
                 dpi_y REAL,
                 tags TEXT,
                 data BLOB,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(name)
+            )
+            """
+        )
+
+        ensure_table(
+            """
+            CREATE TABLE IF NOT EXISTS printer_profiles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                settings TEXT NOT NULL,
+                calibrate_next_print INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(name)
