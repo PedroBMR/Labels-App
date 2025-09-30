@@ -35,6 +35,9 @@ reimprimir etiquetas e realizar backup automático dos dados.
 - **Python 3.11 ou superior**
 - **PyQt5** (até Python 3.12) ou **PySide6** (Python 3.13+) para a interface gráfica
 - **Pillow** para tratamento de imagens
+  - Sem Pillow, recursos de pré-visualização, renderização e exportação ficam
+    indisponíveis; o aplicativo continua executando, mas essas áreas exibem
+    mensagens orientando a instalar a biblioteca.
 - **pywin32** (somente no Windows) para envio direto à impressora
 - Impressora térmica compatível com **TSPL** (ex.: Gainscha GS‑2406T)
 

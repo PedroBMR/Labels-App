@@ -5,9 +5,23 @@ from __future__ import annotations
 import io
 import uuid
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO
 
-from PIL import Image
+try:  # pragma: no cover - optional dependency guard
+    from PIL import Image  # type: ignore
+except ImportError:  # pragma: no cover - Pillow missing at runtime
+    Image = None  # type: ignore[assignment]
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from PIL import Image as PILImage
+
+
+def _require_pillow() -> None:
+    if Image is None:
+        raise RuntimeError(
+            "Pillow must be installed to load and process images. "
+            "Install the 'Pillow' package to enable this feature."
+        )
 
 from utils.fs import canonical_path, file_hash
 
@@ -85,6 +99,7 @@ def _record_asset(
 def load_image(source: Any) -> Image.Image:
     """Return a :class:`PIL.Image.Image` from ``source`` recording metadata."""
 
+    _require_pillow()
     if isinstance(source, Image.Image):
         return source.copy()
 

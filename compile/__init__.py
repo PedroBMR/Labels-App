@@ -25,9 +25,23 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
 
-from PIL import Image, ImageDraw, ImageFont
+try:  # pragma: no cover - optional dependency guard
+    from PIL import Image, ImageDraw, ImageFont  # type: ignore
+except ImportError:  # pragma: no cover - Pillow missing at runtime
+    Image = ImageDraw = ImageFont = None  # type: ignore[assignment]
+
+if TYPE_CHECKING:  # pragma: no cover - typing aid
+    from PIL import Image as PILImage
+
+
+def _require_pillow() -> None:
+    if Image is None or ImageDraw is None or ImageFont is None:
+        raise RuntimeError(
+            "Pillow must be installed to render label graphics. "
+            "Install the 'Pillow' package to enable this feature."
+        )
 
 from fonts import font_store
 from imaging import load_image
@@ -92,6 +106,7 @@ def image_from_source(source: Any) -> Image.Image:
 def render_text_bitmap(text: str, font_spec: Mapping[str, Any]) -> Image.Image:
     """Render ``text`` into a monochrome bitmap using Pillow."""
 
+    _require_pillow()
     size = int(font_spec.get("size", 24))
     font_path = font_store.resolve_spec_path(font_spec.get("ttf"))
     try:

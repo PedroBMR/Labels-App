@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping
 
-from PIL.ImageQt import ImageQt
+try:  # pragma: no cover - optional dependency guard
+    from PIL.ImageQt import ImageQt  # type: ignore
+except ImportError:  # pragma: no cover - Pillow missing at runtime
+    ImageQt = None  # type: ignore[assignment]
 
 from db import store as db_store
 from log import logger
@@ -106,6 +109,13 @@ class QuickPrintDialog(QDialog):
 
         self.preview_check = QCheckBox("Mostrar pré-visualização antes de enviar")
         self.preview_check.setStyleSheet("color:#d0d0d0;")
+        self._preview_available = ImageQt is not None
+        if not self._preview_available:
+            self.preview_check.setChecked(False)
+            self.preview_check.setEnabled(False)
+            self.preview_check.setToolTip(
+                "Pré-visualização indisponível: instale Pillow para habilitar."
+            )
 
         form_layout = QVBoxLayout()
         form_layout.setSpacing(10)
@@ -270,10 +280,17 @@ class QuickPrintDialog(QDialog):
             QMessageBox.critical(self, "Erro", str(exc))
             return
 
-        if self.preview_check.isChecked():
+        if self.preview_check.isChecked() and self._preview_available:
             if not self._show_preview(template, variables):
                 self._update_status("Pré-visualização cancelada", "#f6ad55")
                 return
+        elif self.preview_check.isChecked() and not self._preview_available:
+            QMessageBox.warning(
+                self,
+                "Pré-visualização",
+                "Instale o pacote Pillow para habilitar a pré-visualização.",
+            )
+            self.preview_check.setChecked(False)
 
         media_settings = resolve_media_settings(config, printer_profile=profile)
 
@@ -460,6 +477,13 @@ class QuickPrintDialog(QDialog):
         self._update_status(message, color)
 
     def _show_preview(self, template, variables: Mapping[str, Any]) -> bool:
+        if ImageQt is None:
+            QMessageBox.warning(
+                self,
+                "Pré-visualização",
+                "Pré-visualização indisponível: instale Pillow.",
+            )
+            return False
         context = dict(variables)
         items = context.pop("items", None)
         if isinstance(items, list) and items:
