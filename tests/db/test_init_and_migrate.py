@@ -88,6 +88,8 @@ EXPECTED_TABLE_COLUMNS: dict[str, set[str]] = {
         "printer_name",
         "printer_backend",
         "printer_transport",
+        "printer_host",
+        "printer_port",
         "media_settings",
         "status",
         "pending_at",

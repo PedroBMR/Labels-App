@@ -461,3 +461,63 @@ def test_reprint_uses_saved_payload():
     assert wait_for_all_jobs(2.0)
     assert reprint_stub.payloads == [original_payload]
     assert new_job_id != original_job_id
+
+
+def test_tcp_job_replay_preserves_host_port():
+    config = PrinterConfig(backend="tspl", transport="tcp", host="192.0.2.10", port=9200)
+    printer = Printer(config)
+    stub = StubTransport()
+    printer.transport = stub
+
+    ok, status, job_id = printer.send_commands(
+        b"tcp-payload",
+        backend="tspl",
+        template_name="tcp-job",
+        template_backend="tspl",
+    )
+
+    assert ok and status is not None and status.get("status") == "pending"
+    assert job_id is not None
+    assert wait_for_all_jobs(2.0)
+    assert stub.payloads == [b"tcp-payload"]
+
+    record = db_store.get_print_job(job_id=job_id)
+    assert record is not None
+    assert record.get("printer_host") == "192.0.2.10"
+    assert record.get("printer_port") == 9200
+
+    payload = db_store.get_job_payload(job_id=job_id)
+    assert payload == b"tcp-payload"
+
+    reprint_config = PrinterConfig(
+        backend=str(record.get("printer_backend") or "tspl"),
+        transport=str(record.get("printer_transport") or "tcp"),
+        printer_name=str(record.get("printer_name") or "") or None,
+    )
+    host_value = record.get("printer_host")
+    if host_value:
+        reprint_config.host = str(host_value)
+    port_value = record.get("printer_port")
+    if port_value is not None:
+        reprint_config.port = int(port_value)
+
+    reprint_printer = Printer(reprint_config)
+    reprint_stub = StubTransport()
+    reprint_printer.transport = reprint_stub
+
+    ok2, status2, replay_job_id = reprint_printer.send_commands(
+        payload,
+        backend=str(record.get("template_backend") or "tspl"),
+        template_name=str(record.get("template_name") or "") or None,
+        template_backend=str(record.get("template_backend") or "") or None,
+    )
+
+    assert ok2 and status2 is not None and status2.get("status") == "pending"
+    assert replay_job_id is not None
+    assert wait_for_all_jobs(2.0)
+    assert reprint_stub.payloads == [b"tcp-payload"]
+
+    replay_record = db_store.get_print_job(job_id=replay_job_id)
+    assert replay_record is not None
+    assert replay_record.get("printer_host") == "192.0.2.10"
+    assert replay_record.get("printer_port") == 9200

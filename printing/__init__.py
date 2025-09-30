@@ -1180,6 +1180,8 @@ def _record_and_send(
     printer_name: str | None,
     printer_backend: str | None,
     printer_transport: str | None,
+    printer_host: str | None = None,
+    printer_port: int | None = None,
     media_settings: Mapping[str, Any] | None,
     send_callable: Callable[[bytes], None],
     logger: logging.Logger | None,
@@ -1198,6 +1200,10 @@ def _record_and_send(
         "printer_transport": printer_transport,
         "media_settings": media_settings,
     }
+    if printer_host:
+        params["printer_host"] = printer_host
+    if printer_port is not None:
+        params["printer_port"] = printer_port
     job_id, status = enqueue_job(
         template_name,
         payload,
@@ -1411,6 +1417,8 @@ class Printer:
             printer_name=self.config.printer_name,
             printer_backend=self.config.backend,
             printer_transport=self.config.transport,
+            printer_host=self.config.host,
+            printer_port=self.config.port if self.config.host else None,
             media_settings=media_settings,
             send_callable=self.transport.send,
             logger=self.logger,

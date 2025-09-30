@@ -850,6 +850,8 @@ def insert_print_job(
     printer_name: str | None = None,
     printer_backend: str | None = None,
     printer_transport: str | None = None,
+    printer_host: str | None = None,
+    printer_port: int | None = None,
     media_settings: Mapping[str, object] | None = None,
     db_path: str | Path | None = None,
 ) -> int:
@@ -879,11 +881,13 @@ def insert_print_job(
                     printer_name,
                     printer_backend,
                     printer_transport,
+                    printer_host,
+                    printer_port,
                     media_settings,
                     status,
                     pending_at
                 )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
                 """,
                 (
                     payload_hash,
@@ -893,6 +897,8 @@ def insert_print_job(
                     printer_name,
                     printer_backend,
                     printer_transport,
+                    printer_host,
+                    printer_port,
                     media_blob,
                     pending_at,
                 ),
@@ -1030,6 +1036,8 @@ def get_print_job(
                 printer_name,
                 printer_backend,
                 printer_transport,
+                printer_host,
+                printer_port,
                 media_settings,
                 status,
                 pending_at,
@@ -1082,6 +1090,8 @@ def list_print_jobs(
             printer_name,
             printer_backend,
             printer_transport,
+            printer_host,
+            printer_port,
             media_settings,
             status,
             pending_at,

@@ -1346,6 +1346,9 @@ class EtiquetaApp(QWidget):
             "printer_transport": config.transport,
             "media_settings": media_settings,
         }
+        if config.host:
+            params["printer_host"] = config.host
+            params["printer_port"] = config.port
 
         template_name = str(record.get("template_name") or "") or None
 
@@ -1813,6 +1816,9 @@ class EtiquetaApp(QWidget):
             "printer_transport": config.transport,
             "media_settings": media_settings,
         }
+        if config.host:
+            params["printer_host"] = config.host
+            params["printer_port"] = config.port
 
         try:
             job_id, status = enqueue_job(tpl, payload, target, copies=1, params=params)
