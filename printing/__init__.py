@@ -14,15 +14,12 @@ import socket
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol
 
 try:  # pragma: no cover - optional dependency guard
     from PIL import Image  # type: ignore
 except ImportError:  # pragma: no cover - Pillow missing at runtime
     Image = None  # type: ignore[assignment]
-
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from PIL import Image as PILImage
 
 from compile import Calibration, CompilationError, SafeDict, get_backend
 from db import store as db_store
@@ -33,7 +30,8 @@ from render import PreviewRenderer
 from utils import recurso_caminho
 from utils.fs import canonical_path as canonical_file_path
 
-from .queue import PrinterTarget, enqueue_job, wait_for_all as _queue_wait_for_all
+from .queue import PrinterTarget, enqueue_job
+from .queue import wait_for_all as _queue_wait_for_all
 
 # ----------------------------------------------------------------------------
 
