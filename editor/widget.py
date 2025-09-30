@@ -7,7 +7,10 @@ import math
 from datetime import datetime
 from typing import Any, Mapping
 
-from PIL.ImageQt import ImageQt
+try:  # pragma: no cover - optional dependency guard
+    from PIL.ImageQt import ImageQt  # type: ignore
+except ImportError:  # pragma: no cover - Pillow missing at runtime
+    ImageQt = None  # type: ignore[assignment]
 
 from qt_compat import (
     QBrush,
@@ -260,6 +263,13 @@ class PreviewWidget(QWidget):
         self.metadata_label.setStyleSheet("color: #555; font-size: 11px;")
         layout.addWidget(self.metadata_label)
 
+        self._pillow_available = ImageQt is not None
+        if not self._pillow_available:
+            self.placeholder.setText(
+                "Pré-visualização indisponível: instale Pillow."
+            )
+            self.refresh_button.setEnabled(False)
+            self.metadata_label.setText("Pré-visualização desativada")
         self._update_controls_enabled(False)
 
     # ------------------------------------------------------------------
@@ -274,6 +284,7 @@ class PreviewWidget(QWidget):
         return QBrush(pixmap)
 
     def _update_controls_enabled(self, enabled: bool) -> None:
+        enabled = enabled and self._pillow_available
         for widget in (
             self.zoom_out_button,
             self.zoom_in_button,
@@ -345,6 +356,17 @@ class PreviewWidget(QWidget):
 
     # ------------------------------------------------------------------
     def set_image(self, image, metadata: Mapping[str, Any] | None = None) -> None:
+        if ImageQt is None:
+            self._pixmap = None
+            self._pixmap_item = None
+            self.scene.clear()
+            self.placeholder.setText(
+                "Pré-visualização indisponível: instale Pillow."
+            )
+            self.stacked.setCurrentWidget(self.placeholder)
+            self.metadata_label.setText("Pré-visualização desativada")
+            self._update_controls_enabled(False)
+            return
         if image is None:
             self._pixmap = None
             self._pixmap_item = None

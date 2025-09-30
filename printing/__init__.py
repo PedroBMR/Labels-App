@@ -14,9 +14,15 @@ import socket
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Mapping, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Protocol
 
-from PIL import Image
+try:  # pragma: no cover - optional dependency guard
+    from PIL import Image  # type: ignore
+except ImportError:  # pragma: no cover - Pillow missing at runtime
+    Image = None  # type: ignore[assignment]
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from PIL import Image as PILImage
 
 from compile import Calibration, CompilationError, SafeDict, get_backend
 from db import store as db_store
@@ -27,7 +33,7 @@ from render import PreviewRenderer
 from utils import recurso_caminho
 from utils.fs import canonical_path as canonical_file_path
 
-from .queue import PrinterTarget, enqueue_job
+from .queue import PrinterTarget, enqueue_job, wait_for_all as _queue_wait_for_all
 
 # ----------------------------------------------------------------------------
 
@@ -213,6 +219,21 @@ DEFAULT_TEMPLATES: dict[str, dict[str, Any]] = {
         ],
     },
 }
+
+
+def _require_pillow() -> None:
+    if Image is None:
+        raise RuntimeError(
+            "Pillow must be installed to render or export labels. "
+            "Install the 'Pillow' package to enable this feature."
+        )
+
+
+def wait_for_all_jobs(timeout: float | None = None) -> bool:
+    """Aguarda a conclusão de todos os trabalhos na fila."""
+
+    return _queue_wait_for_all(timeout)
+
 
 ALIASES: dict[str, str] = {"padrao": "100x30", "padrão": "100x30"}
 CALIBRATION_SQUARE_MM = 50.0
@@ -827,6 +848,7 @@ def render_label_images(
     *,
     media_settings: Mapping[str, Any] | None = None,
 ) -> list[Image.Image]:
+    _require_pillow()
     working = template
     if media_settings:
         working = apply_media_settings(template, media_settings)
@@ -840,12 +862,14 @@ def render_label_images(
 
 
 def _write_png(image: Image.Image, destino: Path) -> Path:
+    _require_pillow()
     destino.parent.mkdir(parents=True, exist_ok=True)
     image.convert("L").save(destino, format="PNG")
     return destino
 
 
 def _write_pdf(images: list[Image.Image], destino: Path) -> Path:
+    _require_pillow()
     destino.parent.mkdir(parents=True, exist_ok=True)
     primary = images[0].convert("RGB")
     extras = [img.convert("RGB") for img in images[1:]]
@@ -854,6 +878,7 @@ def _write_pdf(images: list[Image.Image], destino: Path) -> Path:
 
 
 def _write_svg(image: Image.Image, destino: Path) -> Path:
+    _require_pillow()
     destino.parent.mkdir(parents=True, exist_ok=True)
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
@@ -881,6 +906,7 @@ def export_labels(
     media_settings: Mapping[str, Any] | None = None,
     batch: bool = False,
 ) -> tuple[list[Path], int]:
+    _require_pillow()
     images = render_label_images(template, dados, media_settings=media_settings)
     if not images:
         raise ValueError("Nenhuma etiqueta foi gerada para exportação")

@@ -6,7 +6,10 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
-from PIL.ImageQt import ImageQt
+try:  # pragma: no cover - optional dependency guard
+    from PIL.ImageQt import ImageQt  # type: ignore
+except ImportError:  # pragma: no cover - Pillow missing at runtime
+    ImageQt = None  # type: ignore[assignment]
 
 from qt_compat import (
     QColor,
@@ -121,6 +124,9 @@ class GraphicsElementItem(QGraphicsObject):
             self.prepareGeometryChange()
             self._rect = QRectF(0.0, 0.0, width_px, height_px)
             self.setTransformOriginPoint(self._rect.center())
+            if ImageQt is None:
+                self._pixmap = QPixmap()
+                return
             self._pixmap = QPixmap.fromImage(ImageQt(image))
         else:
             self._pixmap = QPixmap()

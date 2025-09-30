@@ -17,14 +17,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
 try:  # pragma: no cover - optional dependency during runtime
     import qrcode
 except Exception:  # pragma: no cover - optional dependency missing
     qrcode = None  # type: ignore[assignment]
 
-from PIL import Image, ImageDraw, ImageFont
+try:  # pragma: no cover - optional dependency guard
+    from PIL import Image, ImageDraw, ImageFont  # type: ignore
+except ImportError:  # pragma: no cover - Pillow missing at runtime
+    Image = ImageDraw = ImageFont = None  # type: ignore[assignment]
+
+if TYPE_CHECKING:  # pragma: no cover - typing aid
+    from PIL import Image as PILImage
 
 try:  # pragma: no cover - optional dependency during runtime
     import barcode  # type: ignore
@@ -46,6 +52,14 @@ __all__ = [
 
 _DEFAULT_DPI = 203
 _MM_PER_INCH = 25.4
+
+
+def _require_pillow() -> None:
+    if Image is None or ImageDraw is None or ImageFont is None:
+        raise RuntimeError(
+            "Pillow must be installed to render previews. "
+            "Install the 'Pillow' package to enable this feature."
+        )
 
 
 def _dots_per_mm(page: Mapping[str, Any]) -> float:
@@ -394,6 +408,7 @@ def render_element_image(
 ) -> tuple[Image.Image, int, int] | None:
     """Render an element to an image without applying rotation."""
 
+    _require_pillow()
     calibration = calibration or Calibration()
     dots_per_mm = _dots_per_mm(page)
     width = _value_from_element(
@@ -450,6 +465,7 @@ def render_element(
 ) -> tuple[Image.Image, tuple[int, int]] | None:
     """Render a single element and return the image plus placement."""
 
+    _require_pillow()
     calibration = calibration or Calibration()
     base = render_element_image(
         element,
@@ -504,6 +520,7 @@ class PreviewRenderer:
     height: int = field(init=False)
 
     def __post_init__(self) -> None:
+        _require_pillow()
         self.page = dict(self.page)
         if isinstance(self.metadata, Mapping):
             fonts_metadata = self.metadata.get("fonts")
@@ -526,6 +543,7 @@ class PreviewRenderer:
         elements: Iterable[Mapping[str, Any]],
         variables: Mapping[str, Any] | None = None,
     ) -> Image.Image:
+        _require_pillow()
         context = SafeDict(dict(variables or {}))
         image = Image.new("L", (self.width, self.height), color=255)
         for element in elements:
@@ -553,6 +571,7 @@ def render_template(
 ) -> Image.Image:
     """Render ``template`` into a Pillow image."""
 
+    _require_pillow()
     page = template.get("page", template)
     elements = template.get("elements", [])
     metadata = template.get("metadata", {})
