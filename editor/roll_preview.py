@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from PIL.ImageQt import ImageQt
+try:  # pragma: no cover - optional dependency guard
+    from PIL.ImageQt import ImageQt  # type: ignore
+except ImportError:  # pragma: no cover - Pillow missing at runtime
+    ImageQt = None  # type: ignore[assignment]
 
 from qt_compat import (
     QColor,
@@ -91,9 +94,19 @@ class PrinterRollPreviewWidget(QWidget):
 
         self._on_speed_changed(self.speed_slider.value())
         self._update_controls_enabled(False)
+        self._pillow_available = ImageQt is not None
+        if not self._pillow_available:
+            self.placeholder.setText("Simulação indisponível: instale Pillow.")
+            self.play_button.setEnabled(False)
+            self.speed_slider.setEnabled(False)
+            self.speed_label.setText("-")
 
     # ------------------------------------------------------------------
     def set_image(self, image, metadata: Mapping[str, Any] | None = None) -> None:
+        if ImageQt is None:
+            self._clear()
+            self.placeholder.setText("Simulação indisponível: instale Pillow.")
+            return
         if image is None:
             self._clear()
             return
@@ -212,6 +225,7 @@ class PrinterRollPreviewWidget(QWidget):
         return 1.0
 
     def _update_controls_enabled(self, enabled: bool) -> None:
+        enabled = enabled and self._pillow_available
         for widget in (self.play_button, self.speed_slider):
             widget.setEnabled(enabled)
         if not enabled:

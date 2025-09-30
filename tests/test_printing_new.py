@@ -2,6 +2,15 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("PIL")
+
+from PIL import Image
+
+try:
+    Image.new("1", (1, 1))
+except Exception:
+    pytest.skip("Pillow não está disponível", allow_module_level=True)
+
 from compile import Calibration
 from db import store as db_store
 from model.template import TemplateDocument, TemplateVariable

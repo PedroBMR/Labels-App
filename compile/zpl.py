@@ -2,9 +2,23 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping
+from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
-from PIL import Image
+try:  # pragma: no cover - optional dependency guard
+    from PIL import Image  # type: ignore
+except ImportError:  # pragma: no cover - Pillow missing at runtime
+    Image = None  # type: ignore[assignment]
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from PIL import Image as PILImage
+
+
+def _require_pillow() -> None:
+    if Image is None:
+        raise RuntimeError(
+            "Pillow must be installed to render ZPL bitmaps. "
+            "Install the 'Pillow' package to enable this feature."
+        )
 
 from imaging.raster import fingerprint_image, prepare_bitmap_for_tspl
 from printing_utils import ZPLMediaParams, emit_zpl_footer, emit_zpl_media_setup
@@ -197,6 +211,7 @@ class ZPLBackend(Backend):
     def _load_image(
         self, source: Any, element: Mapping[str, Any]
     ) -> tuple[Image.Image, str]:
+        _require_pillow()
         image = image_from_source(source)
         image.load()
         return image, fingerprint_image(image)
@@ -223,6 +238,7 @@ class ZPLBackend(Backend):
         *,
         digest: str | None = None,
     ) -> bytes:
+        _require_pillow()
         settings = self._resolve_raster_settings(element)
         width = self.optional_dimension(element, "width", axis="x")
         height = self.optional_dimension(element, "height", axis="y")

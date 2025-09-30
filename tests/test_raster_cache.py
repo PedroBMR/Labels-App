@@ -3,7 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
+pytest.importorskip("PIL")
+
 from PIL import Image
+
+try:
+    Image.new("1", (1, 1))
+except Exception:
+    pytest.skip("Pillow não está disponível", allow_module_level=True)
 
 from imaging.raster import clear_raster_cache, prepare_bitmap_for_tspl
 

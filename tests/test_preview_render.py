@@ -1,5 +1,16 @@
 from hashlib import sha256
 
+import pytest
+
+pytest.importorskip("PIL")
+
+from PIL import Image
+
+try:
+    Image.new("1", (1, 1))
+except Exception:
+    pytest.skip("Pillow não está disponível", allow_module_level=True)
+
 from model.template import TemplateDocument, TemplateVariable
 from printing import compile_template
 from render.preview import render_template
