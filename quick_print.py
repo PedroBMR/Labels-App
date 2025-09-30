@@ -9,6 +9,7 @@ from PIL.ImageQt import ImageQt
 
 from db import store as db_store
 from log import logger
+from persistence import carregar_config
 from printing import (
     WindowsSpoolerTransport,
     compile_model_silent,
@@ -35,8 +36,6 @@ from qt_compat import (
 )
 from render import render_template
 from template_store import template_store
-
-from persistence import carregar_config
 
 
 class QuickPrintDialog(QDialog):
@@ -69,15 +68,25 @@ class QuickPrintDialog(QDialog):
         self.model_combo = QComboBox()
         self.model_combo.setEditable(False)
         self.model_combo.setStyleSheet(
-            "QComboBox{background:#252525;color:#f0f0f0;padding:6px;border:1px solid #333;border-radius:6px;}"
-            "QComboBox QAbstractItemView{background:#1e1e1e;color:#f0f0f0;}"
+            "".join(
+                [
+                    "QComboBox{background:#252525;color:#f0f0f0;padding:6px;",
+                    "border:1px solid #333;border-radius:6px;}",
+                    "QComboBox QAbstractItemView{background:#1e1e1e;color:#f0f0f0;}",
+                ]
+            )
         )
 
         self.copies_spin = QSpinBox()
         self.copies_spin.setMinimum(1)
         self.copies_spin.setValue(1)
         self.copies_spin.setStyleSheet(
-            "QSpinBox{background:#252525;color:#f0f0f0;padding:6px;border:1px solid #333;border-radius:6px;}"
+            "".join(
+                [
+                    "QSpinBox{background:#252525;color:#f0f0f0;padding:6px;",
+                    "border:1px solid #333;border-radius:6px;}",
+                ]
+            )
         )
 
         self.printer_combo = QComboBox()
@@ -86,8 +95,13 @@ class QuickPrintDialog(QDialog):
         if self.printer_combo.lineEdit():
             self.printer_combo.lineEdit().setPlaceholderText("Impressora padrão")
         self.printer_combo.setStyleSheet(
-            "QComboBox{background:#252525;color:#f0f0f0;padding:6px;border:1px solid #333;border-radius:6px;}"
-            "QComboBox QAbstractItemView{background:#1e1e1e;color:#f0f0f0;}"
+            "".join(
+                [
+                    "QComboBox{background:#252525;color:#f0f0f0;padding:6px;",
+                    "border:1px solid #333;border-radius:6px;}",
+                    "QComboBox QAbstractItemView{background:#1e1e1e;color:#f0f0f0;}",
+                ]
+            )
         )
 
         self.preview_check = QCheckBox("Mostrar pré-visualização antes de enviar")
@@ -119,22 +133,37 @@ class QuickPrintDialog(QDialog):
         self.print_btn.setAutoDefault(True)
         self.print_btn.clicked.connect(self._on_print)
         self.print_btn.setStyleSheet(
-            "QPushButton{background:#2f855a;color:white;padding:8px 18px;border:none;border-radius:6px;}"
-            "QPushButton:pressed{background:#276749;}"
+            "".join(
+                [
+                    "QPushButton{background:#2f855a;color:white;padding:8px 18px;",
+                    "border:none;border-radius:6px;}",
+                    "QPushButton:pressed{background:#276749;}",
+                ]
+            )
         )
 
         self.reprint_btn = QPushButton("Reimprimir última")
         self.reprint_btn.clicked.connect(self._on_reprint_last)
         self.reprint_btn.setStyleSheet(
-            "QPushButton{background:#2d3748;color:#f0f0f0;padding:8px 18px;border:none;border-radius:6px;}"
-            "QPushButton:pressed{background:#1a202c;}"
+            "".join(
+                [
+                    "QPushButton{background:#2d3748;color:#f0f0f0;padding:8px 18px;",
+                    "border:none;border-radius:6px;}",
+                    "QPushButton:pressed{background:#1a202c;}",
+                ]
+            )
         )
 
         self.close_btn = QPushButton("Fechar")
         self.close_btn.clicked.connect(self.reject)
         self.close_btn.setStyleSheet(
-            "QPushButton{background:#4a5568;color:#f0f0f0;padding:8px 18px;border:none;border-radius:6px;}"
-            "QPushButton:pressed{background:#2d3748;}"
+            "".join(
+                [
+                    "QPushButton{background:#4a5568;color:#f0f0f0;padding:8px 18px;",
+                    "border:none;border-radius:6px;}",
+                    "QPushButton:pressed{background:#2d3748;}",
+                ]
+            )
         )
 
         button_row.addWidget(self.print_btn)

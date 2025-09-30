@@ -5,16 +5,13 @@ from __future__ import annotations
 import io
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO
+from typing import Any, BinaryIO
 
 from PIL import Image
 
 from utils.fs import canonical_path, file_hash
 
 __all__ = ["load_image"]
-
-if TYPE_CHECKING:  # pragma: no cover - type checking only
-    from db import store as db_store_module
 
 
 def _guess_kind(name: str | None, image: Image.Image) -> str:
@@ -132,7 +129,12 @@ def load_image(source: Any) -> Image.Image:
                 pass
         buffer = io.BytesIO(payload)
         image = Image.open(buffer)
-        _record_asset(image, name=stream_name if isinstance(stream_name, str) else None, path=None, data=payload)
+        _record_asset(
+            image,
+            name=stream_name if isinstance(stream_name, str) else None,
+            path=None,
+            data=payload,
+        )
         return image
 
     raise TypeError(f"Unsupported image source: {type(source)!r}")

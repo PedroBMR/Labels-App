@@ -15,7 +15,6 @@ if "PIL" not in sys.modules:
 
 from db import migrations, store
 
-
 EXPECTED_TABLE_COLUMNS: dict[str, set[str]] = {
     "meta": {"key", "value"},
     "templates": {

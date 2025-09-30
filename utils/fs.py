@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+
 __all__ = ["canonical_path", "file_hash"]
 
 
@@ -20,7 +21,12 @@ def canonical_path(path: str | Path) -> Path:
         return target.expanduser().resolve(strict=False)
 
 
-def file_hash(path: str | Path, *, algorithm: str = "sha256", chunk_size: int = 65536) -> str:
+def file_hash(
+    path: str | Path,
+    *,
+    algorithm: str = "sha256",
+    chunk_size: int = 65536,
+) -> str:
     """Return the hexadecimal hash for ``path`` using ``algorithm``.
 
     Args:

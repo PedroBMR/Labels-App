@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
 import types
+from pathlib import Path
 
 if "PIL" not in sys.modules:  # pragma: no cover - test isolation helper
     pil_module = types.ModuleType("PIL")

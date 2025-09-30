@@ -13,8 +13,8 @@ from qt_compat import (
     QInputDialog,
     QListWidget,
     QListWidgetItem,
-    QToolButton,
     Qt,
+    QToolButton,
     QVBoxLayout,
     QWidget,
     pyqtSignal,
@@ -130,8 +130,12 @@ class LayerPanel(QWidget):
         super().__init__(parent)
         self._scene: LabelScene | None = None
         self._updating_selection = False
-        self._row_items: Dict[GraphicsElementItem | TextGraphicsItem, QListWidgetItem] = {}
-        self._widgets: Dict[GraphicsElementItem | TextGraphicsItem, _LayerRow] = {}
+        self._row_items: Dict[
+            GraphicsElementItem | TextGraphicsItem, QListWidgetItem
+        ] = {}
+        self._widgets: Dict[
+            GraphicsElementItem | TextGraphicsItem, _LayerRow
+        ] = {}
         self._change_handlers: Dict[
             GraphicsElementItem | TextGraphicsItem, object
         ] = {}

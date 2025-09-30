@@ -143,9 +143,9 @@ def melhorar_logo(
 def backup_automatico() -> None:
     """Realiza cópia de segurança dos arquivos de dados."""
 
+    from db import store as db_store
     from log import logger
     from persistence import carregar_config
-    from db import store as db_store
 
     base = _base_dir()
     origem = os.path.join(base, "assets")

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import hashlib
 import json
 import sqlite3
+from collections.abc import Callable
 
 
 def add_column_if_missing(
@@ -215,7 +215,8 @@ def _migration_1(conn: sqlite3.Connection) -> None:
         conn.execute(create_print_jobs_sql)
 
         cursor = conn.execute(
-            "SELECT id, created_at, template_name, payload, status FROM print_jobs_legacy"
+            "SELECT id, created_at, template_name, payload, status "
+            "FROM print_jobs_legacy"
         )
         for row in cursor.fetchall():
             legacy_id, created_at, template_name, payload_value, status = row

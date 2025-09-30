@@ -46,8 +46,10 @@ def test_upsert_template_insert_and_update(db_path: Path, tmp_path: Path) -> Non
 
     with store.get_conn(db_path) as conn:
         row = conn.execute(
-            "SELECT name, kind, path, file_hash, width_mm, height_mm, dpi, tags, updated_at, data"
-            " FROM templates WHERE id = ?",
+            (
+                "SELECT name, kind, path, file_hash, width_mm, height_mm, dpi, "
+                "tags, updated_at, data FROM templates WHERE id = ?"
+            ),
             (template_id,),
         ).fetchone()
 
@@ -82,8 +84,10 @@ def test_upsert_template_insert_and_update(db_path: Path, tmp_path: Path) -> Non
 
     with store.get_conn(db_path) as conn:
         updated_row = conn.execute(
-            "SELECT kind, file_hash, width_mm, height_mm, dpi, tags, updated_at, data"
-            " FROM templates WHERE id = ?",
+            (
+                "SELECT kind, file_hash, width_mm, height_mm, dpi, tags, "
+                "updated_at, data FROM templates WHERE id = ?"
+            ),
             (template_id,),
         ).fetchone()
 
@@ -122,8 +126,10 @@ def test_upsert_asset_round_trip(db_path: Path, tmp_path: Path) -> None:
 
     with store.get_conn(db_path) as conn:
         row = conn.execute(
-            "SELECT name, kind, path, file_hash, width_px, height_px, dpi_x, dpi_y, tags, data, updated_at"
-            " FROM assets WHERE id = ?",
+            (
+                "SELECT name, kind, path, file_hash, width_px, height_px, dpi_x, "
+                "dpi_y, tags, data, updated_at FROM assets WHERE id = ?"
+            ),
             (asset_id,),
         ).fetchone()
 
@@ -160,8 +166,10 @@ def test_upsert_asset_round_trip(db_path: Path, tmp_path: Path) -> None:
 
     with store.get_conn(db_path) as conn:
         updated_row = conn.execute(
-            "SELECT file_hash, width_px, height_px, dpi_x, dpi_y, tags, data, updated_at"
-            " FROM assets WHERE id = ?",
+            (
+                "SELECT file_hash, width_px, height_px, dpi_x, dpi_y, tags, data, "
+                "updated_at FROM assets WHERE id = ?"
+            ),
             (asset_id,),
         ).fetchone()
 

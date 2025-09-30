@@ -24,8 +24,20 @@ def test_prepare_bitmap_uses_disk_cache_hit(tmp_path, monkeypatch):
     from db import store as db_store
 
     monkeypatch.setattr(db_store, "get_asset_id_by_hash", lambda *_args, **_kwargs: 42)
-    monkeypatch.setattr(db_store, "find_raster_cache", lambda *args, **kwargs: cache_path)
-    monkeypatch.setattr(db_store, "insert_or_get_raster_cache", lambda **_kwargs: cache_path)
+
+    def fake_find_raster_cache(*_args, **_kwargs):
+        return cache_path
+
+    monkeypatch.setattr(db_store, "find_raster_cache", fake_find_raster_cache)
+
+    def fake_insert_raster_cache(**_kwargs):
+        return cache_path
+
+    monkeypatch.setattr(
+        db_store,
+        "insert_or_get_raster_cache",
+        fake_insert_raster_cache,
+    )
 
     def fail(*_args, **_kwargs):  # pragma: no cover - sanity guard
         raise AssertionError("Rasterisation should not occur on cache hit")

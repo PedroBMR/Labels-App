@@ -6,10 +6,10 @@ from compile import Calibration
 from db import store as db_store
 from model.template import TemplateDocument, TemplateVariable
 from printing import (
-    TransportError,
     Printer,
     PrinterConfig,
     Template,
+    TransportError,
     apply_calibration_adjustment,
     apply_media_settings,
     build_calibration_template,

@@ -98,7 +98,8 @@ def emit_tspl_media_setup(params: TSPLMediaParams) -> list[str]:
         commands.append(f"DENSITY {int(params.density)}")
 
     commands.append(f"DIRECTION {int(params.direction)}")
-    commands.append(f"REFERENCE {max(params.reference_x, 0)},{max(params.reference_y, 0)}")
+    reference = f"{max(params.reference_x, 0)},{max(params.reference_y, 0)}"
+    commands.append(f"REFERENCE {reference}")
 
     if media_type == "black_mark":
         mark = params.mark_mm if params.mark_mm is not None else params.gap_mm or 0.0

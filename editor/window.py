@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import re
+from functools import partial
 from pathlib import Path
 from typing import Any
 
+from db import store
 from editor.arrange_dialog import ArrangeGridDialog
 from editor.preset_dialog import PresetManagerDialog
 from editor.preset_manager import PresetManager
@@ -19,8 +21,9 @@ from printing import (
 )
 from qt_compat import (
     QAction,
-    QDockWidget,
+    QCursor,
     QDialog,
+    QDockWidget,
     QFileDialog,
     QInputDialog,
     QKeySequence,
@@ -33,12 +36,11 @@ from qt_compat import (
     QTimer,
     QToolBar,
     QWidget,
-    QCursor,
 )
-from ui.tour import GuidedTourDialog, TourStep
-from .variables import VariablePanel
 from template_store import template_store
-from db import store
+from ui.tour import GuidedTourDialog, TourStep
+
+from .variables import VariablePanel
 
 __all__ = ["LabelEditorWindow"]
 
@@ -120,13 +122,13 @@ class LabelEditorWindow(QMainWindow):
         self.addAction(self._tour_action)
         self.editor.splitter.splitterMoved.connect(self._on_splitter_moved)
         self.property_dock.visibilityChanged.connect(
-            lambda visible, dock=self.property_dock: self._save_dock_state(dock, visible)
+            partial(self._save_dock_state, self.property_dock)
         )
         self.variable_dock.visibilityChanged.connect(
-            lambda visible, dock=self.variable_dock: self._save_dock_state(dock, visible)
+            partial(self._save_dock_state, self.variable_dock)
         )
         self.history_dock.visibilityChanged.connect(
-            lambda visible, dock=self.history_dock: self._save_dock_state(dock, visible)
+            partial(self._save_dock_state, self.history_dock)
         )
         QTimer.singleShot(0, self._restore_state)
 
@@ -488,7 +490,9 @@ class LabelEditorWindow(QMainWindow):
     def _show_guided_tour(self, force: bool = False) -> None:
         if not force and self._tour_shown:
             return
-        skip_onboarding = bool(self._settings.value("onboarding/skip", False, type=bool))
+        skip_onboarding = bool(
+            self._settings.value("onboarding/skip", False, type=bool)
+        )
         if not force and skip_onboarding:
             return
 
@@ -536,8 +540,10 @@ class LabelEditorWindow(QMainWindow):
             TourStep(
                 title="Canvas de edição",
                 body=(
-                    "Arraste os elementos diretamente sobre o canvas para reposicioná-los. "
-                    "Use Ctrl + rolagem do mouse para ajustar o zoom e Espaço para arrastar a área visível."
+                    "Arraste os elementos diretamente sobre o canvas "
+                    "para reposicioná-los. "
+                    "Use Ctrl + rolagem do mouse para ajustar o zoom "
+                    "e Espaço para arrastar a área visível."
                 ),
                 anchor=self.editor.view,
                 highlight_padding=28,
@@ -548,8 +554,10 @@ class LabelEditorWindow(QMainWindow):
             TourStep(
                 title="Painéis de propriedades",
                 body=(
-                    "Selecione um item para ajustar fonte, cores e alinhamento neste painel lateral. "
-                    "A aba Variáveis permite informar os valores dinâmicos usados no modelo."
+                    "Selecione um item para ajustar fonte, cores e alinhamento "
+                    "neste painel lateral. "
+                    "A aba Variáveis permite informar os valores dinâmicos usados "
+                    "no modelo."
                 ),
                 anchor=self.property_dock,
                 highlight_padding=20,
@@ -560,15 +568,21 @@ class LabelEditorWindow(QMainWindow):
             TourStep(
                 title="Pré-visualização",
                 body=(
-                    "A pré-visualização renderiza o resultado final com os dados atuais. "
-                    "Ajuste o zoom pelos controles inferiores para conferir os detalhes antes de exportar."
+                    "A pré-visualização renderiza o resultado final "
+                    "com os dados atuais. "
+                    "Ajuste o zoom pelos controles inferiores "
+                    "para conferir os detalhes antes de exportar."
                 ),
                 anchor=self.editor.preview_widget,
                 highlight_padding=28,
             )
         )
 
-        return [step for step in steps if step.anchor is None or step.anchor.isVisible()]
+        return [
+            step
+            for step in steps
+            if step.anchor is None or step.anchor.isVisible()
+        ]
 
     # ------------------------------------------------------------------
     def _add_element(self, kind: str) -> None:
@@ -813,7 +827,10 @@ class LabelEditorWindow(QMainWindow):
                 else self._normal_splitter_sizes
             )
             if sizes:
-                QTimer.singleShot(0, lambda s=list(sizes): self.editor.splitter.setSizes(s))
+                QTimer.singleShot(
+                    0,
+                    partial(self.editor.splitter.setSizes, list(sizes)),
+                )
         else:
             current = self.editor.splitter.sizes()
             if self.compact_action.isChecked():
@@ -849,7 +866,8 @@ class LabelEditorWindow(QMainWindow):
     def _write_sizes(self, key: str, sizes: list[int]) -> None:
         if not sizes:
             return
-        self._settings.setValue(key, ",".join(str(int(max(0, value))) for value in sizes))
+        formatted = ",".join(str(int(max(0, value))) for value in sizes)
+        self._settings.setValue(key, formatted)
 
     def _read_sizes(self, key: str) -> list[int] | None:
         value = self._settings.value(key)

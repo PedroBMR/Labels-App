@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
-
 import logging
+from typing import Any
 
 import pytest
 
@@ -181,14 +180,20 @@ def test_config_dialog_backup_button_runs_worker(monkeypatch, tmp_path, caplog):
 
     backup_target = tmp_path / "backup.sqlite"
 
-    monkeypatch.setattr(ui.QFileDialog, "getSaveFileName", lambda *a, **k: (str(backup_target), ""))
+    def fake_get_save_file_name(*_args, **_kwargs):
+        return str(backup_target), ""
+
+    monkeypatch.setattr(ui.QFileDialog, "getSaveFileName", fake_get_save_file_name)
     monkeypatch.setattr(ui, "listar_impressoras", lambda: [])
     monkeypatch.setattr(ui, "listar_templates", lambda: [])
     monkeypatch.setattr(ui, "descobrir_impressora_padrao", lambda: "")
 
     dialog = ConfigDialog(None, _base_settings())
     statuses: list[tuple[str, str]] = []
-    dialog._status_callback = lambda msg, color="white": statuses.append((msg, color))
+    def _capture_status(message, color="white"):
+        statuses.append((message, color))
+
+    dialog._status_callback = _capture_status
 
     called: dict[str, Any] = {}
 
@@ -211,7 +216,10 @@ def test_config_dialog_backup_button_runs_worker(monkeypatch, tmp_path, caplog):
         assert called["args"][0] == dialog._db_path
         assert called["context"]["out_path"] == backup_target
         assert statuses[-1][0].startswith("💾 Backup concluído")
-        assert any("Backup do banco de dados" in record.message for record in caplog.records)
+        assert any(
+            "Backup do banco de dados" in record.message
+            for record in caplog.records
+        )
     finally:
         dialog.close()
 

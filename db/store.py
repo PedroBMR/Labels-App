@@ -10,9 +10,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from . import migrations
 from utils import recurso_caminho
 from utils.fs import canonical_path as canonical_file_path
+
+from . import migrations
 
 __all__ = [
     "backup",
@@ -253,7 +254,8 @@ def load_printer_profile(
 
     with contextlib.closing(get_conn(database)) as conn:
         row = conn.execute(
-            "SELECT settings, calibrate_next_print FROM printer_profiles WHERE name = ?",
+            "SELECT settings, calibrate_next_print "
+            "FROM printer_profiles WHERE name = ?",
             (name,),
         ).fetchone()
 
@@ -989,7 +991,8 @@ def get_job_payload(
 
     with contextlib.closing(get_conn(database)) as conn:
         cursor = conn.execute(
-            f"SELECT payload FROM print_jobs WHERE {where_clause} ORDER BY id DESC LIMIT 1",
+            "SELECT payload FROM print_jobs "
+            f"WHERE {where_clause} ORDER BY id DESC LIMIT 1",
             params,
         )
         row = cursor.fetchone()
