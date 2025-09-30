@@ -896,9 +896,211 @@ class EtiquetaApp(QWidget):
         layout_quadro.setContentsMargins(40, 30, 40, 30)
         layout_central.addWidget(quadro)
 
+        grid = QGridLayout()
+        layout_quadro.addLayout(grid)
+
+        self.saida_input = QLineEdit()
+        self.saida_input.setValidator(
+            QRegularExpressionValidator(QRegularExpression(r"\d*"))
+        )
+        self.saida_input.returnPressed.connect(self._imprimir_etiqueta)
+
+        self.categoria_input = QComboBox()
+        self.categoria_input.setEditable(True)
+        self.categoria_input.lineEdit().returnPressed.connect(self._imprimir_etiqueta)
+
+        self.emissor_input = QComboBox()
+        self.emissor_input.setEditable(True)
+        self.emissor_input.lineEdit().returnPressed.connect(self._imprimir_etiqueta)
+
+        self.municipio_input = QComboBox()
+        self.municipio_input.setEditable(True)
+        self.municipio_input.lineEdit().returnPressed.connect(self._imprimir_etiqueta)
+
+        self.volumes_input = QSpinBox()
+        self.volumes_input.setMinimum(1)
+        self.volumes_input.lineEdit().returnPressed.connect(self._imprimir_etiqueta)
+        self.template_input = QComboBox()
+        self.template_input.currentTextChanged.connect(self._aplicar_template)
+        self.template_input.currentTextChanged.connect(self._salvar_template_config)
+        self.template_input.currentTextChanged.connect(self._update_print_button_state)
+
+        self.toggle_template_btn = QPushButton("Alternar modelo")
+        self.toggle_template_btn.clicked.connect(self._toggle_template)
+
+        # Estilo base para inputs (reaplicado nas validações)
+        def _estilo(w):
+            w.setStyleSheet(self._input_style_base)
+
+        for w in (
+            self.saida_input,
+            self.categoria_input,
+            self.emissor_input,
+            self.municipio_input,
+            self.volumes_input,
+            self.template_input,
+        ):
+            _estilo(w)
+
+        def _lbl(texto: str) -> QLabel:
+            label = QLabel(texto)
+            label.setStyleSheet(
+                "color: #bbb; font-size: 13px; border: none; background: none;"
+            )
+            return label
+
+        grid.addWidget(_lbl("Saída:"), 0, 0)
+        grid.addWidget(self.saida_input, 0, 1)
+        grid.addWidget(_lbl("Categoria:"), 1, 0)
+        grid.addWidget(self.categoria_input, 1, 1)
+        grid.addWidget(_lbl("Emissor:"), 2, 0)
+        grid.addWidget(self.emissor_input, 2, 1)
+        grid.addWidget(_lbl("Município:"), 3, 0)
+        grid.addWidget(self.municipio_input, 3, 1)
+        grid.addWidget(_lbl("Número de Volumes:"), 4, 0)
+        grid.addWidget(self.volumes_input, 4, 1)
+        grid.addWidget(_lbl("Modelo:"), 5, 0)
+        grid.addWidget(self.template_input, 5, 1)
+        grid.addWidget(self.toggle_template_btn, 5, 2)
+
+        self.retry_checkbox = QCheckBox("Repetir automaticamente em falha (3x)")
+        self.retry_checkbox.setStyleSheet(
+            "color: #bbb; font-size: 13px; padding: 5px; border: none;"
+        )
+        self.retry_checkbox.setChecked(bool(self.config.get("retry_automatico")))
+        self.retry_checkbox.stateChanged.connect(self._salvar_retry_config)
+        layout_quadro.addWidget(self.retry_checkbox)
+
+        # Botões
+        botoes = QGridLayout()
+        self.imprimir_btn = QPushButton("Imprimir\nAgora")
+        self.imprimir_btn.setDefault(True)
+        self.imprimir_btn.clicked.connect(self._imprimir_etiqueta)
+
+        self.reimprimir_btn = QPushButton("Reimprimir\nÚltima")
+        self.reimprimir_btn.clicked.connect(self._reimprimir_ultima)
+
+        self.cancelar_btn = QPushButton("Cancelar")
+        self.cancelar_btn.clicked.connect(self._cancelar_impressao)
+
+        self.editor_btn = QPushButton("Edição de\nEtiqueta")
+        self.editor_btn.clicked.connect(self._abrir_editor_etiqueta)
+
+        self.exportar_btn = QPushButton("Exportar\nEtiqueta")
+        export_menu = QMenu(self.exportar_btn)
+        export_menu.addAction(
+            "Como PNG…", lambda: self._exportar_etiqueta("png", batch=False)
+        )
+        export_menu.addAction(
+            "Como PDF…", lambda: self._exportar_etiqueta("pdf", batch=False)
+        )
+        export_menu.addAction(
+            "Como SVG…", lambda: self._exportar_etiqueta("svg", batch=False)
+        )
+        lote_menu = export_menu.addMenu("Exportar lote")
+        lote_menu.addAction(
+            "PNG…", lambda: self._exportar_etiqueta("png", batch=True)
+        )
+        lote_menu.addAction(
+            "PDF…", lambda: self._exportar_etiqueta("pdf", batch=True)
+        )
+        lote_menu.addAction(
+            "SVG…", lambda: self._exportar_etiqueta("svg", batch=True)
+        )
+        self.exportar_btn.setMenu(export_menu)
+
+        self.menu_btn = QToolButton()
+        self.menu_btn.setIcon(QIcon(recurso_caminho("menu-aberto.png")))
+        self.menu_btn.setAutoRaise(True)  # remove relevo
+        self.menu_btn.setStyleSheet("border: none;")  # evita moldura/ fundo
+        self.menu_btn.setPopupMode(QToolButton.InstantPopup)
+        menu = QMenu(self.menu_btn)
+        self.menu_btn.setMenu(menu)
+
+        ac_faltantes = menu.addAction(
+            "Reimprimir Faltantes", self._reimprimir_faltantes
+        )
+        ac_faltantes.setShortcut("Ctrl+F")
+        ac_intervalo = menu.addAction(
+            "Reimprimir Intervalo…", self._reimprimir_intervalo
+        )
+        ac_intervalo.setShortcut("Ctrl+I")
+        ac_hist = menu.addAction("Abrir Histórico", self._abrir_historico)
+        ac_hist.setShortcut("Ctrl+H")
+        ac_hist_mes = menu.addAction("Histórico Mensal", self._mostrar_historico_mensal)
+        ac_hist_mes.setShortcut("Ctrl+M")
+        ac_relatorio = menu.addAction(
+            "Exportar relatório do mês atual", self._exportar_relatorio_mes_atual
+        )
+        ac_relatorio.setShortcut("Ctrl+E")
+        ac_log = menu.addAction("Ver Log", self._abrir_log)
+        ac_log.setShortcut("Ctrl+L")
+        ac_teste = menu.addAction("Imprimir página de teste", self._imprimir_teste)
+        ac_teste.setShortcut("Ctrl+T")
+        ac_config = menu.addAction("Configurações", self._abrir_configuracoes)
+        ac_config.setShortcut("Ctrl+,")
+        ac_verificar = menu.addAction("Testar conexão", self._verificar_impressora)
+        ac_verificar.setShortcut("F5")
+        ac_quick = menu.addAction(
+            "Impressão Rápida (F6)", self._abrir_impressao_rapida
+        )
+        ac_quick.setShortcut("F6")
+
+        self._quick_shortcut = QShortcut(QKeySequence("F6"), self)
+        self._quick_shortcut.activated.connect(self._abrir_impressao_rapida)
+
+        for b in (
+            self.imprimir_btn,
+            self.reimprimir_btn,
+            self.cancelar_btn,
+            self.editor_btn,
+            self.exportar_btn,
+        ):
+            b.setStyleSheet(
+                "background:#24292e;color:#eeeeee;padding:8px 18px;border-radius:6px;"
+                "font-size: 14px;border: none;",
+            )
+
+        self.cancelar_btn.setStyleSheet(
+            "background:#24292e;color:#ff5555;padding:8px 18px;border-radius:6px;"
+            "font-size: 14px;border: none;",
+        )
+
+        botoes.addWidget(self.imprimir_btn, 0, 0)
+        botoes.addWidget(self.reimprimir_btn, 0, 1)
+        botoes.addWidget(self.exportar_btn, 0, 2)
+        botoes.addWidget(self.cancelar_btn, 1, 0)
+        botoes.addWidget(self.menu_btn, 1, 1)
+        botoes.addWidget(self.editor_btn, 2, 0, 1, 3)
+
+        layout_quadro.addLayout(botoes)
+
+        # Status
+        self.status_label = QLabel()
+        self.status_label.setStyleSheet(
+            "color: #8bc34a; font-size: 13px; border: none; background: none; "
+            "padding: 5px;"
+        )
+        layout_quadro.addWidget(self.status_label)
+
         self.print_history = PrintHistoryWidget(self)
         self.print_history.reprintRequested.connect(self._reprint_from_history)
         layout_central.addWidget(self.print_history)
+
+        layout_base.addSpacerItem(
+            QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        )
+
+        self._footer_label = QLabel(
+            "Feito por Pedro Luiz Bortot Monteiro do Rosário 2025 — "
+            f"Versão {__version__}"
+        )
+        self._footer_label.setAlignment(Qt.AlignCenter)
+        self._footer_label.setStyleSheet(
+            "color: #555; font-size: 12px; border: none; "
+            "background: none; padding: 10px;"
+        )
+        layout_base.addWidget(self._footer_label)
 
     def _refresh_print_history(self) -> None:
         if hasattr(self, "print_history") and self.print_history is not None:
@@ -1183,208 +1385,6 @@ class EtiquetaApp(QWidget):
             success_message="♻️ Reimpressão reenviada",
             error_message="⚠️ Erro na reimpressão",
         )
-
-        grid = QGridLayout()
-        layout_quadro.addLayout(grid)
-
-        self.saida_input = QLineEdit()
-        self.saida_input.setValidator(
-            QRegularExpressionValidator(QRegularExpression(r"\d*"))
-        )
-        self.saida_input.returnPressed.connect(self._imprimir_etiqueta)
-
-        self.categoria_input = QComboBox()
-        self.categoria_input.setEditable(True)
-        self.categoria_input.lineEdit().returnPressed.connect(self._imprimir_etiqueta)
-
-        self.emissor_input = QComboBox()
-        self.emissor_input.setEditable(True)
-        self.emissor_input.lineEdit().returnPressed.connect(self._imprimir_etiqueta)
-
-        self.municipio_input = QComboBox()
-        self.municipio_input.setEditable(True)
-        self.municipio_input.lineEdit().returnPressed.connect(self._imprimir_etiqueta)
-
-        self.volumes_input = QSpinBox()
-        self.volumes_input.setMinimum(1)
-        self.volumes_input.lineEdit().returnPressed.connect(self._imprimir_etiqueta)
-        self.template_input = QComboBox()
-        self.template_input.currentTextChanged.connect(self._aplicar_template)
-        self.template_input.currentTextChanged.connect(self._salvar_template_config)
-        self.template_input.currentTextChanged.connect(self._update_print_button_state)
-
-        self.toggle_template_btn = QPushButton("Alternar modelo")
-        self.toggle_template_btn.clicked.connect(self._toggle_template)
-
-        # Estilo base para inputs (reaplicado nas validações)
-        def _estilo(w):
-            w.setStyleSheet(self._input_style_base)
-
-        for w in (
-            self.saida_input,
-            self.categoria_input,
-            self.emissor_input,
-            self.municipio_input,
-            self.volumes_input,
-            self.template_input,
-        ):
-            _estilo(w)
-
-        def _lbl(texto: str) -> QLabel:
-            label = QLabel(texto)
-            label.setStyleSheet(
-                "color: #bbb; font-size: 13px; border: none; background: none;"
-            )
-            return label
-
-        grid.addWidget(_lbl("Saída:"), 0, 0)
-        grid.addWidget(self.saida_input, 0, 1)
-        grid.addWidget(_lbl("Categoria:"), 1, 0)
-        grid.addWidget(self.categoria_input, 1, 1)
-        grid.addWidget(_lbl("Emissor:"), 2, 0)
-        grid.addWidget(self.emissor_input, 2, 1)
-        grid.addWidget(_lbl("Município:"), 3, 0)
-        grid.addWidget(self.municipio_input, 3, 1)
-        grid.addWidget(_lbl("Número de Volumes:"), 4, 0)
-        grid.addWidget(self.volumes_input, 4, 1)
-        grid.addWidget(_lbl("Modelo:"), 5, 0)
-        grid.addWidget(self.template_input, 5, 1)
-        grid.addWidget(self.toggle_template_btn, 5, 2)
-
-        self.retry_checkbox = QCheckBox("Repetir automaticamente em falha (3x)")
-        self.retry_checkbox.setStyleSheet(
-            "color: #bbb; font-size: 13px; padding: 5px; border: none;"
-        )
-        self.retry_checkbox.setChecked(bool(self.config.get("retry_automatico")))
-        self.retry_checkbox.stateChanged.connect(self._salvar_retry_config)
-        layout_quadro.addWidget(self.retry_checkbox)
-
-        # Botões
-        botoes = QGridLayout()
-        self.imprimir_btn = QPushButton("Imprimir\nAgora")
-        self.imprimir_btn.setDefault(True)
-        self.imprimir_btn.clicked.connect(self._imprimir_etiqueta)
-
-        self.reimprimir_btn = QPushButton("Reimprimir\nÚltima")
-        self.reimprimir_btn.clicked.connect(self._reimprimir_ultima)
-
-        self.cancelar_btn = QPushButton("Cancelar")
-        self.cancelar_btn.clicked.connect(self._cancelar_impressao)
-
-        self.editor_btn = QPushButton("Edição de\nEtiqueta")
-        self.editor_btn.clicked.connect(self._abrir_editor_etiqueta)
-
-        self.exportar_btn = QPushButton("Exportar\nEtiqueta")
-        export_menu = QMenu(self.exportar_btn)
-        export_menu.addAction(
-            "Como PNG…", lambda: self._exportar_etiqueta("png", batch=False)
-        )
-        export_menu.addAction(
-            "Como PDF…", lambda: self._exportar_etiqueta("pdf", batch=False)
-        )
-        export_menu.addAction(
-            "Como SVG…", lambda: self._exportar_etiqueta("svg", batch=False)
-        )
-        lote_menu = export_menu.addMenu("Exportar lote")
-        lote_menu.addAction(
-            "PNG…", lambda: self._exportar_etiqueta("png", batch=True)
-        )
-        lote_menu.addAction(
-            "PDF…", lambda: self._exportar_etiqueta("pdf", batch=True)
-        )
-        lote_menu.addAction(
-            "SVG…", lambda: self._exportar_etiqueta("svg", batch=True)
-        )
-        self.exportar_btn.setMenu(export_menu)
-
-        self.menu_btn = QToolButton()
-        self.menu_btn.setIcon(QIcon(recurso_caminho("menu-aberto.png")))
-        self.menu_btn.setAutoRaise(True)  # remove relevo
-        self.menu_btn.setStyleSheet("border: none;")  # evita moldura/ fundo
-        self.menu_btn.setPopupMode(QToolButton.InstantPopup)
-        menu = QMenu(self.menu_btn)
-        self.menu_btn.setMenu(menu)
-
-        ac_faltantes = menu.addAction(
-            "Reimprimir Faltantes", self._reimprimir_faltantes
-        )
-        ac_faltantes.setShortcut("Ctrl+F")
-        ac_intervalo = menu.addAction(
-            "Reimprimir Intervalo…", self._reimprimir_intervalo
-        )
-        ac_intervalo.setShortcut("Ctrl+I")
-        ac_hist = menu.addAction("Abrir Histórico", self._abrir_historico)
-        ac_hist.setShortcut("Ctrl+H")
-        ac_hist_mes = menu.addAction("Histórico Mensal", self._mostrar_historico_mensal)
-        ac_hist_mes.setShortcut("Ctrl+M")
-        ac_relatorio = menu.addAction(
-            "Exportar relatório do mês atual", self._exportar_relatorio_mes_atual
-        )
-        ac_relatorio.setShortcut("Ctrl+E")
-        ac_log = menu.addAction("Ver Log", self._abrir_log)
-        ac_log.setShortcut("Ctrl+L")
-        ac_teste = menu.addAction("Imprimir página de teste", self._imprimir_teste)
-        ac_teste.setShortcut("Ctrl+T")
-        ac_config = menu.addAction("Configurações", self._abrir_configuracoes)
-        ac_config.setShortcut("Ctrl+,")
-        ac_verificar = menu.addAction("Testar conexão", self._verificar_impressora)
-        ac_verificar.setShortcut("F5")
-        ac_quick = menu.addAction(
-            "Impressão Rápida (F6)", self._abrir_impressao_rapida
-        )
-        ac_quick.setShortcut("F6")
-
-        self._quick_shortcut = QShortcut(QKeySequence("F6"), self)
-        self._quick_shortcut.activated.connect(self._abrir_impressao_rapida)
-
-        for b in (
-            self.imprimir_btn,
-            self.reimprimir_btn,
-            self.cancelar_btn,
-            self.editor_btn,
-            self.exportar_btn,
-        ):
-            b.setStyleSheet(
-                "background:#24292e;color:#eeeeee;padding:8px 18px;border-radius:6px;"
-                "font-size: 14px;border: none;",
-            )
-
-        self.cancelar_btn.setStyleSheet(
-            "background:#24292e;color:#ff5555;padding:8px 18px;border-radius:6px;"
-            "font-size: 14px;border: none;",
-        )
-
-        botoes.addWidget(self.imprimir_btn, 0, 0)
-        botoes.addWidget(self.reimprimir_btn, 0, 1)
-        botoes.addWidget(self.exportar_btn, 0, 2)
-        botoes.addWidget(self.cancelar_btn, 1, 0)
-        botoes.addWidget(self.menu_btn, 1, 1)
-        botoes.addWidget(self.editor_btn, 2, 0, 1, 3)
-
-        layout_quadro.addLayout(botoes)
-
-        # Status
-        self.status_label = QLabel()
-        self.status_label.setStyleSheet(
-            "color: #8bc34a; font-size: 13px; border: none; background: none; "
-            "padding: 5px;"
-        )
-        layout_quadro.addWidget(self.status_label)
-
-        layout_base.addSpacerItem(
-            QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        )
-
-        self._footer_label = QLabel(
-            "Feito por Pedro Luiz Bortot Monteiro do Rosário 2025 — "
-            f"Versão {__version__}"
-        )
-        self._footer_label.setAlignment(Qt.AlignCenter)
-        self._footer_label.setStyleSheet(
-            "color: #555; font-size: 12px; border: none; "
-            "background: none; padding: 10px;"
-        )
-        layout_base.addWidget(self._footer_label)
 
     def _aplicar_tema_escuro(self) -> None:
         p = QPalette()
