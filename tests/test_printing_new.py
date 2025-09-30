@@ -59,6 +59,29 @@ def _simple_template() -> Template:
     return Template(document)
 
 
+def _template_with_required_template_scope() -> Template:
+    document = TemplateDocument(
+        name="required_template_scope",
+        page={"backend": "tspl", "width_mm": 40, "height_mm": 20, "gap_mm": 2},
+        elements=[
+            {
+                "type": "text",
+                "x_mm": 2,
+                "y_mm": 2,
+                "font": {"name": "3", "x": 1, "y": 1},
+                "content": "Titulo: {titulo}",
+            }
+        ],
+        variables={
+            "items": TemplateVariable(name="items", scope="template", required=True),
+            "titulo": TemplateVariable(
+                name="titulo", scope="template", required=True
+            ),
+        },
+    )
+    return Template(document)
+
+
 def test_build_label_series_generates_sequence():
     dados = {
         "volumes": 3,
@@ -150,6 +173,26 @@ def test_printer_print_template_uses_transport():
     assert stub.payloads, "nenhum payload enviado"
     texto = stub.payloads[0].decode("cp1252")
     assert "Ola Mundo" in texto
+
+
+def test_printer_print_template_allows_template_scope_overrides():
+    template = _template_with_required_template_scope()
+    config = PrinterConfig(backend="tspl", transport="tcp", host="127.0.0.1")
+    printer = Printer(config)
+    stub = StubTransport()
+    printer.transport = stub
+
+    ok, status, job_id = printer.print_template(
+        template,
+        {"titulo": "Custom", "volumes": 1},
+    )
+
+    assert ok and status is not None and status.get("status") == "pending"
+    assert job_id is not None
+    assert wait_for_all_jobs(2.0)
+    assert stub.payloads, "nenhum payload enviado"
+    texto = stub.payloads[0].decode("cp1252")
+    assert "Custom" in texto
 
 
 def test_printer_print_calibration(monkeypatch):
