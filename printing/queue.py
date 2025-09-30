@@ -211,6 +211,8 @@ def enqueue_job(
         printer_name=printer.name,
         printer_backend=params.get("printer_backend", printer.backend),
         printer_transport=params.get("printer_transport", printer.transport),
+        printer_host=params.get("printer_host"),
+        printer_port=params.get("printer_port"),
         media_settings=params.get("media_settings"),
     )
 

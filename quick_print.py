@@ -340,6 +340,8 @@ class QuickPrintDialog(QDialog):
                     "printer_backend": backend_name,
                     "printer_transport": "win32",
                     "media_settings": media_settings,
+                    "printer_host": None,
+                    "printer_port": None,
                 },
             )
         except Exception as exc:  # pragma: no cover - defensive

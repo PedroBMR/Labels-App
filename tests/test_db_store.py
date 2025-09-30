@@ -649,6 +649,13 @@ def test_print_job_lifecycle(tmp_path):
         assert row["status"] == "pending"
         assert row["pending_at"] is not None
         assert row["running_at"] is None
+        host_row = conn.execute(
+            "SELECT printer_host, printer_port FROM print_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+        assert host_row is not None
+        assert host_row["printer_host"] is None
+        assert host_row["printer_port"] is None
 
     assert store.update_print_job_status(
         job_id=job_id, status="running", db_path=db_path
