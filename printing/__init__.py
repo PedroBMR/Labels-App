@@ -1415,6 +1415,10 @@ class Printer:
         media_settings: Mapping[str, Any] | None = None,
     ) -> tuple[bool, dict | None, int | None]:
         variables = template.document.defaults(scope="template")
+        for key, value in dados.items():
+            if key == "items":
+                continue
+            variables[key] = value
         variables["items"] = build_label_series(dados, template)
         return self.print_job(template, variables, media_settings=media_settings)
 
