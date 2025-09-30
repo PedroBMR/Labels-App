@@ -19,15 +19,11 @@ import shutil
 import sys
 from datetime import datetime
 from functools import lru_cache
-from typing import TYPE_CHECKING
 
 try:  # pragma: no cover - optional dependency guard
     from PIL import Image  # type: ignore
 except ImportError:  # pragma: no cover - Pillow missing at runtime
     Image = None  # type: ignore[assignment]
-
-if TYPE_CHECKING:  # pragma: no cover - typing aid
-    from PIL import Image as PILImage
 
 
 def _base_dir() -> str:

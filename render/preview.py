@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping
 
 try:  # pragma: no cover - optional dependency during runtime
     import qrcode
@@ -28,9 +28,6 @@ try:  # pragma: no cover - optional dependency guard
     from PIL import Image, ImageDraw, ImageFont  # type: ignore
 except ImportError:  # pragma: no cover - Pillow missing at runtime
     Image = ImageDraw = ImageFont = None  # type: ignore[assignment]
-
-if TYPE_CHECKING:  # pragma: no cover - typing aid
-    from PIL import Image as PILImage
 
 try:  # pragma: no cover - optional dependency during runtime
     import barcode  # type: ignore

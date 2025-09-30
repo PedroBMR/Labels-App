@@ -6,15 +6,11 @@ import hashlib
 import io
 from collections.abc import Iterable, MutableMapping
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 try:  # pragma: no cover - optional dependency guard
     from PIL import Image, ImageFilter, ImageOps  # type: ignore
 except ImportError:  # pragma: no cover - Pillow missing at runtime
     Image = ImageFilter = ImageOps = None  # type: ignore[assignment]
-
-if TYPE_CHECKING:  # pragma: no cover - typing aid
-    from PIL import Image as PILImage
 
 try:  # pragma: no cover - optional Pillow component
     from PIL import ImageCms  # type: ignore

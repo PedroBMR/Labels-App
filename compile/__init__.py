@@ -25,15 +25,15 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import Any, Mapping
 
 try:  # pragma: no cover - optional dependency guard
     from PIL import Image, ImageDraw, ImageFont  # type: ignore
 except ImportError:  # pragma: no cover - Pillow missing at runtime
     Image = ImageDraw = ImageFont = None  # type: ignore[assignment]
 
-if TYPE_CHECKING:  # pragma: no cover - typing aid
-    from PIL import Image as PILImage
+from fonts import font_store
+from imaging import load_image
 
 
 def _require_pillow() -> None:
@@ -42,9 +42,6 @@ def _require_pillow() -> None:
             "Pillow must be installed to render label graphics. "
             "Install the 'Pillow' package to enable this feature."
         )
-
-from fonts import font_store
-from imaging import load_image
 
 __all__ = [
     "Backend",

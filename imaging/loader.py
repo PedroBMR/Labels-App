@@ -5,15 +5,14 @@ from __future__ import annotations
 import io
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO
+from typing import Any, BinaryIO
 
 try:  # pragma: no cover - optional dependency guard
     from PIL import Image  # type: ignore
 except ImportError:  # pragma: no cover - Pillow missing at runtime
     Image = None  # type: ignore[assignment]
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from PIL import Image as PILImage
+from utils.fs import canonical_path, file_hash
 
 
 def _require_pillow() -> None:
@@ -22,8 +21,6 @@ def _require_pillow() -> None:
             "Pillow must be installed to load and process images. "
             "Install the 'Pillow' package to enable this feature."
         )
-
-from utils.fs import canonical_path, file_hash
 
 __all__ = ["load_image"]
 
