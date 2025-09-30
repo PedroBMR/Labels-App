@@ -464,7 +464,12 @@ def test_reprint_uses_saved_payload():
 
 
 def test_tcp_job_replay_preserves_host_port():
-    config = PrinterConfig(backend="tspl", transport="tcp", host="192.0.2.10", port=9200)
+    config = PrinterConfig(
+        backend="tspl",
+        transport="tcp",
+        host="192.0.2.10",
+        port=9200,
+    )
     printer = Printer(config)
     stub = StubTransport()
     printer.transport = stub
