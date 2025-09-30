@@ -8,7 +8,14 @@ import queue
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, Mapping, Optional
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    Mapping,
+    Optional,
+)
 
 from db import store as db_store
 
