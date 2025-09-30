@@ -92,7 +92,10 @@ class EmbeddedFontStore:
         payload = base64.b64decode(entry["data"])
         font_index = QFontDatabase.addApplicationFontFromData(QByteArray(payload))
         if font_index >= 0:
-            families = [str(name) for name in QFontDatabase.applicationFontFamilies(font_index)]
+            families = [
+                str(name)
+                for name in QFontDatabase.applicationFontFamilies(font_index)
+            ]
         else:  # pragma: no cover - depends on Qt availability
             families = []
         if families:
@@ -145,7 +148,10 @@ class EmbeddedFontStore:
         return result
 
     # ------------------------------------------------------------------
-    def export_fonts(self, font_ids: Mapping[str, Any] | set[str] | list[str]) -> dict[str, Any]:
+    def export_fonts(
+        self,
+        font_ids: Mapping[str, Any] | set[str] | list[str],
+    ) -> dict[str, Any]:
         """Return metadata for the provided ``font_ids``."""
 
         result: dict[str, Any] = {}

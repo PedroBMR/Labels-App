@@ -12,8 +12,8 @@ from PIL.ImageQt import ImageQt
 from qt_compat import (
     QBrush,
     QCheckBox,
-    QComboBox,
     QColor,
+    QComboBox,
     QGraphicsPixmapItem,
     QGraphicsScene,
     QGraphicsView,
@@ -21,8 +21,8 @@ from qt_compat import (
     QHBoxLayout,
     QLabel,
     QPainter,
-    QPointF,
     QPixmap,
+    QPointF,
     QSlider,
     QSplitter,
     QStackedWidget,
@@ -42,7 +42,6 @@ from .properties import PropertyPanel
 from .roll_preview import PrinterRollPreviewWidget
 from .scene import LabelScene, build_model_from_scene
 from .view import LabelView
-
 
 MM_PER_INCH = 25.4
 

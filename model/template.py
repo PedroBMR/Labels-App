@@ -7,9 +7,9 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from string import Formatter
-from datetime import UTC, datetime
 from typing import Any, ClassVar, Iterable, Mapping, Sequence
 
 from db import store as db_store
@@ -399,7 +399,11 @@ class TemplateDocument:
                 width_mm=width_mm,
                 height_mm=height_mm,
                 dpi=dpi,
-                kind=str(self.page.get("backend") or self.page.get("type") or "unknown"),
+                kind=str(
+                    self.page.get("backend")
+                    or self.page.get("type")
+                    or "unknown"
+                ),
                 tags=tags,
                 updated_at=timestamp,
             )
@@ -408,7 +412,9 @@ class TemplateDocument:
                 "Falha ao atualizar índice de templates: %s", self.name
             )
 
-    def _index_metadata(self) -> tuple[float | None, float | None, int | None, list[str]]:
+    def _index_metadata(
+        self,
+    ) -> tuple[float | None, float | None, int | None, list[str]]:
         def _to_float(value: Any) -> float | None:
             if isinstance(value, (int, float)):
                 return float(value)

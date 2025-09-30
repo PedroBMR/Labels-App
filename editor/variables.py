@@ -8,26 +8,25 @@ from typing import Any
 
 from model.template import TemplateVariable
 from qt_compat import (
+    QAbstractItemView,
+    QCheckBox,
     QColor,
     QComboBox,
-    QCheckBox,
-    QAbstractItemView,
-    QHeaderView,
     QHBoxLayout,
+    QHeaderView,
     QIcon,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
     QStyle,
+    Qt,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
-    Qt,
     pyqtSignal,
 )
-
 
 _TYPE_INFO: dict[str, tuple[str, str]] = {
     "text": ("Texto", "#eef2ff"),

@@ -44,7 +44,9 @@ class ZPLBackend(Backend):
             result = handler(element, context)
             if not result:
                 continue
-            if isinstance(result, Iterable) and not isinstance(result, (bytes, bytearray)):
+            if isinstance(result, Iterable) and not isinstance(
+                result, (bytes, bytearray)
+            ):
                 parts.extend(self._ensure_bytes(item) for item in result)
             else:
                 parts.append(self._ensure_bytes(result))
@@ -215,7 +217,11 @@ class ZPLBackend(Backend):
         return settings
 
     def _graphic_field(
-        self, element: Mapping[str, Any], image: Image.Image, *, digest: str | None = None
+        self,
+        element: Mapping[str, Any],
+        image: Image.Image,
+        *,
+        digest: str | None = None,
     ) -> bytes:
         settings = self._resolve_raster_settings(element)
         width = self.optional_dimension(element, "width", axis="x")

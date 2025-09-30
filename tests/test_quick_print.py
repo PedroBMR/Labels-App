@@ -9,9 +9,8 @@ except ModuleNotFoundError:  # pragma: no cover - environment without Qt
     pytest.skip("Qt bindings are not installed", allow_module_level=True)
 
 import quick_print
-from quick_print import QuickPrintDialog
-
 from db import store as db_store
+from quick_print import QuickPrintDialog
 
 
 def _ensure_app() -> QApplication:
@@ -40,12 +39,22 @@ def test_quick_print_updates_templates(monkeypatch):
 
     monkeypatch.setattr(quick_print, "listar_templates", fake_templates)
     monkeypatch.setattr(quick_print, "listar_impressoras", lambda: [])
-    monkeypatch.setattr(quick_print, "compile_model_silent", lambda *a, **k: b"")
-    monkeypatch.setattr(
-        quick_print,
-        "prepare_quick_job",
-        lambda *a, **k: (SimpleNamespace(document=SimpleNamespace(page={}, elements=[]), calibration=None), {}),
-    )
+
+    def _empty_compile(*_args, **_kwargs):
+        return b""
+
+    monkeypatch.setattr(quick_print, "compile_model_silent", _empty_compile)
+
+    def _fake_prepare_quick_job(*_args, **_kwargs):
+        return (
+            SimpleNamespace(
+                document=SimpleNamespace(page={}, elements=[]),
+                calibration=None,
+            ),
+            {},
+        )
+
+    monkeypatch.setattr(quick_print, "prepare_quick_job", _fake_prepare_quick_job)
 
     dialog = QuickPrintDialog()
     try:
@@ -112,11 +121,22 @@ def test_quick_print_print_sends_payload(monkeypatch):
     media_settings = {"media_type": "gap", "calibrate_next_print": False}
 
     monkeypatch.setattr(quick_print, "carregar_config", lambda: dict(config))
-    monkeypatch.setattr(quick_print.db_store, "load_printer_profile", lambda name: profile)
+    def fake_load_profile(_name):
+        return profile
+
+    monkeypatch.setattr(quick_print.db_store, "load_printer_profile", fake_load_profile)
 
     captured_prepare: dict[str, Any] = {}
 
-    def fake_prepare(model, overrides, *, silent, config, printer_name, printer_profile):
+    def fake_prepare(
+        model,
+        overrides,
+        *,
+        silent,
+        config,
+        printer_name,
+        printer_profile,
+    ):
         captured_prepare.update(
             {
                 "model": model,
@@ -128,7 +148,10 @@ def test_quick_print_print_sends_payload(monkeypatch):
             }
         )
         return (
-            SimpleNamespace(document=SimpleNamespace(page={}, elements=[]), calibration=None),
+            SimpleNamespace(
+                document=SimpleNamespace(page={}, elements=[]),
+                calibration=None,
+            ),
             overrides,
         )
 
@@ -149,7 +172,14 @@ def test_quick_print_print_sends_payload(monkeypatch):
         return b"PRINT 1\r\n"
 
     monkeypatch.setattr(quick_print, "compile_model_silent", fake_compile)
-    monkeypatch.setattr(quick_print, "resolve_media_settings", lambda *a, **k: dict(media_settings))
+    def fake_resolve_media_settings(*_args, **_kwargs):
+        return dict(media_settings)
+
+    monkeypatch.setattr(
+        quick_print,
+        "resolve_media_settings",
+        fake_resolve_media_settings,
+    )
 
     jobs: list[tuple[str | None, bytes, quick_print.PrinterTarget, int, dict]] = []
 

@@ -118,7 +118,11 @@ def test_print_job_retries_and_failure(monkeypatch: pytest.MonkeyPatch):
     real_update = db_store.update_print_job_status
 
     def tracking_update(
-        *, status: str, job_id: int | None = None, payload_hash: str | None = None, **kwargs
+        *,
+        status: str,
+        job_id: int | None = None,
+        payload_hash: str | None = None,
+        **kwargs,
     ):
         if job_id is not None:
             status_transitions.setdefault(job_id, []).append(status)

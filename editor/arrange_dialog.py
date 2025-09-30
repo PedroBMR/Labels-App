@@ -23,7 +23,10 @@ class ArrangeGridDialog(QDialog):
         form_layout.addRow("Colunas (N):", self._columns)
         form_layout.addRow("Linhas (M):", self._rows)
 
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            self,
+        )
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
 

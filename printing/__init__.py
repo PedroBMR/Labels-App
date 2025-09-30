@@ -11,7 +11,6 @@ import json
 import logging
 import re
 import socket
-import time
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,8 +18,8 @@ from typing import Any, Callable, Mapping, Protocol
 
 from PIL import Image
 
-from db import store as db_store
 from compile import Calibration, CompilationError, SafeDict, get_backend
+from db import store as db_store
 from fonts import font_store
 from model.template import TemplateDocument, TemplateValidationError
 from persistence import carregar_config, salvar_config
@@ -28,7 +27,7 @@ from render import PreviewRenderer
 from utils import recurso_caminho
 from utils.fs import canonical_path as canonical_file_path
 
-from .queue import PrinterTarget, enqueue_job, shutdown as shutdown_print_queue, start as start_print_queue, wait_for_all as wait_for_all_jobs
+from .queue import PrinterTarget, enqueue_job
 
 # ----------------------------------------------------------------------------
 
@@ -382,7 +381,11 @@ def resolve_media_settings(
     if gap_mm is None:
         gap_mm = 0.0
 
-    gap_offset_candidate = _profile_value("gap_offset_mm", "media_gap_offset_mm", "media_offset_mm")
+    gap_offset_candidate = _profile_value(
+        "gap_offset_mm",
+        "media_gap_offset_mm",
+        "media_offset_mm",
+    )
     if gap_offset_candidate is None:
         gap_offset_candidate = _config_value(
             "media_gap_offset_mm", "media_offset_mm"
@@ -463,8 +466,14 @@ def apply_media_settings(template: Template, settings: Mapping[str, Any]) -> Tem
     document = template.document.copy()
     page = document.page
 
-    media_type = str(settings.get("media_type", page.get("media_type", "gap"))).lower()
-    media_type = "black_mark" if media_type in {"black_mark", "blackmark", "mark"} else "gap"
+    media_type = str(
+        settings.get("media_type", page.get("media_type", "gap"))
+    ).lower()
+    media_type = (
+        "black_mark"
+        if media_type in {"black_mark", "blackmark", "mark"}
+        else "gap"
+    )
     page["media_type"] = media_type
 
     def _coerce(key: str, default: float = 0.0) -> float:
@@ -476,7 +485,10 @@ def apply_media_settings(template: Template, settings: Mapping[str, Any]) -> Tem
 
     gap_mm = _coerce("gap_mm", float(page.get("gap_mm", 0.0)))
     gap_offset = _coerce("gap_offset_mm", float(page.get("gap_offset_mm", 0.0)))
-    mark_mm = _coerce("mark_mm", float(page.get("mark_mm", page.get("black_mark_mm", gap_mm))))
+    mark_mm = _coerce(
+        "mark_mm",
+        float(page.get("mark_mm", page.get("black_mark_mm", gap_mm))),
+    )
     mark_offset = _coerce(
         "mark_offset_mm",
         float(page.get("mark_offset_mm", page.get("black_mark_offset_mm", gap_offset))),
@@ -887,7 +899,9 @@ def export_labels(
     if batch and total > 1 and formato_normalizado in {"png", "svg"}:
         for indice, imagem in enumerate(images, start=1):
             sufixo = f"-{indice:03d}"
-            target = destino_path.with_name(destino_path.stem + sufixo + destino_path.suffix)
+            target = destino_path.with_name(
+                destino_path.stem + sufixo + destino_path.suffix
+            )
             if formato_normalizado == "png":
                 saved.append(_write_png(imagem, target))
             else:

@@ -5,10 +5,9 @@ Responsabilidade principal da interface de impressão.
 
 import json
 import os
-import sys
 from datetime import datetime
-from pathlib import Path
 from functools import partial
+from pathlib import Path
 from typing import Any, Callable, Mapping, TypedDict
 
 from _version import __version__
@@ -16,7 +15,6 @@ from db import store as db_store
 from editor.window import LabelEditorWindow
 from log import LOG_FILE, logger, register_status_callback
 from model.template import TemplateDocument
-from quick_print import QuickPrintDialog
 from persistence import (
     atualizar_recentes,
     carregar_config,
@@ -29,13 +27,13 @@ from persistence import (
     salvar_contagem,
 )
 from printing import (
+    Printer,
+    PrinterConfig,
     Template,
     aplicar_template,
     apply_media_settings,
     descobrir_impressora_padrao,
     export_labels,
-    Printer,
-    PrinterConfig,
     imprimir_pagina_teste,
     listar_impressoras,
     listar_templates,
@@ -53,15 +51,16 @@ from qt_compat import (
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFont,
     QFormLayout,
-    QFileDialog,
     QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QIcon,
     QInputDialog,
+    QKeySequence,
     QLabel,
     QLineEdit,
     QMenu,
@@ -77,7 +76,7 @@ from qt_compat import (
     QSpacerItem,
     QSpinBox,
     Qt,
-    QKeySequence,
+    QThread,
     QTime,
     QTimeEdit,
     QTimer,
@@ -85,13 +84,13 @@ from qt_compat import (
     QUrl,
     QVBoxLayout,
     QWidget,
-    QThread,
     pyqtSignal,
     pyqtSlot,
 )
+from quick_print import QuickPrintDialog
 from template_store import template_store
-from utils import backup_automatico, normalize_text, recurso_caminho
 from ui.print_history import PrintHistoryWidget
+from utils import backup_automatico, normalize_text, recurso_caminho
 
 CATEGORIAS_PADRAO = [
     "LIMPEZA, COPA, COZINHA",
@@ -652,17 +651,29 @@ class ConfigDialog(QDialog):
             except (TypeError, ValueError):
                 return default
 
-        self._gap_size = _coerce_float(data.get("media_gap_mm"), self._default_gap_size)
+        self._gap_size = _coerce_float(
+            data.get("media_gap_mm"),
+            self._default_gap_size,
+        )
         self._gap_offset = _coerce_float(
             data.get("media_gap_offset_mm"), self._default_gap_offset
         )
-        self._mark_size = _coerce_float(data.get("media_mark_mm"), self._default_mark_size)
+        self._mark_size = _coerce_float(
+            data.get("media_mark_mm"),
+            self._default_mark_size,
+        )
         self._mark_offset = _coerce_float(
             data.get("media_mark_offset_mm"), self._default_mark_offset
         )
 
-        media_type = str(data.get("media_type", self._default_media_type) or "gap").lower()
-        media_type = "black_mark" if media_type in {"black_mark", "blackmark", "mark"} else "gap"
+        media_type = str(
+            data.get("media_type", self._default_media_type) or "gap"
+        ).lower()
+        media_type = (
+            "black_mark"
+            if media_type in {"black_mark", "blackmark", "mark"}
+            else "gap"
+        )
         current_type = str(self.media_type_combo.currentData())
         if media_type != current_type:
             block = self.media_type_combo.blockSignals(True)
@@ -692,7 +703,9 @@ class ConfigDialog(QDialog):
         )
         self.media_fine_offset_spin.setValue(fine_offset_value)
 
-        calibrate = bool(data.get("media_calibrate_next", self._default_media_calibrate))
+        calibrate = bool(
+            data.get("media_calibrate_next", self._default_media_calibrate)
+        )
         self.media_calibrate_check.setChecked(calibrate)
 
         self._update_media_fields()
@@ -1106,7 +1119,11 @@ class EtiquetaApp(QWidget):
         if hasattr(self, "print_history") and self.print_history is not None:
             self.print_history.refresh()
 
-    def _register_pending_job(self, job_id: int | None, context: dict[str, Any]) -> None:
+    def _register_pending_job(
+        self,
+        job_id: int | None,
+        context: dict[str, Any],
+    ) -> None:
         if job_id is None:
             return
         self._pending_jobs[job_id] = context
@@ -1333,7 +1350,13 @@ class EtiquetaApp(QWidget):
         template_name = str(record.get("template_name") or "") or None
 
         try:
-            novo_job, status = enqueue_job(template_name, payload, target, copies=1, params=params)
+            novo_job, status = enqueue_job(
+                template_name,
+                payload,
+                target,
+                copies=1,
+                params=params,
+            )
         except Exception as exc:
             logger.exception("Erro ao reenfileirar trabalho salvo")
             QMessageBox.critical(
@@ -1579,7 +1602,11 @@ class EtiquetaApp(QWidget):
         profile_calibrate = False
         if profile:
             raw_flag = None
-            for key in ("media_calibrate_next", "calibrate_next", "calibrate_next_print"):
+            for key in (
+                "media_calibrate_next",
+                "calibrate_next",
+                "calibrate_next_print",
+            ):
                 if key in profile:
                     raw_flag = profile[key]
                     break
@@ -1897,7 +1924,11 @@ class EtiquetaApp(QWidget):
             "svg": ".svg",
         }.get(formato_norm, ".dat")
 
-        sugestao = f"etiqueta-{saida or datetime.now().strftime('%Y%m%d-%H%M%S')}{sufixo}"
+        sugestao = (
+            f"etiqueta-"
+            f"{saida or datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            f"{sufixo}"
+        )
         caminho, _ = QFileDialog.getSaveFileName(
             self,
             "Exportar etiquetas",

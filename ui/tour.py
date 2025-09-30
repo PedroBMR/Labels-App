@@ -19,14 +19,14 @@ from qt_compat import (
     QPainterPath,
     QPen,
     QPixmap,
+    QPoint,
     QPushButton,
     QRect,
-    QTimer,
+    QSize,
     Qt,
+    QTimer,
     QVBoxLayout,
     QWidget,
-    QPoint,
-    QSize,
 )
 
 
@@ -258,9 +258,15 @@ class GuidedTourDialog(QDialog):
             highlight = self._highlight_rect
             positions: list[QPoint] = []
             right_pos = QPoint(highlight.right() + margin, highlight.top())
-            left_pos = QPoint(highlight.left() - card_size.width() - margin, highlight.top())
+            left_pos = QPoint(
+                highlight.left() - card_size.width() - margin,
+                highlight.top(),
+            )
             bottom_pos = QPoint(highlight.left(), highlight.bottom() + margin)
-            top_pos = QPoint(highlight.left(), highlight.top() - card_size.height() - margin)
+            top_pos = QPoint(
+                highlight.left(),
+                highlight.top() - card_size.height() - margin,
+            )
             positions.extend([right_pos, left_pos, bottom_pos, top_pos])
 
             for pos in positions:
@@ -270,7 +276,10 @@ class GuidedTourDialog(QDialog):
                     return
 
             fallback_x = min(
-                max(available_rect.left(), highlight.center().x() - card_size.width() // 2),
+                max(
+                    available_rect.left(),
+                    highlight.center().x() - card_size.width() // 2,
+                ),
                 available_rect.right() - card_size.width(),
             )
             fallback_y = min(
@@ -282,7 +291,10 @@ class GuidedTourDialog(QDialog):
 
         center_x = available_rect.center().x() - card_size.width() // 2
         center_y = available_rect.center().y() - card_size.height() // 2
-        self._card.move(max(available_rect.left(), center_x), max(available_rect.top(), center_y))
+        self._card.move(
+            max(available_rect.left(), center_x),
+            max(available_rect.top(), center_y),
+        )
 
     # ------------------------------------------------------------------
     def _go_previous(self) -> None:

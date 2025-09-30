@@ -53,7 +53,9 @@ class TSPLBackend(Backend):
             result = handler(element, context)
             if not result:
                 continue
-            if isinstance(result, Iterable) and not isinstance(result, (bytes, bytearray)):
+            if isinstance(result, Iterable) and not isinstance(
+                result, (bytes, bytearray)
+            ):
                 parts.extend(self._ensure_bytes(item) for item in result)
             else:
                 parts.append(self._ensure_bytes(result))
@@ -102,7 +104,9 @@ class TSPLBackend(Backend):
         gap_offset = float(self.template.get("gap_offset_mm", 0.0))
         mark_mm = self.template.get("mark_mm", self.template.get("black_mark_mm"))
         mark_offset = float(
-            self.template.get("mark_offset_mm", self.template.get("black_mark_offset_mm", 0.0))
+            self.template.get(
+                "mark_offset_mm", self.template.get("black_mark_offset_mm", 0.0)
+            )
         )
         fine_offset = float(self.template.get("fine_offset_mm", 0.0))
         calibrate = bool(self.template.get("calibrate_next_print"))
@@ -248,7 +252,11 @@ class TSPLBackend(Backend):
         return settings
 
     def _bitmap_command(
-        self, element: Mapping[str, Any], image: Image.Image, *, digest: str | None = None
+        self,
+        element: Mapping[str, Any],
+        image: Image.Image,
+        *,
+        digest: str | None = None,
     ) -> bytes:
         settings = self._resolve_raster_settings(element)
         width = self.optional_dimension(element, "width", axis="x")

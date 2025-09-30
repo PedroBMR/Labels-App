@@ -5,13 +5,13 @@ from __future__ import annotations
 from typing import Optional
 
 from qt_compat import (
+    QIcon,
     QListWidget,
     QListWidgetItem,
     QSize,
+    Qt,
     QVBoxLayout,
     QWidget,
-    QIcon,
-    Qt,
 )
 
 from .scene import LabelScene
@@ -20,7 +20,11 @@ from .scene import LabelScene
 class UndoHistoryPanel(QWidget):
     """Display undo/redo history entries with canvas thumbnails."""
 
-    def __init__(self, scene: Optional[LabelScene] = None, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        scene: Optional[LabelScene] = None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._scene: LabelScene | None = None
         self._updating_selection = False
@@ -77,7 +81,9 @@ class UndoHistoryPanel(QWidget):
         count = stack.count()
         snapshots = scene.history_snapshots()
         if len(snapshots) < count + 1:
-            snapshots.extend(scene.capture_thumbnail() for _ in range(count + 1 - len(snapshots)))
+            snapshots.extend(
+                scene.capture_thumbnail() for _ in range(count + 1 - len(snapshots))
+            )
 
         self._updating_selection = True
         try:

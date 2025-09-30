@@ -6,7 +6,6 @@ import sys
 import types
 from pathlib import Path
 
-
 if "PIL" not in sys.modules:
     pil_module = types.ModuleType("PIL")
     image_module = types.ModuleType("PIL.Image")
@@ -273,8 +272,10 @@ def test_upsert_template_persists_metadata(tmp_path):
 
     with store.get_conn(db_path) as conn:
         row = conn.execute(
-            "SELECT name, kind, path, file_hash, width_mm, height_mm, dpi, tags, updated_at"
-            " FROM templates WHERE name = ?",
+            (
+                "SELECT name, kind, path, file_hash, width_mm, height_mm, dpi, tags, "
+                "updated_at FROM templates WHERE name = ?"
+            ),
             ("example",),
         ).fetchone()
 
@@ -304,8 +305,10 @@ def test_upsert_template_persists_metadata(tmp_path):
 
     with store.get_conn(db_path) as conn:
         row = conn.execute(
-            "SELECT kind, file_hash, width_mm, height_mm, dpi, tags, updated_at"
-            " FROM templates WHERE name = ?",
+            (
+                "SELECT kind, file_hash, width_mm, height_mm, dpi, tags, updated_at "
+                "FROM templates WHERE name = ?"
+            ),
             ("example",),
         ).fetchone()
 
@@ -436,8 +439,10 @@ def test_upsert_asset_persists_metadata(tmp_path):
 
     with store.get_conn(db_path) as conn:
         row = conn.execute(
-            "SELECT name, kind, path, file_hash, width_px, height_px, dpi_x, dpi_y, tags, data, updated_at"
-            " FROM assets WHERE name = ?",
+            (
+                "SELECT name, kind, path, file_hash, width_px, height_px, dpi_x, "
+                "dpi_y, tags, data, updated_at FROM assets WHERE name = ?"
+            ),
             ("logo",),
         ).fetchone()
 
@@ -470,8 +475,10 @@ def test_upsert_asset_persists_metadata(tmp_path):
 
     with store.get_conn(db_path) as conn:
         row = conn.execute(
-            "SELECT file_hash, width_px, height_px, dpi_x, dpi_y, tags, data, updated_at"
-            " FROM assets WHERE name = ?",
+            (
+                "SELECT file_hash, width_px, height_px, dpi_x, dpi_y, tags, data, "
+                "updated_at FROM assets WHERE name = ?"
+            ),
             ("logo",),
         ).fetchone()
 

@@ -8,15 +8,15 @@ from typing import Iterable
 from db import store as db_store
 from qt_compat import (
     QAbstractItemView,
-    QHeaderView,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QPushButton,
+    Qt,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
-    Qt,
     pyqtSignal,
 )
 
@@ -129,7 +129,10 @@ class PrintHistoryWidget(QWidget):
             job_id = row.get("id")
             status_text = str(row.get("status") or "").upper()
             status_item = QTableWidgetItem(status_text)
-            status_item.setData(Qt.UserRole, int(job_id) if isinstance(job_id, int) else job_id)
+            status_item.setData(
+                Qt.UserRole,
+                int(job_id) if isinstance(job_id, int) else job_id,
+            )
             self._table.setItem(row_idx, 0, status_item)
 
             printer = str(row.get("printer_name") or "")
@@ -146,10 +149,22 @@ class PrintHistoryWidget(QWidget):
             self._table.setItem(row_idx, 3, QTableWidgetItem(transport))
 
             created = row.get("pending_at") or row.get("created_at")
-            self._table.setItem(row_idx, 4, QTableWidgetItem(_format_timestamp(created)))
+            self._table.setItem(
+                row_idx,
+                4,
+                QTableWidgetItem(_format_timestamp(created)),
+            )
 
-            updated = row.get("finished_at") or row.get("failed_at") or row.get("running_at")
-            self._table.setItem(row_idx, 5, QTableWidgetItem(_format_timestamp(updated)))
+            updated = (
+                row.get("finished_at")
+                or row.get("failed_at")
+                or row.get("running_at")
+            )
+            self._table.setItem(
+                row_idx,
+                5,
+                QTableWidgetItem(_format_timestamp(updated)),
+            )
 
             error_text = str(row.get("error_text") or "")
             self._table.setItem(row_idx, 6, QTableWidgetItem(error_text))

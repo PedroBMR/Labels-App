@@ -362,7 +362,9 @@ class LabelScene(QGraphicsScene):
 
     def duplicate_selected_items(self) -> bool:
         selected = [
-            item for item in self.selected_items() if not getattr(item, "_locked", False)
+            item
+            for item in self.selected_items()
+            if not getattr(item, "_locked", False)
         ]
         if not selected:
             return False
@@ -463,7 +465,12 @@ class LabelScene(QGraphicsScene):
         """Update the snapping tolerance used for object alignment."""
 
         tolerance = max(0.0, float(tolerance))
-        if math.isclose(tolerance, self._alignment_tolerance, rel_tol=0.0, abs_tol=1e-6):
+        if math.isclose(
+            tolerance,
+            self._alignment_tolerance,
+            rel_tol=0.0,
+            abs_tol=1e-6,
+        ):
             return
         self._alignment_tolerance = tolerance
         self.clear_guides()

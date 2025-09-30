@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import io
+from collections.abc import Iterable, MutableMapping
 from pathlib import Path
-from typing import Iterable, Mapping, MutableMapping
 
 from PIL import Image, ImageFilter, ImageOps
 
@@ -121,7 +121,10 @@ def _resize_image(
     if fit_mode == "stretch":
         width = width or src_w
         height = height or src_h
-        return image.resize((max(1, width), max(1, height)), Image.Resampling.LANCZOS)
+        return image.resize(
+            (max(1, width), max(1, height)),
+            Image.Resampling.LANCZOS,
+        )
 
     scale_x = width / src_w if width else None
     scale_y = height / src_h if height else None
@@ -137,7 +140,10 @@ def _resize_image(
 
     new_width = max(1, int(round(src_w * scale)))
     new_height = max(1, int(round(src_h * scale)))
-    resized = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+    resized = image.resize(
+        (new_width, new_height),
+        Image.Resampling.LANCZOS,
+    )
 
     if fit_mode == "fill" and width and height:
         left = max(0, (resized.width - width) // 2)
@@ -149,7 +155,12 @@ def _resize_image(
     return resized
 
 
-def _dither_to_mono(image: Image.Image, *, method: str, threshold: int = 128) -> Image.Image:
+def _dither_to_mono(
+    image: Image.Image,
+    *,
+    method: str,
+    threshold: int = 128,
+) -> Image.Image:
     if method == "threshold":
         cut = max(0, min(255, int(threshold)))
         table = [0] * 256
@@ -323,9 +334,19 @@ def prepare_bitmap_for_tspl(
             cache_dir = None
 
         if cache_dir is not None:
-            descriptor = (
-                f"{file_hash or asset_id}:{padded_width}:{mono.height}:{rounded_x}:{rounded_y}:"
-                f"{method}:{gamma_value}:{int(bool(sharpen))}:{int(bool(invert))}:{threshold_value}"
+            descriptor = ":".join(
+                [
+                    str(file_hash or asset_id),
+                    str(padded_width),
+                    str(mono.height),
+                    str(rounded_x),
+                    str(rounded_y),
+                    method,
+                    str(gamma_value),
+                    str(int(bool(sharpen))),
+                    str(int(bool(invert))),
+                    str(threshold_value),
+                ]
             )
             digest = hashlib.sha1(descriptor.encode("utf-8")).hexdigest()
             prefix = file_hash or f"asset{asset_id}"

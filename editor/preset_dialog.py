@@ -11,8 +11,8 @@ from qt_compat import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
-    QVBoxLayout,
     Qt,
+    QVBoxLayout,
 )
 
 from .preset_manager import PresetManager

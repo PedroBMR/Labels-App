@@ -71,6 +71,7 @@ def test_carregar_contagem_reseta_mes(monkeypatch, tmp_path):
 
 def test_gerar_relatorio_mensal(monkeypatch, tmp_path):
     import csv
+
     from db import store as db_store
 
     persistence = _patch_paths(monkeypatch, tmp_path)
