@@ -6,13 +6,28 @@ import hashlib
 import io
 from collections.abc import Iterable, MutableMapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from PIL import Image, ImageFilter, ImageOps
+try:  # pragma: no cover - optional dependency guard
+    from PIL import Image, ImageFilter, ImageOps  # type: ignore
+except ImportError:  # pragma: no cover - Pillow missing at runtime
+    Image = ImageFilter = ImageOps = None  # type: ignore[assignment]
+
+if TYPE_CHECKING:  # pragma: no cover - typing aid
+    from PIL import Image as PILImage
 
 try:  # pragma: no cover - optional Pillow component
     from PIL import ImageCms  # type: ignore
 except Exception:  # pragma: no cover - optional dependency
     ImageCms = None  # type: ignore[assignment]
+
+
+def _require_pillow() -> None:
+    if Image is None or ImageFilter is None or ImageOps is None:
+        raise RuntimeError(
+            "Pillow must be installed to rasterise images. "
+            "Install the 'Pillow' package to enable this feature."
+        )
 
 __all__ = [
     "clear_raster_cache",
@@ -229,6 +244,7 @@ def prepare_bitmap_for_tspl(
     accessed.
     """
 
+    _require_pillow()
     dots_x = width_dots or _mm_to_dots(width_mm, dpi_x)
     dots_y = height_dots or _mm_to_dots(height_mm, dpi_y)
 
@@ -399,6 +415,7 @@ def tspl_bitmap_command(
 def fingerprint_image(image: Image.Image) -> str:
     """Return a stable digest identifying ``image`` contents."""
 
+    _require_pillow()
     try:
         image.load()
     except Exception:  # pragma: no cover - depends on Pillow backend

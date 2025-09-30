@@ -15,7 +15,16 @@ import os
 import sys
 from datetime import datetime
 
+import pytest
+
+pytest.importorskip("PIL")
+
 from PIL import Image
+
+try:
+    Image.new("1", (1, 1))
+except Exception:
+    pytest.skip("Pillow não está disponível", allow_module_level=True)
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
