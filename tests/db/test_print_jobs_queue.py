@@ -113,6 +113,37 @@ def test_print_job_processed_successfully():
     assert payloads == [b"payload-data"]
 
 
+def test_print_job_multiple_copies():
+    payloads: List[bytes] = []
+    processed = threading.Event()
+
+    def send(data: bytes) -> None:
+        payloads.append(data)
+        if len(payloads) >= 3:
+            processed.set()
+
+    printer = print_queue.PrinterTarget(
+        name="Printer Multi", backend="mock", transport="usb", send=send
+    )
+
+    job_id, status = print_queue.enqueue_job(
+        template_id=None,
+        payload=b"copy-payload",
+        printer=printer,
+        copies=3,
+    )
+
+    assert status == "pending"
+    assert print_queue.wait_for_all(timeout=2.0)
+    assert processed.wait(timeout=1.0)
+
+    record = db_store.get_print_job(job_id=job_id)
+    assert record is not None
+    assert record["status"] == "done"
+    assert record.get("copies") == 3
+    assert payloads == [b"copy-payload"] * 3
+
+
 def test_print_job_retries_and_failure(monkeypatch: pytest.MonkeyPatch):
     status_transitions: Dict[int, List[str]] = {}
     real_update = db_store.update_print_job_status

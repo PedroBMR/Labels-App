@@ -95,8 +95,9 @@ class _PrinterWorker:
     def _process(self, job_id: int) -> None:
         target = self.target
         logger = target.logger or logging.getLogger("app")
+        record = db_store.get_print_job(job_id=job_id)
         payload = db_store.get_job_payload(job_id=job_id)
-        if payload is None:
+        if record is None or payload is None:
             db_store.update_print_job_status(
                 job_id=job_id,
                 status="failed",
@@ -105,13 +106,22 @@ class _PrinterWorker:
             logger.error("Job %s sem payload para impressora %s", job_id, target.name)
             return
 
+        copies_value = record.get("copies", 1)
+        try:
+            copies = int(copies_value)
+        except (TypeError, ValueError):
+            copies = 1
+        if copies < 1:
+            copies = 1
+
         last_error: Optional[str] = None
         for attempt, delay in enumerate(_RETRY_DELAYS, start=1):
             if self._stop_event.is_set():
                 break
             db_store.update_print_job_status(job_id=job_id, status="running")
             try:
-                target.send(payload)
+                for _ in range(copies):
+                    target.send(payload)
             except Exception as exc:  # noqa: BLE001
                 last_error = str(exc)
                 db_store.update_print_job_status(
@@ -213,6 +223,7 @@ def enqueue_job(
     job_id = db_store.insert_print_job(
         payload_hash=payload_hash,
         payload=payload_bytes,
+        copies=max(1, int(copies)),
         template_name=template_id,
         template_backend=params.get("template_backend"),
         printer_name=printer.name,
