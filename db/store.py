@@ -845,6 +845,7 @@ def insert_print_job(
     *,
     payload_hash: str,
     payload: bytes | memoryview,
+    copies: int | None = None,
     template_name: str | None = None,
     template_backend: str | None = None,
     printer_name: str | None = None,
@@ -868,6 +869,7 @@ def insert_print_job(
     )
 
     payload_bytes = bytes(payload)
+    copies_value = copies if copies and copies > 0 else 1
 
     with contextlib.closing(get_conn(database)) as conn:
         with conn:
@@ -876,6 +878,7 @@ def insert_print_job(
                 INSERT INTO print_jobs(
                     payload_hash,
                     payload,
+                    copies,
                     template_name,
                     template_backend,
                     printer_name,
@@ -887,11 +890,12 @@ def insert_print_job(
                     status,
                     pending_at
                 )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
                 """,
                 (
                     payload_hash,
                     sqlite3.Binary(payload_bytes),
+                    copies_value,
                     template_name,
                     template_backend,
                     printer_name,
@@ -1031,6 +1035,7 @@ def get_print_job(
                 id,
                 created_at,
                 payload_hash,
+                copies,
                 template_name,
                 template_backend,
                 printer_name,
@@ -1085,6 +1090,7 @@ def list_print_jobs(
             id,
             created_at,
             payload_hash,
+            copies,
             template_name,
             template_backend,
             printer_name,

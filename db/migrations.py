@@ -496,7 +496,13 @@ def _migration_1(conn: sqlite3.Connection) -> None:
         )
 
 
-MIGRATIONS: list[Callable[[sqlite3.Connection], None]] = [_migration_1]
+def _migration_2(conn: sqlite3.Connection) -> None:
+    add_column_if_missing(
+        conn, "print_jobs", "copies", "INTEGER NOT NULL DEFAULT 1"
+    )
+
+
+MIGRATIONS: list[Callable[[sqlite3.Connection], None]] = [_migration_1, _migration_2]
 
 SCHEMA_VERSION = len(MIGRATIONS)
 
